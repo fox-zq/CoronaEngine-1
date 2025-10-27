@@ -147,13 +147,15 @@ void PythonHotfix::CheckPythonFileDependence() {
         nanobind::object values_obj = nanobind::getattr(dict_obj, "values")();
         nanobind::object values_list = list_fn(values_obj);
         for (nanobind::handle vh : values_list) {
-            nanobind::object vv = nanobind::steal<nanobind::object>(vh.inc_ref());
-            bool is_sub_mod = false;
+            // Use cast from handle to object instead of manual inc_ref/steal
+            nanobind::object vv;
             try {
-                is_sub_mod = nanobind::cast<bool>(isinstance_fn(vv, ModuleType));
+                vv = nanobind::cast<nanobind::object>(vh);
             } catch (...) {
-                is_sub_mod = false;
+                continue;
             }
+            bool is_sub_mod = false;
+            try { is_sub_mod = nanobind::cast<bool>(isinstance_fn(vv, ModuleType)); } catch (...) { is_sub_mod = false; }
             if (!is_sub_mod) continue;
             try {
                 std::string imported = nanobind::cast<std::string>(nanobind::getattr(vv, "__name__"));

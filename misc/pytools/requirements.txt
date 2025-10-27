@@ -8,8 +8,7 @@ autogen-ext[openai,mcp]
 pandas
 
 # GUI Framework
-PyQt6
-PyQt6-WebEngine
+PySide6
 
 # Computer Vision
 opencv-python

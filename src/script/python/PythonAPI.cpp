@@ -9,6 +9,50 @@
 #include <regex>
 #include <set>
 #include <unordered_map>
+#include <typeinfo>
+
+// Diagnostic helper to print Python/C++ environment when imports fail.
+static void PrintPythonDiagnostics(const char* where) {
+    try {
+        nanobind::gil_scoped_acquire gil;
+        std::cout << "[Hotfix][Diag] " << where << " -- Py_IsInitialized=" << (Py_IsInitialized() ? 1 : 0) << std::endl;
+        try {
+            std::cout << "[Hotfix][Diag] CWD=" << std::filesystem::current_path().string() << std::endl;
+        } catch (const std::exception& e) {
+            std::cout << "[Hotfix][Diag] CWD error: " << e.what() << std::endl;
+        }
+
+        PyObject* sysmod = PyImport_ImportModule("sys");
+        if (sysmod) {
+            PyObject* path = PyObject_GetAttrString(sysmod, "path");
+            if (path && PyList_Check(path)) {
+                std::cout << "[Hotfix][Diag] sys.path:";
+                Py_ssize_t n = PyList_Size(path);
+                for (Py_ssize_t i = 0; i < n; ++i) {
+                    PyObject* item = PyList_GetItem(path, i); /* borrowed ref */
+                    if (item) {
+                        const char* s = PyUnicode_AsUTF8(item);
+                        if (s) std::cout << " '" << s << "'";
+                    }
+                }
+                std::cout << std::endl;
+            }
+            Py_XDECREF(path);
+            Py_DECREF(sysmod);
+        } else {
+            std::cout << "[Hotfix][Diag] failed to import sys module" << std::endl;
+        }
+
+        if (PyErr_Occurred()) {
+            std::cout << "[Hotfix][Diag] PyErr_Occurred() true. Printing traceback:" << std::endl;
+            PyErr_Print();
+        } else {
+            std::cout << "[Hotfix][Diag] PyErr_Occurred() false" << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Hotfix][Diag] exception in diagnostics: " << e.what() << std::endl;
+    }
+}
 
 // 声明由 nanobind NB_MODULE(CoronaEngine, m) 生成的初始化函数
 extern "C" PyObject* PyInit_CoronaEngine();
@@ -127,7 +171,21 @@ bool PythonAPI::ensureInitialized() {
             pModule = std::move(main_mod);
             pFunc = std::move(run_attr);
             messageFunc = std::move(putq_attr);
-        } catch (const std::exception&) {
+        } catch (const std::exception& e) {
+            // Print both C++ exception message (useful for nanobind errors) and Python traceback if set.
+            std::cerr << "[Hotfix][API] exception while importing 'main': " << e.what()
+                      << " (type: " << typeid(e).name() << ")" << std::endl;
+            PrintPythonDiagnostics("import main failure");
+            if (PyErr_Occurred()) {
+                PyErr_Print();
+            }
+            pModule.reset();
+            pFunc.reset();
+            messageFunc.reset();
+            return false;
+        } catch (...) {
+            std::cerr << "[Hotfix][API] unknown exception while importing 'main'" << std::endl;
+            PrintPythonDiagnostics("import main unknown failure");
             if (PyErr_Occurred()) {
                 PyErr_Print();
             }
@@ -175,8 +233,15 @@ bool PythonAPI::performHotReload() {
         pModule = std::move(mod);
         pFunc = std::move(newFunc);
         messageFunc = std::move(newMsg);
-    } catch (const std::exception&) {
-        std::cout << "[Hotfix][API] reload(main) failed" << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "[Hotfix][API] reload(main) failed: " << e.what()
+                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        PrintPythonDiagnostics("reload main failure");
+        if (PyErr_Occurred()) PyErr_Print();
+        return false;
+    } catch (...) {
+        std::cout << "[Hotfix][API] reload(main) failed with unknown exception" << std::endl;
+        PrintPythonDiagnostics("reload main unknown failure");
         if (PyErr_Occurred()) PyErr_Print();
         return false;
     }
@@ -195,7 +260,16 @@ void PythonAPI::invokeEntry(bool isReload) const {
 
     try {
         (void)pFunc(isReload ? 1 : 0);
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        std::cerr << "[Hotfix][API] exception while invoking entry: " << e.what()
+                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        PrintPythonDiagnostics("invoke entry failure");
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+        }
+    } catch (...) {
+        std::cerr << "[Hotfix][API] unknown exception while invoking entry" << std::endl;
+        PrintPythonDiagnostics("invoke entry unknown failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
         }
@@ -210,7 +284,16 @@ void PythonAPI::sendMessage(const std::string& message) const {
 
     try {
         (void)messageFunc(message.c_str());
-    } catch (const std::exception&) {
+    } catch (const std::exception& e) {
+        std::cerr << "[Hotfix][API] exception while sending message: " << e.what()
+                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        PrintPythonDiagnostics("send message failure");
+        if (PyErr_Occurred()) {
+            PyErr_Print();
+        }
+    } catch (...) {
+        std::cerr << "[Hotfix][API] unknown exception while sending message" << std::endl;
+        PrintPythonDiagnostics("send message unknown failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
         }
