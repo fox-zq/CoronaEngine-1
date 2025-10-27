@@ -105,7 +105,7 @@ void RuntimeLoop::initialize() {
         throw std::runtime_error("System resolution failed; aborting runtime initialization");
     }
 
-    auto base_context = engine_.kernel().make_context(nullptr, nullptr, nullptr);
+    auto base_context = engine_.kernel().make_context(nullptr, nullptr);
     auto instances = registry.instantiate(resolution, base_context);
     for (auto& instance : instances) {
         engine_.adopt_system(instance);

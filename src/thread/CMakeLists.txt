@@ -17,7 +17,6 @@ endif()
 
 target_sources(CoronaThread
     INTERFACE
-    ${CORONA_ENGINE_PUBLIC_INCLUDE_ROOT}/corona/threading/EventBus.h
     ${CORONA_ENGINE_PUBLIC_INCLUDE_ROOT}/corona/threading/SafeCommandQueue.h
     ${CORONA_ENGINE_PUBLIC_INCLUDE_ROOT}/corona/threading/SafeDataCache.h
 )

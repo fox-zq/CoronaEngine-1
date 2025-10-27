@@ -3,20 +3,14 @@
 #include <CabbageHardware.h>
 #include <Pipeline/ComputePipeline.h>
 #include <Pipeline/RasterizerPipeline.h>
-#include <corona/core/events/ActorEvents.h>
 #include <corona/interfaces/Services.h>
 #include <corona/interfaces/ThreadedSystem.h>
-#include <corona/systems/rendering/SceneEvents.h>
-#include <corona/threading/EventBus.h>
 
-#include <cstdint>
 #include <memory>
 #include <optional>
-#include <unordered_map>
 #include <unordered_set>
 
 namespace Corona {
-class EventBusHub;
 class DataCacheHub;
 }  // namespace Corona
 
@@ -97,26 +91,12 @@ class RenderingSystem final : public ThreadedSystem {
     // 渲染大小
     ktm::uvec2 gbufferSize{};
 
-    // 被观测的模型与场景快照
+    // 被观测的模型
     std::unordered_set<uint64_t> model_cache_keys_{};
-    std::unordered_map<uint64_t, SceneSnapshot> scene_snapshots_{};
-
-    // Actor 事件订阅与状态
-    EventBusT<SceneEvents::CameraUpdated>::Subscription cam_sub_{};
-    EventBusT<SceneEvents::SunUpdated>::Subscription sun_sub_{};
-    EventBusT<SceneEvents::DisplaySurfaceUpdated>::Subscription surf_sub_{};
-    EventBusT<SceneEvents::Removed>::Subscription rm_sub_{};
-
-    EventBusT<ActorEvents::Spawned>::Subscription actor_spawn_sub_{};
-    EventBusT<ActorEvents::TransformUpdated>::Subscription actor_tfm_sub_{};
-    EventBusT<ActorEvents::Removed>::Subscription actor_rm_sub_{};
-
-    std::unordered_map<uint64_t, TRS> pending_trs_{};
-    std::unordered_set<uint64_t> removed_actors_{};
+    
     std::shared_ptr<Interfaces::IResourceService> resource_service_{};
     std::shared_ptr<Interfaces::ICommandScheduler> scheduler_{};
     Interfaces::ICommandScheduler::QueueHandle system_queue_handle_{};
-    EventBusHub* event_hub_ptr_ = nullptr;
     DataCacheHub* data_cache_hub_ = nullptr;
 };
 }  // namespace Corona

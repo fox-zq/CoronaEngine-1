@@ -7,7 +7,7 @@
 - **EngineFacade**（`include/corona/core/Engine.h`）封装了对静态引擎单例的访问，负责：
   - 使用 `EngineKernel` 完成 `ISystem` 的注册与查询；
   - 为每个系统维护 `SafeCommandQueue` 枢纽，支持跨线程调度；
-  - 通过 `cache<T>()`、`events<T>()` 暴露基于 `SafeDataCache` 与 `EventBusT` 的共享中心；
+  - 通过 `cache<T>()` 暴露基于 `SafeDataCache` 的共享中心；
   - 管理 `SystemRegistry`，记录系统元数据；
   - 将资源、日志、命令调度等服务分发给 `CoronaCoreServices`。
 
@@ -37,7 +37,7 @@ CoronaEngine (STATIC)
 ├─ CoronaSystemInterface (INTERFACE)
 │  └─ 依赖 corona::interfaces 与 Corona::Logger，提供系统层的通用日志能力
 ├─ CoronaThread (INTERFACE)
-│  ├─ 暴露 `SafeCommandQueue`、`SafeDataCache`、`EventBus` 等实现
+│  ├─ 暴露 `SafeCommandQueue`、`SafeDataCache` 等实现
 │  └─ 链接 Corona::Logger 与 cabbage::concurrent，提供日志与无锁原语
 ├─ CoronaUtils (INTERFACE)       → 发布 `include/corona/utils` 下的头文件
 ├─ CoronaInterfaces (INTERFACE)  → 发布 `ISystem`、`ThreadedSystem`、`ServiceLocator` 等接口
@@ -68,7 +68,7 @@ CoronaEngine (STATIC)
 ## 运行时数据与控制流程
 1. **系统注册**：`Engine::register_system<T>()`（见 `Engine.h`）实例化系统，确保其队列存在，并调用 `configure_system`。系统继承自 `ISystem`/`ThreadedSystem`，从而访问命令队列 API。
 2. **命令队列**：`SafeCommandQueue` 为每个系统提供多生产者、单消费者队列。系统可通过 `Engine::get_queue(name)` 向自身或其他系统派发任务。
-3. **事件总线**：`Engine::events<T>()` 返回类型化的 `EventBusT`，用于发布强类型事件。渲染、动画系统订阅 `CoronaEngineAPI` 转发的场景/演员主题。
+
 4. **数据缓存**：`Engine::cache<T>()` 返回共享的 `SafeDataCache`，用于缓存动画状态等资源。缓存会为每个 ID 加锁，若尝试失败会重试以避免饥饿。
 5. **资源加载**：`Engine::resources()` 提供全局 `ResourceManager`。系统使用 `ResourceId::from(...)` 与 `load_once_async(...)` 获取资源；回调涉及系统状态时需重新派发到所属系统队列。
 6. **Python 桥接**：脚本模块通过 `PythonBridge::set_sender` 将事件转发到主线程（`Engine::get_queue("MainThread")`）。`AnimationSystem::send_collision_event` 给出了示例。

@@ -14,7 +14,6 @@
 
 namespace Corona {
 
-class EventBusHub;
 class DataCacheHub;
 
 class EngineKernel {
@@ -57,7 +56,6 @@ class EngineKernel {
     [[nodiscard]] std::size_t system_count() const { return systems_.size(); }
 
     Interfaces::SystemContext make_context(Interfaces::ICommandQueue* queue = nullptr,
-                                           EventBusHub* events = nullptr,
                                            DataCacheHub* caches = nullptr);
 
     bool add_system_instance(std::shared_ptr<ISystem> system);

@@ -7,7 +7,7 @@ This document summarizes the relationships between the C++ targets, subsystems, 
 - **EngineFacade** (`include/corona/core/Engine.h`) wraps access to the static engine singleton. It wires:
   - `EngineKernel` for `ISystem` registration and lookup.
   - `SafeCommandQueue` hubs per system to support cross-thread dispatch.
-  - `SafeDataCache` and `EventBusT` hubs exposed through `cache<T>()` and `events<T>()`.
+  - `SafeDataCache` hub exposed through `cache<T>()`.
   - `SystemRegistry` for metadata about registered systems.
   - Resource, logging, and command scheduler services routed through `CoronaCoreServices`.
 
@@ -37,8 +37,8 @@ CoronaEngine (STATIC)
 ├─ CoronaSystemInterface (INTERFACE)
 │  └─ Depends on corona::interfaces and Corona::Logger; provides shared system-layer logging hooks
 ├─ CoronaThread (INTERFACE)
-│  ├─ Sources for `SafeCommandQueue`, `SafeDataCache`, `EventBus`
-│  └─ Links against Corona::Logger and cabbage::concurrent for logging and lock-free primitives
+  │  ├─ Sources for `SafeCommandQueue`, `SafeDataCache`
+  │  └─ Links against Corona::Logger and cabbage::concurrent for logging and lock-free primitives
 ├─ CoronaUtils (INTERFACE)       → publishes `include/corona/utils` headers
 ├─ CoronaInterfaces (INTERFACE)  → publishes `ISystem`, `ThreadedSystem`, `ServiceLocator`, etc.
 └─ CoronaSystem hubs (INTERFACE/STATIC) aggregated through `src/systems/CMakeLists.txt`
@@ -68,7 +68,7 @@ CoronaEngine (STATIC)
 ## Runtime Data & Control Flow
 1. **System Registration**: `Engine::register_system<T>()` (see `Engine.h`) instantiates systems, ensures their queues exist, and calls `configure_system`. Each system derives from `ISystem`/`ThreadedSystem`, gaining access to the command queue API.
 2. **Command Queues**: `SafeCommandQueue` provides multi-producer, single-consumer queues per system. Systems enqueue work for themselves or for other systems using `Engine::get_queue(name)`.
-3. **Event Bus**: `Engine::events<T>()` returns the typed `EventBusT` for publishing strongly typed events. Rendering and animation subscribe to actor/scene topics propagated through `CoronaEngineAPI`.
+
 4. **Data Cache**: `Engine::cache<T>()` yields the shared `SafeDataCache` for caching resources (e.g., animation state). The cache locks per ID and retries failed locks to prevent starvation.
 5. **Resource Loads**: `Engine::resources()` gives access to the global `ResourceManager`. Systems use `ResourceId::from(...)` and `load_once_async(...)` to retrieve assets. Callbacks that touch system state must re-dispatch onto the owning system queue.
 6. **Python Bridge**: The scripting module exposes `PythonBridge::set_sender` to route events onto the main thread (`Engine::get_queue("MainThread")`). `AnimationSystem::send_collision_event` demonstrates this pattern.

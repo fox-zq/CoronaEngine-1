@@ -232,7 +232,7 @@ Interfaces::ICommandQueue* EngineFacade::ensure_system_queue(const char* name) {
 }
 
 void EngineFacade::configure_system(ISystem& system, Interfaces::ICommandQueue* queue_ptr) {
-    auto context = kernel().make_context(queue_ptr, &event_hub_, &data_hub_);
+    auto context = kernel().make_context(queue_ptr, &data_hub_);
     system.configure(context);
 }
 

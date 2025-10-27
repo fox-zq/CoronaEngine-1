@@ -191,33 +191,6 @@ void AnimationSystem::configure(const Interfaces::SystemContext& context) {
 }
 
 void AnimationSystem::onStart() {
-    // 测试样例：系统内部使用资源服务异步加载 shader，并把结果回投到本系统队列
-    if (!resource_service_) {
-        CE_LOG_WARN("[AnimationSystem] 资源服务未注册，跳过示例加载");
-        return;
-    }
-    if (!system_queue_handle_) {
-        CE_LOG_WARN("[AnimationSystem] 命令队列句柄缺失，跳过示例加载");
-        return;
-    }
-
-    const auto assets_root = (std::filesystem::current_path() / "assets").string();
-    auto shaderId = ResourceId::from("shader", assets_root);
-    auto queue_handle = system_queue_handle_;
-    resource_service_->load_once_async(
-        shaderId,
-        [queue_handle](const ResourceId&, std::shared_ptr<IResource> r) {
-            if (!queue_handle) {
-                return;
-            }
-            queue_handle->enqueue([success = static_cast<bool>(r)] {
-                if (!success) {
-                    CE_LOG_WARN("[AnimationSystem] 异步加载 shader 失败");
-                    return;
-                }
-                CE_LOG_INFO("[AnimationSystem] 异步加载 shader 成功（测试样例）");
-            });
-        });
 }
 
 void AnimationSystem::onTick() {

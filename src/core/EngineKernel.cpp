@@ -34,9 +34,8 @@ void EngineKernel::stop_all() {
 }
 
 Interfaces::SystemContext EngineKernel::make_context(Interfaces::ICommandQueue* queue,
-                                                     EventBusHub* events,
                                                      DataCacheHub* caches) {
-    return Interfaces::SystemContext{*services_, queue, events, caches};
+    return Interfaces::SystemContext{*services_, queue, caches};
 }
 
 bool EngineKernel::add_system_instance(std::shared_ptr<ISystem> system) {

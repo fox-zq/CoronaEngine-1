@@ -14,7 +14,6 @@ endif()
 target_sources(CoronaSystemRendering
     PUBLIC
     ${CORONA_ENGINE_PUBLIC_INCLUDE_ROOT}/corona/systems/RenderingSystem.h
-    ${CORONA_ENGINE_PUBLIC_INCLUDE_ROOT}/corona/systems/rendering/SceneEvents.h
 )
 
 target_compile_features(CoronaSystemRendering PUBLIC cxx_std_20)

@@ -27,7 +27,6 @@ class ThreadedSystem : public ISystem {
     void configure(const Corona::Interfaces::SystemContext& context) override {
         services_ = std::addressof(context.services);
         queue_ = context.queue;
-        events_ = context.events;
         caches_ = context.caches;
     }
 
@@ -97,9 +96,7 @@ class ThreadedSystem : public ISystem {
         return queue_;
     }
 
-    Corona::EventBusHub* event_hub() const {
-        return events_;
-    }
+
 
     Corona::DataCacheHub* data_caches() const {
         return caches_;
@@ -112,7 +109,6 @@ class ThreadedSystem : public ISystem {
     int64_t targetFrameTimeUs_ = 1'000'000 / 120;
     Corona::Interfaces::ServiceLocator* services_ = nullptr;
     Corona::Interfaces::ICommandQueue* queue_ = nullptr;
-    Corona::EventBusHub* events_ = nullptr;
     Corona::DataCacheHub* caches_ = nullptr;
 };
 }  // namespace Corona

@@ -10,15 +10,10 @@ namespace {
 struct SamplePayload {
     int counter = 0;
 };
-
-struct SampleEvent {
-    int value = 0;
-};
 }  // namespace
 
 int main() {
     DataCacheHub cacheHub;
-    EventBusHub busHub;
 
     auto& cache = cacheHub.get<SamplePayload>();
     cache.insert(1, std::make_shared<SamplePayload>());
@@ -38,18 +33,7 @@ int main() {
 
     const auto snapshot = cache.get(1);
     const int payloadValue = snapshot ? snapshot->counter : 0;
+    std::cout << "Final value=" << payloadValue << "\n";
 
-    auto& bus = busHub.get<SampleEvent>();
-    auto subscription = bus.subscribe("system_hubs_sanity");
-    bus.publish("system_hubs_sanity", SampleEvent{payloadValue});
-
-    if (subscription.queue) {
-        SampleEvent event;
-        if (subscription.queue->try_pop(event)) {
-            std::cout << "Received event value=" << event.value << "\n";
-        }
-    }
-
-    bus.unsubscribe(subscription.topic, subscription.id);
     return 0;
 }

@@ -88,12 +88,6 @@ class EngineFacade {
         return data_hub_.get<T>();
     }
 
-    // 全局事件总线中心
-    template <typename T>
-    EventBusT<T>& events() {
-        return event_hub_.get<T>();
-    }
-
    private:
     EngineFacade();
     ~EngineFacade() = default;
@@ -111,7 +105,6 @@ class EngineFacade {
     std::shared_ptr<Core::LoggerService> logger_service_{};
     std::shared_ptr<Core::CommandSchedulerService> command_scheduler_{};
     DataCacheHub data_hub_{};
-    EventBusHub event_hub_{};
     std::unordered_map<std::string, Interfaces::ICommandScheduler::QueueHandle> system_queue_handles_{};
     SystemRegistry system_registry_{};
 

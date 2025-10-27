@@ -1,6 +1,5 @@
 #pragma once
 
-#include <corona/threading/EventBus.h>
 #include <corona/threading/SafeDataCache.h>
 
 #include <memory>
@@ -45,39 +44,6 @@ class DataCacheHub {
     std::shared_mutex mutex_{};
 };
 
-// 线程安全的事件总线中心，按负载类型创建 EventBusT<T>
-class EventBusHub {
-   public:
-    struct IHolder {
-        virtual ~IHolder() = default;
-    };
-    template <typename T>
-    struct Holder : IHolder {
-        EventBusT<T> bus;
-    };
 
-    template <typename T>
-    EventBusT<T>& get() {
-        const std::type_index key{typeid(T)};
-        {
-            std::shared_lock lock(mutex_);
-            if (auto iter = buses_.find(key); iter != buses_.end()) {
-                return static_cast<Holder<T>&>(*iter->second).bus;
-            }
-        }
-        std::unique_lock lock(mutex_);
-        if (auto iter = buses_.find(key); iter != buses_.end()) {
-            return static_cast<Holder<T>&>(*iter->second).bus;
-        }
-        auto holder = std::make_unique<Holder<T>>();
-        auto* raw = holder.get();
-        buses_.emplace(key, std::move(holder));
-        return raw->bus;
-    }
-
-   private:
-    std::unordered_map<std::type_index, std::unique_ptr<IHolder>> buses_{};
-    std::shared_mutex mutex_{};
-};
 
 }  // namespace Corona
