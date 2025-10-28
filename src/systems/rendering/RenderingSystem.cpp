@@ -6,6 +6,7 @@
 #include <corona/core/detail/SystemHubs.h>
 #include "Model.h"
 #include "Shader.h"
+#include "corona/core/Engine.h"
 
 using namespace Corona;
 
@@ -27,6 +28,37 @@ void RenderingSystem::configure(const Interfaces::SystemContext& context) {
 
 void RenderingSystem::onStart() {
     init();
+    load_shaders_async();
+}
+
+void RenderingSystem::load_shaders_async() {
+    if (!scheduler_ || !system_queue_handle_ || !resource_service_) {
+        CE_LOG_WARN("[RenderingSystem] 无法异步加载shader: 缺少必要的服务");
+        return;
+    }
+
+    const auto assets_root = (std::filesystem::current_path() / "assets").string();
+    auto shaderId = ResourceId::from("shader", assets_root);
+    auto queue_handle = system_queue_handle_;
+    resource_service_->load_once_async(
+        shaderId,
+        [queue_handle](const ResourceId&, std::shared_ptr<IResource> r) {
+            if (!r) {
+                CE_LOG_ERROR("[RenderingSystem] 异步加载shader失败: 资源为空");
+                return;
+            }
+
+            auto shader = std::dynamic_pointer_cast<Shader>(r);
+            if (!shader) {
+                CE_LOG_ERROR("[RenderingSystem] 异步加载shader失败: 资源类型错误");
+                return;
+            }
+
+            queue_handle->enqueue([shader, queue_handle]() {
+                auto *render_system = &Engine::instance().get_system<RenderingSystem>();
+                render_system->init_shader(shader);
+            });
+        });
 }
 
 void RenderingSystem::onTick() {
@@ -66,31 +98,24 @@ void RenderingSystem::init_shader(std::shared_ptr<Shader> shader) {
     rasterizerPipeline = RasterizerPipeline(shader->vertCode, shader->fragCode);
     computePipeline = ComputePipeline(shader->computeCode);
     shaderHasInit = true;
+    
+    CE_LOG_INFO("[RenderingSystem] 成功初始化shader并设置渲染管线");
 }
 
 void RenderingSystem::update_engine() {
     if (!shaderHasInit) {
         return;
     }
-
-    // 简单的渲染测试，使用默认相机参数
-    CameraSnapshot defaultCamera;
-    defaultCamera.fov = 60.0f;
-    defaultCamera.pos = ktm::fvec3(0.0f, 0.0f, 5.0f);
-    defaultCamera.forward = ktm::fvec3(0.0f, 0.0f, -1.0f);
-    defaultCamera.worldUp = ktm::fvec3(0.0f, 1.0f, 0.0f);
     
-    ktm::fvec3 defaultSunDir = ktm::fvec3(-1.0f, -1.0f, -1.0f);
-    
-    gbuffer_pipeline(defaultCamera);
-    composite_pipeline(defaultSunDir);
+    gbuffer_pipeline();
+    composite_pipeline();
 }
 
-void RenderingSystem::gbuffer_pipeline(const CameraSnapshot& cam) {
-    uniformBufferObjects.eyePosition = cam.pos;
-    uniformBufferObjects.eyeDir = ktm::normalize(cam.forward);
-    uniformBufferObjects.eyeViewMatrix = ktm::look_at_lh(cam.pos, ktm::normalize(cam.forward), cam.worldUp);
-    uniformBufferObjects.eyeProjMatrix = ktm::perspective_lh(ktm::radians(cam.fov), static_cast<float>(gbufferSize.x) / static_cast<float>(gbufferSize.y), 0.1f, 100.0f);
+void RenderingSystem::gbuffer_pipeline() {
+    // uniformBufferObjects.eyePosition = cam.pos;
+    // uniformBufferObjects.eyeDir = ktm::normalize(cam.forward);
+    // uniformBufferObjects.eyeViewMatrix = ktm::look_at_lh(cam.pos, ktm::normalize(cam.forward), cam.worldUp);
+    // uniformBufferObjects.eyeProjMatrix = ktm::perspective_lh(ktm::radians(cam.fov), static_cast<float>(gbufferSize.x) / static_cast<float>(gbufferSize.y), 0.1f, 100.0f);
 
     gbufferUniformBufferObjects.viewProjMatrix = uniformBufferObjects.eyeProjMatrix * uniformBufferObjects.eyeViewMatrix;
     gbufferUniformBuffer.copyFromData(&gbufferUniformBufferObjects, sizeof(gbufferUniformBufferObjects));
@@ -117,10 +142,12 @@ void RenderingSystem::gbuffer_pipeline(const CameraSnapshot& cam) {
         rasterizerPipeline["gbufferMotionVector"] = gbufferMotionVectorImage;
 
         for (auto& m : model->meshes) {
-            // 录制与提交绘制命令（按需开启）
-            // executor(HardwareExecutor::ExecutorType::Graphics)
-            //     << rasterizerPipeline(gbufferSize.x, gbufferSize.y) << rasterizerPipeline.record(m.meshDevice->indexBuffer)
-            //     << executor.commit();
+            // 录制与提交绘制命令
+            // if (shaderHasInit) {
+            //     executor(HardwareExecutor::ExecutorType::Graphics)
+            //         << rasterizerPipeline(gbufferSize.x, gbufferSize.y) << rasterizerPipeline.record(m.meshDevice->indexBuffer)
+            //         << executor.commit();
+            // }
         }
     });
 }
@@ -140,9 +167,13 @@ void RenderingSystem::composite_pipeline(ktm::fvec3 sunDir) {
     uniformBuffer.copyFromData(&uniformBufferObjects, sizeof(uniformBufferObjects));
     computePipeline["pushConsts.uniformBufferIndex"] = uniformBuffer.storeDescriptor();
 
-    // executor(HardwareExecutor::ExecutorType::Graphics)
-    //     << computePipeline(1920 / 8, 1080 / 8, 1)
-    //     << executor.commit();
+    // 提交计算管线命令
+    if (shaderHasInit) {
+        executor
+            // << rasterizerPipeline(1920, 1080)
+            << computePipeline(1920 / 8, 1080 / 8, 1)
+            << executor.commit();
+    }
 }
 
 void RenderingSystem::watch_model(uint64_t id) {

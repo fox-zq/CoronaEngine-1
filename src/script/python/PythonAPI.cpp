@@ -15,42 +15,41 @@
 static void PrintPythonDiagnostics(const char* where) {
     try {
         nanobind::gil_scoped_acquire gil;
-        std::cout << "[Hotfix][Diag] " << where << " -- Py_IsInitialized=" << (Py_IsInitialized() ? 1 : 0) << std::endl;
+        CE_LOG_DEBUG("[Hotfix][Diag] {} -- Py_IsInitialized={}", where, Py_IsInitialized() ? 1 : 0);
         try {
-            std::cout << "[Hotfix][Diag] CWD=" << std::filesystem::current_path().string() << std::endl;
+            CE_LOG_DEBUG("[Hotfix][Diag] CWD={}", std::filesystem::current_path().string());
         } catch (const std::exception& e) {
-            std::cout << "[Hotfix][Diag] CWD error: " << e.what() << std::endl;
+            CE_LOG_ERROR("[Hotfix][Diag] CWD error: {}", e.what());
         }
 
         PyObject* sysmod = PyImport_ImportModule("sys");
         if (sysmod) {
             PyObject* path = PyObject_GetAttrString(sysmod, "path");
             if (path && PyList_Check(path)) {
-                std::cout << "[Hotfix][Diag] sys.path:";
+                CE_LOG_DEBUG("[Hotfix][Diag] sys.path:");
                 Py_ssize_t n = PyList_Size(path);
                 for (Py_ssize_t i = 0; i < n; ++i) {
                     PyObject* item = PyList_GetItem(path, i); /* borrowed ref */
                     if (item) {
                         const char* s = PyUnicode_AsUTF8(item);
-                        if (s) std::cout << " '" << s << "'";
+                        if (s) CE_LOG_DEBUG(" '{}'", s);
                     }
                 }
-                std::cout << std::endl;
             }
             Py_XDECREF(path);
             Py_DECREF(sysmod);
         } else {
-            std::cout << "[Hotfix][Diag] failed to import sys module" << std::endl;
+            CE_LOG_ERROR("[Hotfix][Diag] failed to import sys module");
         }
 
         if (PyErr_Occurred()) {
-            std::cout << "[Hotfix][Diag] PyErr_Occurred() true. Printing traceback:" << std::endl;
+            CE_LOG_ERROR("[Hotfix][Diag] PyErr_Occurred() true. Printing traceback:");
             PyErr_Print();
         } else {
-            std::cout << "[Hotfix][Diag] PyErr_Occurred() false" << std::endl;
+            CE_LOG_DEBUG("[Hotfix][Diag] PyErr_Occurred() false");
         }
     } catch (const std::exception& e) {
-        std::cerr << "[Hotfix][Diag] exception in diagnostics: " << e.what() << std::endl;
+        CE_LOG_ERROR("[Hotfix][Diag] exception in diagnostics: {}", e.what());
     }
 }
 
@@ -164,7 +163,7 @@ bool PythonAPI::ensureInitialized() {
             nanobind::object putq_attr = nanobind::getattr(main_mod, "put_queue");
 
             if (!nanobind::callable::check_(run_attr)) {
-                std::cerr << "[Hotfix][API] 'run' attribute is not callable" << std::endl;
+                CE_LOG_ERROR("[Hotfix][API] 'run' attribute is not callable");
                 return false;
             }
 
@@ -173,8 +172,7 @@ bool PythonAPI::ensureInitialized() {
             messageFunc = std::move(putq_attr);
         } catch (const std::exception& e) {
             // Print both C++ exception message (useful for nanobind errors) and Python traceback if set.
-            std::cerr << "[Hotfix][API] exception while importing 'main': " << e.what()
-                      << " (type: " << typeid(e).name() << ")" << std::endl;
+            CE_LOG_ERROR("[Hotfix][API] exception while importing 'main': {} (type: {})", e.what(), typeid(e).name());
             PrintPythonDiagnostics("import main failure");
             if (PyErr_Occurred()) {
                 PyErr_Print();
@@ -184,7 +182,7 @@ bool PythonAPI::ensureInitialized() {
             messageFunc.reset();
             return false;
         } catch (...) {
-            std::cerr << "[Hotfix][API] unknown exception while importing 'main'" << std::endl;
+            CE_LOG_ERROR("[Hotfix][API] unknown exception while importing 'main'");
             PrintPythonDiagnostics("import main unknown failure");
             if (PyErr_Occurred()) {
                 PyErr_Print();
@@ -205,16 +203,16 @@ bool PythonAPI::performHotReload() {
         return false;
     }
 
-    std::cout << "[Hotfix] performHotReload triggered. packageSet.size=" << hotfixManger.packageSet.size() << std::endl;
+    CE_LOG_DEBUG("performHotReload triggered. packageSet.size={}", hotfixManger.packageSet.size());
 
     bool reloadedDeps = hotfixManger.ReloadPythonFile();
     if (!reloadedDeps) {
-        std::cout << "[Hotfix] hotfixManger.ReloadPythonFile returned false" << std::endl;
+        CE_LOG_ERROR("[Hotfix] hotfixManger.ReloadPythonFile returned false");
         return false;
     }
 
     nanobind::gil_scoped_acquire gil;
-    std::cout << "[Hotfix] reloading 'main' module (via importlib.reload)" << std::endl;
+    CE_LOG_DEBUG("[Hotfix] reloading 'main' module (via importlib.reload)");
 
     try {
         nanobind::module_ importlib = nanobind::module_::import_("importlib");
@@ -225,7 +223,7 @@ bool PythonAPI::performHotReload() {
 
         nanobind::object newFunc = nanobind::getattr(mod, "run");
         if (!nanobind::callable::check_(newFunc)) {
-            std::cout << "[Hotfix][API] new run attr invalid" << std::endl;
+            CE_LOG_ERROR("[Hotfix][API] new run attr invalid");
             return false;
         }
         nanobind::object newMsg = nanobind::getattr(mod, "put_queue");
@@ -234,13 +232,12 @@ bool PythonAPI::performHotReload() {
         pFunc = std::move(newFunc);
         messageFunc = std::move(newMsg);
     } catch (const std::exception& e) {
-        std::cout << "[Hotfix][API] reload(main) failed: " << e.what()
-                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] reload(main) failed: {} (type: {})", e.what(), typeid(e).name());
         PrintPythonDiagnostics("reload main failure");
         if (PyErr_Occurred()) PyErr_Print();
         return false;
     } catch (...) {
-        std::cout << "[Hotfix][API] reload(main) failed with unknown exception" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] reload(main) failed with unknown exception");
         PrintPythonDiagnostics("reload main unknown failure");
         if (PyErr_Occurred()) PyErr_Print();
         return false;
@@ -248,7 +245,7 @@ bool PythonAPI::performHotReload() {
 
     lastHotReloadTime = currentTime;
     hasHotReload = true;
-    std::cout << "[Hotfix] performHotReload finished successfully" << std::endl;
+    CE_LOG_DEBUG("[Hotfix] performHotReload finished successfully");
     return true;
 }
 
@@ -261,14 +258,13 @@ void PythonAPI::invokeEntry(bool isReload) const {
     try {
         (void)pFunc(isReload ? 1 : 0);
     } catch (const std::exception& e) {
-        std::cerr << "[Hotfix][API] exception while invoking entry: " << e.what()
-                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] exception while invoking entry: {} (type: {})", e.what(), typeid(e).name());
         PrintPythonDiagnostics("invoke entry failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
         }
     } catch (...) {
-        std::cerr << "[Hotfix][API] unknown exception while invoking entry" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] unknown exception while invoking entry");
         PrintPythonDiagnostics("invoke entry unknown failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
@@ -285,14 +281,13 @@ void PythonAPI::sendMessage(const std::string& message) const {
     try {
         (void)messageFunc(message.c_str());
     } catch (const std::exception& e) {
-        std::cerr << "[Hotfix][API] exception while sending message: " << e.what()
-                  << " (type: " << typeid(e).name() << ")" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] exception while sending message: {} (type: {})", e.what(), typeid(e).name());
         PrintPythonDiagnostics("send message failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
         }
     } catch (...) {
-        std::cerr << "[Hotfix][API] unknown exception while sending message" << std::endl;
+        CE_LOG_ERROR("[Hotfix][API] unknown exception while sending message");
         PrintPythonDiagnostics("send message unknown failure");
         if (PyErr_Occurred()) {
             PyErr_Print();
@@ -302,7 +297,7 @@ void PythonAPI::sendMessage(const std::string& message) const {
 
 void PythonAPI::runPythonScript() {
     if (!ensureInitialized()) {
-        std::cerr << "Python init failed." << std::endl;
+        CE_LOG_ERROR("Python init failed.");
         return;
     }
 
@@ -322,9 +317,7 @@ void PythonAPI::checkPythonScriptChange() {
     const std::string& sourcePath = PathCfg::EditorBackendAbs();
     const std::string runtimePath = PathCfg::RuntimeBackendAbs();
     int64_t checkTime = PythonHotfix::GetCurrentTimeMsec();
-    std::cout << "[Hotfix] checkPythonScriptChange: src=" << sourcePath
-              << ", dst=" << runtimePath
-              << ", t=" << checkTime << std::endl;
+    CE_LOG_DEBUG("[Hotfix] checkPythonScriptChange: src={}, dst={}, t={}", sourcePath, runtimePath, checkTime);
     copyModifiedFiles(sourcePath, runtimePath, checkTime);
 }
 
@@ -349,14 +342,12 @@ void PythonAPI::checkReleaseScriptChange() {
 
     std::unique_lock lk(queMtx);
     const auto& mods = messageQue.front();
-    std::cout << "[Hotfix] detected modified modules (" << mods.size() << ") from runtime scan: ";
+    CE_LOG_DEBUG("[Hotfix] detected modified modules ({}) from runtime scan: ", mods.size());
     bool first = true;
     for (const auto& m : mods) {
-        if (!first) std::cout << ", ";
-        std::cout << m;
+        if (!first) CE_LOG_DEBUG(", {}", m);
         first = false;
     }
-    std::cout << std::endl;
 
     auto modToPath = [&](const std::string& mod) {
         std::string rel = mod;  // replace '.' with '/'
@@ -376,16 +367,15 @@ void PythonAPI::checkReleaseScriptChange() {
 
         auto it = lastProcessedMtime.find(mod);
         if (it != lastProcessedMtime.end() && fileMtimeMs > 0 && fileMtimeMs <= it->second) {
-            std::cout << "[Hotfix] skip duplicate module in window: '" << mod << "' mtime=" << fileMtimeMs
-                      << " lastProcessed=" << it->second << std::endl;
+            CE_LOG_DEBUG("skip duplicate module in window: '{}' mtime={} lastProcessed={}", mod, fileMtimeMs, it->second);
             continue;
         }
 
         if (!hotfixManger.packageSet.contains(mod)) {
             hotfixManger.packageSet.emplace(mod, currentTime);
-            std::cout << "[Hotfix] packageSet.emplace: '" << mod << "' @" << currentTime << std::endl;
+            CE_LOG_DEBUG("[Hotfix] packageSet.emplace: '{}' @{}", mod, currentTime);
         } else {
-            std::cout << "[Hotfix] packageSet already contains: '" << mod << "' (skip)" << std::endl;
+            CE_LOG_DEBUG("[Hotfix] packageSet already contains: '{}' (skip)", mod);
         }
         if (fileMtimeMs > 0) {
             lastProcessedMtime[mod] = fileMtimeMs;
@@ -449,12 +439,11 @@ void PythonAPI::copyModifiedFiles(const std::filesystem::path& sourceDir,
 
                 std::string modName = destFilePath.string();
                 PythonHotfix::NormalizeModuleName(modName);
-                std::cout << "[Hotfix] copied recent file: " << filePath.string()
-                          << " -> " << destFilePath.string()
-                          << ", module='" << modName << "' src_mtime=" << modifyMs << std::endl;
+                CE_LOG_DEBUG("[Hotfix] copied recent file: {} -> {}, module='{}' src_mtime={}",
+                             filePath.string(), destFilePath.string(), modName, modifyMs);
             }
         } catch (const std::exception& e) {
-            std::cerr << "File copy error: " << e.what() << std::endl;
+            CE_LOG_ERROR("File copy error: {}", e.what());
         }
     }
 }

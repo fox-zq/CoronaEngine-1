@@ -27,8 +27,9 @@ class RenderingSystem final : public ThreadedSystem {
     void watch_model(uint64_t id);
     void unwatch_model(uint64_t id);
 
-    // 显式初始化着色器/管线（可通过外部事件或资源回调触发）
     void init_shader(std::shared_ptr<Shader> shader);
+
+    void load_shaders_async();
 
    protected:
     void onStart() override;
@@ -39,26 +40,8 @@ class RenderingSystem final : public ThreadedSystem {
     void init();
     void update_engine();
 
-    struct CameraSnapshot {
-        float fov = 45.0f;
-        ktm::fvec3 pos{};
-        ktm::fvec3 forward{};
-        ktm::fvec3 worldUp{};
-    };
-    struct SceneSnapshot {
-        CameraSnapshot camera{};
-        ktm::fvec3 sunDir{};
-        void* surface = nullptr;
-    };
-
-    struct TRS {
-        std::optional<ktm::fvec3> pos;
-        std::optional<ktm::fvec3> rot;
-        std::optional<ktm::fvec3> scale;
-    };
-
-    void gbuffer_pipeline(const CameraSnapshot& cam);
-    void composite_pipeline(ktm::fvec3 sunDir);
+    void gbuffer_pipeline();
+    void composite_pipeline(ktm::fvec3 sunDir = ktm::fvec3(0.0f, -1.0f, 0.0f));
 
     // 渲染资源
     HardwareImage gbufferPostionImage;

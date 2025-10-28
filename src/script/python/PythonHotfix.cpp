@@ -1,4 +1,5 @@
 #include <corona/script/PythonHotfix.h>
+#include <corona_logger.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 
@@ -199,12 +200,10 @@ bool PythonHotfix::ReloadPythonFile() {
     bool reload = !packageSet.empty();
 
     if (reload) {
-        std::cout << "[Hotfix][Reload] dependency order (before reverse): ";
+        CE_LOG_DEBUG("[Hotfix][Reload] dependency order (before reverse): ");
         for (size_t i = 0; i < dependencyVec.size(); ++i) {
-            if (i) std::cout << " -> ";
-            std::cout << dependencyVec[i];
+            if (i) CE_LOG_DEBUG(" -> {}", dependencyVec[i]);
         }
-        std::cout << std::endl;
     }
 
     nanobind::module_ sys = nanobind::module_::import_("sys");
@@ -219,8 +218,7 @@ bool PythonHotfix::ReloadPythonFile() {
 
     for (int i = static_cast<int>(dependencyVec.size()) - 1; i >= 0; --i) {
         const std::string& name = dependencyVec[i];
-        std::cout << "[Hotfix][Reload] begin reload idx=" << (dependencyVec.size() - 1 - i)
-                  << "/" << dependencyVec.size() << ": " << name << std::endl;
+        CE_LOG_DEBUG("[Hotfix][Reload] begin reload idx={}/{}: {}", (dependencyVec.size() - 1 - i), dependencyVec.size(), name);
 
         nanobind::object old_mod;
         try {
@@ -234,7 +232,7 @@ bool PythonHotfix::ReloadPythonFile() {
                 nanobind::object import_module = nanobind::getattr(importlib, "import_module");
                 old_mod = import_module(name.c_str());
             } catch (...) {
-                std::cout << "[Hotfix][Reload] skip (module not found and import failed): " << name << std::endl;
+                CE_LOG_DEBUG("[Hotfix][Reload] skip (module not found and import failed): {}", name);
                 continue;
             }
         }
@@ -246,19 +244,19 @@ bool PythonHotfix::ReloadPythonFile() {
             is_mod = false;
         }
         if (!is_mod) {
-            std::cout << "[Hotfix][Reload] skip (not a module): " << name << "\n";
+            CE_LOG_DEBUG("[Hotfix][Reload] skip (not a module): {}", name);
             continue;
         }
 
         try {
             nanobind::object new_mod = reload_fn(old_mod);
-            std::cout << "[Hotfix][Reload] reload ok: name=" << name << std::endl;
+            CE_LOG_DEBUG("[Hotfix][Reload] reload ok: name={}", name);
             // 可选：验证 sys.modules[name] 指向新对象
         } catch (const std::exception& e) {
-            std::cout << "[Hotfix][Reload] reload failed: " << name << " err=" << e.what() << std::endl;
+            CE_LOG_DEBUG("[Hotfix][Reload] reload failed: name={} err={}", name, e.what());
             continue;
         } catch (...) {
-            std::cout << "[Hotfix][Reload] reload failed: " << name << " (unknown error)" << std::endl;
+            CE_LOG_DEBUG("[Hotfix][Reload] reload failed: name={} (unknown error)", name);
             continue;
         }
     }
