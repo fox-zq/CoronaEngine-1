@@ -133,7 +133,10 @@ struct CameraDevice {
     }
 
     [[nodiscard]] ktm::fmat4x4 compute_projection_matrix() const {
-        return ktm::perspective_lh(ktm::radians(fov), aspect, near_plane, far_plane);
+        ktm::fmat4x4 proj = ktm::perspective_lh(ktm::radians(fov), aspect, near_plane, far_plane);
+        // Vulkan NDC Y轴向下（与OpenGL相反），需要翻转Y分量
+        proj[1][1] *= -1.0f;
+        return proj;
     }
 
     [[nodiscard]] ktm::fmat4x4 compute_view_proj_matrix() const {
