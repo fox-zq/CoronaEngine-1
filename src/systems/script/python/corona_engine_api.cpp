@@ -340,13 +340,17 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         if (mesh.material_index != Resource::InvalidIndex &&
             mesh.material_index < scene->data.materials.size()) {
             auto texture_id = scene->data.materials[mesh.material_index].albedo_texture;
+            CFW_LOG_DEBUG("[Geometry] Mesh {} material {} texture_id: {}, InvalidTextureId: {}", 
+                          mesh_idx, mesh.material_index, texture_id, Resource::InvalidTextureId);
 
-            if (texture_id != Resource::InvalidIndex) {
+            if (texture_id != Resource::InvalidTextureId) {
                 auto texture_data = Resource::ResourceManager::get_instance().acquire_read<Resource::Image>(texture_id);
                 if (texture_data && texture_data->get_data() != nullptr) {
                     const int tex_width = texture_data->get_width();
                     const int tex_height = texture_data->get_height();
                     const int tex_channels = texture_data->get_channels();
+                    CFW_LOG_DEBUG("[Geometry] Mesh {} texture info: {}x{} channels={}", 
+                                  mesh_idx, tex_width, tex_height, tex_channels);
                     
                     if (tex_width > 0 && tex_height > 0 && tex_channels > 0) {
                         constexpr bool use_compressed = false; // TODO: 测试模型兼容性  先不走压缩纹理

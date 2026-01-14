@@ -4,7 +4,6 @@
 layout(push_constant) uniform PushConsts
 {    
     uint textureIndex;
-    uint boneIndex;
     uint uniformBufferIndex;
     mat4 modelMatrix;
     vec4 materialColor;
