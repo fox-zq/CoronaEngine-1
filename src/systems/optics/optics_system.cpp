@@ -220,11 +220,11 @@ void OpticsSystem::optics_pipeline(float frame_count) const {
 
                     hardware_->computePipeline["pushConsts.sun_dir"] = ktm::normalize(sun_dir);
                     {
-                        // 调整为暖色调的日光颜色 (Warm Sunlight)
+                        // 调整为黄昏颜色 (Dusk)
                         static const ktm::fvec3 lightColor{
-                            255.0f,
-                            244.0f,
-                            229.0f
+                            190.0f,
+                            120.0f,
+                            60.0f
                         };
 
                         hardware_->computePipeline["pushConsts.lightColor"] = lightColor;
