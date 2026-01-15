@@ -10,6 +10,7 @@
 #include <corona/resource/types/scene.h>
 #include <corona/shared_data_hub.h>
 #include <corona/systems/script/corona_engine_api.h>
+#include <corona/utils/path_utils.h>
 
 #include "corona/resource/types/image.h"
 
@@ -255,7 +256,8 @@ std::uintptr_t Corona::API::Environment::get_handle() const {
 //         Geometry
 // ########################
 Corona::API::Geometry::Geometry(const std::string& model_path) {
-    auto model_id = Resource::ResourceManager::get_instance().import_sync(std::filesystem::path(model_path));
+    // 使用 utf8_to_path 确保 UTF-8 编码的路径在 Windows 上正确转换
+    auto model_id = Resource::ResourceManager::get_instance().import_sync(Utils::utf8_to_path(model_path));
     if (model_id == 0) {
         CFW_LOG_CRITICAL("[Geometry] Failed to load model: {}", model_path);
         return;
@@ -295,7 +297,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     CFW_LOG_INFO("[Geometry] Model loaded from: {}", model_path);
     CFW_LOG_INFO("[Geometry] Scene contains {} nodes, {} meshes, {} materials",
                  scene->data.nodes.size(), scene->data.meshes.size(), scene->data.materials.size());
-    
+
     if (!scene->data.nodes.empty()) {
         const auto& root_node = scene->data.nodes[0];
         const auto& t = root_node.transform;
@@ -342,7 +344,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             const auto& material = scene->data.materials[mesh.material_index];
             dev.materialColor = material.base_color;
             CFW_LOG_DEBUG("[Geometry] Mesh {} using material color: ({}, {}, {}, {})",
-                          mesh_idx, dev.materialColor[0], dev.materialColor[1], 
+                          mesh_idx, dev.materialColor[0], dev.materialColor[1],
                           dev.materialColor[2], dev.materialColor[3]);
         }
 
@@ -351,7 +353,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         if (mesh.material_index != Resource::InvalidIndex &&
             mesh.material_index < scene->data.materials.size()) {
             auto texture_id = scene->data.materials[mesh.material_index].albedo_texture;
-            CFW_LOG_DEBUG("[Geometry] Mesh {} material {} texture_id: {}, InvalidTextureId: {}", 
+            CFW_LOG_DEBUG("[Geometry] Mesh {} material {} texture_id: {}, InvalidTextureId: {}",
                           mesh_idx, mesh.material_index, texture_id, Resource::InvalidTextureId);
 
             if (texture_id != Resource::InvalidTextureId) {
@@ -360,12 +362,12 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                     const int tex_width = texture_data->get_width();
                     const int tex_height = texture_data->get_height();
                     const int tex_channels = texture_data->get_channels();
-                    CFW_LOG_DEBUG("[Geometry] Mesh {} texture info: {}x{} channels={}", 
+                    CFW_LOG_DEBUG("[Geometry] Mesh {} texture info: {}x{} channels={}",
                                   mesh_idx, tex_width, tex_height, tex_channels);
-                    
+
                     if (tex_width > 0 && tex_height > 0 && tex_channels > 0) {
-                        constexpr bool use_compressed = false; // TODO: 测试模型兼容性  先不走压缩纹理
-                        
+                        constexpr bool use_compressed = false;  // TODO: 测试模型兼容性  先不走压缩纹理
+
                         if (use_compressed) {
                             // 使用压缩纹理格式
                             create_info.width = tex_width;
@@ -375,7 +377,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                             create_info.arrayLayers = 1;
                             create_info.mipLevels = 1;
                             auto* data_ptr = const_cast<unsigned char*>(texture_data->get_compressed_data().data.data());
-                            
+
                             dev.textureBuffer = HardwareImage(create_info);
                             HardwareExecutor temp_executor;
                             temp_executor << dev.textureBuffer.copyFrom(data_ptr) << temp_executor.commit();
@@ -402,7 +404,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                                     rgba_data[i * 4 + 0] = src_data[i * 3 + 0];  // R
                                     rgba_data[i * 4 + 1] = src_data[i * 3 + 1];  // G
                                     rgba_data[i * 4 + 2] = src_data[i * 3 + 2];  // B
-                                    rgba_data[i * 4 + 3] = 255;                   // A
+                                    rgba_data[i * 4 + 3] = 255;                  // A
                                 }
                                 data_to_copy = rgba_data.data();
                             } else if (tex_channels == 1) {
