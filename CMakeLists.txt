@@ -50,6 +50,22 @@ if(BUILD_CORONA_EXAMPLES)
 endif()
 
 # ------------------------------------------------------------------------------
+# Copy sync-deps.bat to _deps directory
+# ------------------------------------------------------------------------------
+# Use FETCHCONTENT_BASE_DIR if set, otherwise fall back to ${CMAKE_BINARY_DIR}/_deps
+if(FETCHCONTENT_BASE_DIR)
+    set(_DEPS_DIR "${FETCHCONTENT_BASE_DIR}")
+else()
+    set(_DEPS_DIR "${CMAKE_BINARY_DIR}/_deps")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sync-deps.bat")
+    file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/sync-deps.bat"
+         DESTINATION "${_DEPS_DIR}")
+    message(STATUS "Copied sync-deps.bat to ${_DEPS_DIR}")
+endif()
+
+# ------------------------------------------------------------------------------
 # Configuration Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
