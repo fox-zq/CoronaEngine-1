@@ -78,7 +78,14 @@ function(corona_add_example)
     add_executable(${CORONA_EX_NAME} ${CORONA_EX_SOURCES})
 
     target_compile_features(${CORONA_EX_NAME} PRIVATE cxx_std_20)
-    set_target_properties(${CORONA_EX_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY $<TARGET_FILE_DIR:${CORONA_EX_NAME}>)
+    
+    # Analyze the generator to set the working directory correctly
+    # VS Generator sometimes fails to expand $<TARGET_FILE_DIR> in this property, so we use the MSBuild macro.
+    if(CMAKE_GENERATOR MATCHES "Visual Studio")
+        set_target_properties(${CORONA_EX_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "$(TargetDir)")
+    else()
+        set_target_properties(${CORONA_EX_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY $<TARGET_FILE_DIR:${CORONA_EX_NAME}>)
+    endif()
 
     # target_link_libraries(${CORONA_EX_NAME} PRIVATE CoronaEngine cabbage::concurrent)
     if(COMMAND helicon_install_runtime_deps)
