@@ -203,6 +203,16 @@ bool Corona::API::Scene::has_viewport(const Viewport* viewport) const {
 Corona::API::Environment::Environment()
     : handle_(0) {
     handle_ = SharedDataHub::instance().environment_storage().allocate();
+    if (handle_ != 0) {
+        if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+            accessor->sun_position.x = 1.0f;
+            accessor->sun_position.y = 1.0f;
+            accessor->sun_position.z = 1.0f;
+            // accessor->floor_grid_enabled = true;
+
+            CFW_LOG_INFO("[Environment::Environment] Created {} handle", handle_);
+        }
+    }
 }
 
 Corona::API::Environment::~Environment() {
@@ -223,8 +233,9 @@ void Corona::API::Environment::set_sun_direction(const std::array<float, 3>& dir
         accessor->sun_position.y = direction[1];
         accessor->sun_position.z = direction[2];
 
-        CFW_LOG_INFO("[Environment::set_sun_direction] Sun direction set to: ({}, {}, {})",
-                     direction[0], direction[1], direction[2]);
+        // CFW_LOG_INFO("[Environment::set_sun_direction] Sun direction set to: ({}, {}, {})",
+        //              direction[0], direction[1], direction[2]);
+
     } else {
         CFW_LOG_ERROR("[Environment::set_sun_direction] Failed to acquire write access to environment storage");
     }
