@@ -9,13 +9,13 @@ layout(push_constant) uniform PushConsts
     vec4 materialColor;
 } pushConsts;
 
-layout(set = 0, binding = 0) uniform UniformBufferObject
+layout(set = 1, binding = 0) buffer UniformBufferObject
 {
     mat4 viewProjMatrix;
 } uniformBufferObjects[];
 
 
-layout (set = 1, binding = 0) uniform sampler2D textures[];
+layout (set = 0, binding = 0) uniform sampler2D textures[];
 
 layout(location = 0) in vec3 fragPos;
 layout(location = 1) in vec3 fragNormal;
