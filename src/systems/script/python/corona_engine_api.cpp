@@ -618,17 +618,37 @@ Corona::API::Geometry* Corona::API::Optics::get_geometry() const {
 Corona::API::Mechanics::Mechanics(Geometry& geo)
     : geometry_(&geo), handle_(0) {
     // 获取模型的包围盒信息
-    ktm::fvec3 max_xyz{0, 0, 0};
-    ktm::fvec3 min_xyz{0, 0, 0};
+    ktm::fvec3 max_xyz;
+    max_xyz.x = 0.0f;
+    max_xyz.y = 0.0f;
+    max_xyz.z = 0.0f;
 
-    if (auto geom_handle = SharedDataHub::instance().geometry_storage().acquire_read(geo.get_handle())) {
-        if (auto res_handle = SharedDataHub::instance().model_resource_storage().acquire_read(geom_handle->model_resource_handle)) {
-            // if (res_handle->model_id) {
-            //     max_xyz = res_handle->model_id->max_xyz;
-            //     min_xyz = res_handle->model_id->min_xyz;
-            // }
-            return;
+    ktm::fvec3 min_xyz;
+    min_xyz.x = 0.0f;
+    min_xyz.y = 0.0f;
+    min_xyz.z = 0.0f;
+
+    if (auto geom_handle = SharedDataHub::instance().geometry_storage().try_acquire_read(geo.get_handle())) {
+        if (auto res_handle = SharedDataHub::instance().model_resource_storage().try_acquire_read(geom_handle->model_resource_handle)) {
+            if (res_handle->model_id) {
+                if (auto scene = Resource::ResourceManager::get_instance().acquire_read<Resource::Scene>(res_handle->model_id)) {
+                    auto max = scene->get_scene_aabb().max;
+                    auto min = scene->get_scene_aabb().min;
+                    max_xyz.x = max[0];
+                    max_xyz.y = max[1];
+                    max_xyz.z = max[2];
+                    min_xyz.x = min[0];
+                    min_xyz.y = min[1];
+                    min_xyz.z = min[2];
+                } else {
+                    CFW_LOG_WARNING("[Mechanics] Failed to acquire scene resource; using default AABB");
+                }
+            }
+        } else {
+            CFW_LOG_WARNING("[Mechanics] Failed to read model resource; using default AABB");
         }
+    } else {
+        CFW_LOG_WARNING("[Mechanics] Failed to read geometry; using default AABB");
     }
 
     // 创建 MechanicsDevice
@@ -806,9 +826,26 @@ Corona::API::Actor::Profile* Corona::API::Actor::add_profile(const Profile& prof
         active_profile_handle_ = profile_handle;
     }
 
+    // 将 Profile 写入引擎侧 ProfileStorage，ActorDevice 只保存 ProfileStorage 的句柄
+    std::uintptr_t storage_profile_handle = SharedDataHub::instance().profile_storage().allocate();
+    if (auto p = SharedDataHub::instance().profile_storage().acquire_write(storage_profile_handle)) {
+        // Actor 作为组件类的 friend，可以读取组件句柄；但不能直接调用 Geometry 的受保护 get_handle()
+        p->optics_handle = profile.optics ? profile.optics->get_handle() : 0;
+        p->acoustics_handle = profile.acoustics ? profile.acoustics->get_handle() : 0;
+        p->mechanics_handle = profile.mechanics ? profile.mechanics->get_handle() : 0;
+        p->kinematics_handle = profile.kinematics ? profile.kinematics->get_handle() : 0;
+        p->geometry_handle = 0;
+    } else {
+        CFW_LOG_ERROR("[Actor::add_profile] Failed to acquire write access to profile storage");
+        SharedDataHub::instance().profile_storage().deallocate(storage_profile_handle);
+        storage_profile_handle = 0;
+    }
+
     if (handle_ != 0) {
         if (auto accessor = SharedDataHub::instance().actor_storage().acquire_write(handle_)) {
-            accessor->profile_handles.push_back(profile_handle);
+            if (storage_profile_handle != 0) {
+                accessor->profile_handles.push_back(storage_profile_handle);
+            }
         } else {
             CFW_LOG_ERROR("[Actor::add_profile] Failed to acquire write access to actor storage");
         }
@@ -897,9 +934,21 @@ std::uintptr_t Corona::API::Actor::get_handle() const {
 // ########################
 Corona::API::Camera::Camera()
     : handle_(0) {
-    ktm::fvec3 pos_vec{0.0f, 0.0f, -5.0f};
-    ktm::fvec3 fwd_vec{0.0f, 0.0f, 1.0f};
-    ktm::fvec3 up_vec{0.0f, 1.0f, 0.0f};
+    ktm::fvec3 pos_vec;
+    pos_vec.x = 0.0f;
+    pos_vec.y = 0.0f;
+    pos_vec.z = -5.0f;
+
+    ktm::fvec3 fwd_vec;
+    fwd_vec.x = 0.0f;
+    fwd_vec.y = 0.0f;
+    fwd_vec.z = 1.0f;
+
+    ktm::fvec3 up_vec;
+    up_vec.x = 0.0f;
+    up_vec.y = 1.0f;
+    up_vec.z = 0.0f;
+
     float fov = 45.0f;
 
     handle_ = SharedDataHub::instance().camera_storage().allocate();
@@ -917,9 +966,20 @@ Corona::API::Camera::Camera()
 
 Corona::API::Camera::Camera(const std::array<float, 3>& position, const std::array<float, 3>& forward, const std::array<float, 3>& world_up, float fov)
     : handle_(0) {
-    ktm::fvec3 pos_vec{position[0], position[1], position[2]};
-    ktm::fvec3 fwd_vec{forward[0], forward[1], forward[2]};
-    ktm::fvec3 up_vec{world_up[0], world_up[1], world_up[2]};
+    ktm::fvec3 pos_vec;
+    pos_vec.x = position[0];
+    pos_vec.y = position[1];
+    pos_vec.z = position[2];
+
+    ktm::fvec3 fwd_vec;
+    fwd_vec.x = forward[0];
+    fwd_vec.y = forward[1];
+    fwd_vec.z = forward[2];
+
+    ktm::fvec3 up_vec;
+    up_vec.x = world_up[0];
+    up_vec.y = world_up[1];
+    up_vec.z = world_up[2];
 
     handle_ = SharedDataHub::instance().camera_storage().allocate();
     if (auto accessor = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
@@ -947,9 +1007,20 @@ void Corona::API::Camera::set(const std::array<float, 3>& position, const std::a
         return;
     }
 
-    ktm::fvec3 pos_vec{position[0], position[1], position[2]};
-    ktm::fvec3 fwd_vec{forward[0], forward[1], forward[2]};
-    ktm::fvec3 up_vec{world_up[0], world_up[1], world_up[2]};
+    ktm::fvec3 pos_vec;
+    pos_vec.x = position[0];
+    pos_vec.y = position[1];
+    pos_vec.z = position[2];
+
+    ktm::fvec3 fwd_vec;
+    fwd_vec.x = forward[0];
+    fwd_vec.y = forward[1];
+    fwd_vec.z = forward[2];
+
+    ktm::fvec3 up_vec;
+    up_vec.x = world_up[0];
+    up_vec.y = world_up[1];
+    up_vec.z = world_up[2];
 
     if (auto accessor = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
         accessor->position = pos_vec;
