@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+# ==============================================================================
 # CoronaEngine - Examples Build Configuration
 #
 # Responsibilities:
@@ -81,7 +81,8 @@ function(corona_add_example)
     
     # Analyze the generator to set the working directory correctly
     # VS Generator sometimes fails to expand $<TARGET_FILE_DIR> in this property, so we use the MSBuild macro.
-    set_target_properties(${CORONA_EX_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+    set_target_properties(${CORONA_EX_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY $<TARGET_FILE_DIR:${CORONA_EX_NAME}>)
+
 
     # target_link_libraries(${CORONA_EX_NAME} PRIVATE CoronaEngine cabbage::concurrent)
     if(COMMAND helicon_install_runtime_deps)
