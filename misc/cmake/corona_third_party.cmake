@@ -70,6 +70,48 @@ FetchContent_Declare(CoronaFramework
 )
 
 
+FetchContent_Declare(
+        glfw
+        GIT_REPOSITORY https://github.com/glfw/glfw.git
+        GIT_TAG master
+        EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(
+        volk
+        GIT_REPOSITORY https://github.com/zeux/volk.git
+        GIT_TAG master
+        EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(
+        Vulkan-Headers
+        GIT_REPOSITORY https://github.com/KhronosGroup/Vulkan-Headers.git
+        GIT_TAG main
+        EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(
+        VulkanMemoryAllocator
+        GIT_REPOSITORY https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git
+        GIT_TAG master
+        EXCLUDE_FROM_ALL
+)
+
+FetchContent_Declare(
+        SDL
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG release-3.4.0
+        GIT_SHALLOW ON
+)
+
+FetchContent_Declare(
+        imgui
+        GIT_REPOSITORY https://github.com/ocornut/imgui.git
+        GIT_TAG v1.92.5-docking
+        EXCLUDE_FROM_ALL
+)
+
 # ------------------------------------------------------------------------------
 # Fetch and enable dependencies
 # ------------------------------------------------------------------------------
@@ -93,6 +135,46 @@ message(STATUS "[3rdparty] CoronaResource module enabled")
 
 FetchContent_MakeAvailable(CoronaFramework)
 message(STATUS "[3rdparty] CoronaFramework module enabled")
+
+FetchContent_MakeAvailable(glfw)
+message(STATUS "[3rdparty] glfw module enabled")
+
+FetchContent_MakeAvailable(volk)
+message(STATUS "[3rdparty] volk module enabled")
+
+FetchContent_MakeAvailable(Vulkan-Headers)
+message(STATUS "[3rdparty] Vulkan-Headers module enabled")
+
+FetchContent_MakeAvailable(VulkanMemoryAllocator)
+message(STATUS "[3rdparty] VulkanMemoryAllocator module enabled")
+
+FetchContent_MakeAvailable(SDL)
+message(STATUS "[3rdparty] SDL module enabled")
+
+FetchContent_MakeAvailable(imgui)
+message(STATUS "[3rdparty] imgui module enabled")
+
+# Manually define imgui target since it has no CMakeLists.txt
+if(NOT TARGET imgui)
+    add_library(imgui STATIC
+            "${imgui_SOURCE_DIR}/imgui.cpp"
+            "${imgui_SOURCE_DIR}/imgui_demo.cpp"
+            "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+            "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+            "${imgui_SOURCE_DIR}/imgui_widgets.cpp"
+    )
+    target_include_directories(imgui PUBLIC "${imgui_SOURCE_DIR}")
+
+    # Manually define imgui target since it has no CMakeLists.txt
+    if(MSVC)
+        # Allow imgui to inherit global runtime settings (MD/MDd)
+    endif()
+endif()
+
+# 确保所有第三方库使用与项目一致的运行时配置
+if(MSVC)
+    # No manual overrides - rely on global CMAKE_MSVC_RUNTIME_LIBRARY
+endif()
 
 if(CORONA_BUILD_HARDWARE)
     FetchContent_MakeAvailable(CabbageHardware)

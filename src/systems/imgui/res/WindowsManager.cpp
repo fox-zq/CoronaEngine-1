@@ -8,6 +8,18 @@ int g_tabCounter = 0;
 
 namespace fs = std::filesystem;
 
+// 创建 Vulkan 纹理（占位符）
+VkDescriptorSet CreateBrowserTexture(int width, int height) {
+    // TODO: Implement Vulkan texture creation
+    // 1. Create VkImage
+    // 2. Alloc Memory
+    // 3. Create ImageView
+    // 4. Create Sampler
+    // 5. Use ImGui_ImplVulkan_AddTexture(sampler, imageView, layout) -> VkDescriptorSet
+    return VK_NULL_HANDLE;
+}
+
+/*
 // 创建 OpenGL 纹理
 GLuint CreateOpenGLTexture(int width, int height) {
     GLuint textureId;
@@ -19,6 +31,7 @@ GLuint CreateOpenGLTexture(int width, int height) {
     glBindTexture(GL_TEXTURE_2D, 0);
     return textureId;
 }
+*/
 
 // 转换本地路径为URL
 std::string ConvertLocalPathToUrl(const std::string& localPath) {
@@ -106,7 +119,7 @@ BrowserTab* CreateBrowserTab(const std::string& url) {
     tab->client->SetTab(tab);
 
     // 创建 OpenGL 纹理
-    tab->textureId = CreateOpenGLTexture(tab->width, tab->height);
+    tab->textureId = CreateBrowserTexture(tab->width, tab->height);
 
     // 创建离屏浏览器
     CefWindowInfo windowInfo;
@@ -129,11 +142,12 @@ BrowserTab* CreateBrowserTab(const std::string& url) {
 
 // 更新浏览器纹理
 void UpdateBrowserTexture(BrowserTab* tab) {
-    if (tab->bufferDirty && !tab->pixelBuffer.empty() && tab->textureId != 0) {
-        glBindTexture(GL_TEXTURE_2D, tab->textureId);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tab->width, tab->height,
-                        GL_BGRA, GL_UNSIGNED_BYTE, tab->pixelBuffer.data());
-        glBindTexture(GL_TEXTURE_2D, 0);
+    if (tab->bufferDirty && !tab->pixelBuffer.empty() && tab->textureId != VK_NULL_HANDLE) {
+        // TODO: Implement Vulkan texture upload
+        // 1. Map memory or use staging buffer
+        // 2. Copy pixelBuffer to VkImage
+        // 3. Transition image layout
+        // For Offscreen CEF, we receive BGRA buffer. We need to upload it.
         tab->bufferDirty = false;
     }
 }
@@ -143,8 +157,10 @@ void CloseBrowserTab(BrowserTab* tab) {
     if (tab->client && tab->client->GetBrowser()) {
         tab->client->GetBrowser()->GetHost()->CloseBrowser(true);
     }
-    if (tab->textureId != 0) {
-        glDeleteTextures(1, &tab->textureId);
+    if (tab->textureId != VK_NULL_HANDLE) {
+        // TODO: ImGui_ImplVulkan_RemoveTexture(tab->textureId);
+        // Also destroy underlying VkImage/Memory/ImageView if we own them.
+        tab->textureId = VK_NULL_HANDLE;
     }
     delete tab;
 }

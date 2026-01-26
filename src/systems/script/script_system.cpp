@@ -24,7 +24,7 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
 void ScriptSystem::update() {
 
 #ifdef CORONA_ENABLE_PYTHON_API
-    python_api_.runPythonScript();
+    // python_api_.runPythonScript();
 #endif
 
 }

@@ -35,6 +35,7 @@ include(corona_add_system)          # Helper for adding system modules
 include(corona_runtime_deps)        # Runtime dependency collection and copy helpers
 include(corona_editor)              # Editor asset packaging helpers
 include(corona_imgui)
+include(corona_cef)
 
 # ------------------------------------------------------------------------------
 # Testing Support

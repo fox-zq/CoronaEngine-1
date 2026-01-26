@@ -8,7 +8,8 @@
 
 // SDL & OpenGL
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
+#include <SDL3/SDL_vulkan.h>
+#include <volk.h>
 
 // CEF headers
 #include <cef_app.h>
@@ -32,7 +33,7 @@ struct BrowserTab {
     std::string name;
     std::string url;
     CefRefPtr<OffscreenCefClient> client;
-    GLuint textureId = 0;  // OpenGL 纹理
+    VkDescriptorSet textureId = VK_NULL_HANDLE;  // Vulkan 纹理描述符集
     int width = 800;
     int height = 600;
     bool open = true;
@@ -247,7 +248,7 @@ private:
 extern std::vector<BrowserTab*> g_tabs;
 extern int g_tabCounter;
 // 函数声明
-GLuint CreateOpenGLTexture(int width, int height);
+VkDescriptorSet CreateBrowserTexture(int width, int height);
 std::string ConvertLocalPathToUrl(const std::string& localPath);
 std::string ResolveHtmlPathForCef(const std::string& maybeRelativePath);
 BrowserTab* CreateBrowserTab(const std::string& url);
@@ -286,3 +287,5 @@ private:
 
     IMPLEMENT_REFCOUNTING(SimpleApp);
 };
+
+

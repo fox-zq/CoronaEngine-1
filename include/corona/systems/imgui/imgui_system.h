@@ -4,14 +4,14 @@
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
+#include <corona/systems/imgui/vulkan_backend.h>
 
 #include <memory>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
-#include <imgui_impl_opengl3.h>
+#include <imgui_impl_vulkan.h>
 
 // CEF headers
 #include <cef_app.h>
@@ -75,13 +75,14 @@ class ImguiSystem : public Kernel::SystemBase {
     void shutdown() override;
 
    private:
-
         SDL_Event event;
         bool showDemoWindow;
         bool running;
-        SDL_GLContext glContext;
         SDL_Window* window;
         ImGuiIO io;
+
+        std::unique_ptr<VulkanBackend> m_VulkanBackend;
 };
 
 }  // namespace Corona::Systems
+
