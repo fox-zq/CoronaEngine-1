@@ -1,4 +1,4 @@
-#include "corona/engine.h"
+﻿#include "corona/engine.h"
 
 #include <corona/events/engine_events.h>
 #include <corona/systems/acoustics/acoustics_system.h>
@@ -8,6 +8,7 @@
 #include <corona/systems/mechanics/mechanics_system.h>
 #include <corona/systems/optics/optics_system.h>
 #include <corona/systems/script/script_system.h>
+#include <corona/systems/imgui/imgui_system.h>
 #include <corona/kernel/core/i_logger.h>
 
 #include <corona/resource/resource_manager.h>
@@ -251,6 +252,9 @@ bool Engine::register_systems() {
 
     sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
     CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
+
+    sys_mgr->register_system(std::make_shared<Systems::ImguiSystem>());
+    CFW_LOG_INFO("  - ImguiSystem registered (priority 50)");
 
     CFW_LOG_NOTICE("All core systems registered successfully");
 

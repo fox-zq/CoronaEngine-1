@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # CoronaEngine - Source Library
 #
 # 构建引擎核心库和系统模块
@@ -45,6 +45,7 @@ add_library(CoronaEngine STATIC
         ${PROJECT_SOURCE_DIR}/include/corona/events/mechanics_system_events.h
         ${PROJECT_SOURCE_DIR}/include/corona/events/optics_system_events.h
         ${PROJECT_SOURCE_DIR}/include/corona/events/script_system_events.h
+        ${PROJECT_SOURCE_DIR}/include/corona/events/imgui_system_events.h
 )
 
 add_library(corona::engine ALIAS CoronaEngine)
@@ -64,6 +65,7 @@ target_link_libraries(CoronaEngine PUBLIC
         corona::system::display
         corona::system::kinematics
         corona::system::script
+        corona::system::imgui
 )
 
 # 设置 C++ 标准

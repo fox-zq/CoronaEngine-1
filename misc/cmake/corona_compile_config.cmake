@@ -1,4 +1,4 @@
-# ==============================================================================
+﻿# ==============================================================================
 # corona_compile_config.cmake
 #
 # Purpose:
@@ -95,10 +95,10 @@ endif()
 # ------------------------------------------------------------------------------
 if(MSVC)
     add_compile_options(
-        $<$<COMPILE_LANGUAGE:C>:/source-charset:utf-8>
-        $<$<COMPILE_LANGUAGE:C>:/execution-charset:utf-8>
-        $<$<COMPILE_LANGUAGE:CXX>:/source-charset:utf-8>
-        $<$<COMPILE_LANGUAGE:CXX>:/execution-charset:utf-8>
+        $<$<COMPILE_LANGUAGE:C>:/utf-8>
+        $<$<COMPILE_LANGUAGE:C>:/utf-8>
+        $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+        $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
     )
 endif()
 

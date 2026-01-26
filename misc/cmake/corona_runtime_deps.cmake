@@ -1,4 +1,4 @@
-# ============================================================================== 
+﻿# ============================================================================== 
 # corona_runtime_deps.cmake
 #
 # Purpose:
@@ -70,6 +70,40 @@ function(corona_install_runtime_deps target_name)
             VERBATIM
         )
     endif()
+
+    set(CEF_DEBUG_DIR "${PROJECT_SOURCE_DIR}/third_party/cef/src/Debug")
+    set(CEF_RES_DIR "${PROJECT_SOURCE_DIR}/third_party/cef/src/Resources")
+
+     # Copy Windows runtime files next to the exe (per config)
+    add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CEF_DEBUG_DIR}/libcef.dll"
+            "${_CORONA_DESTINATION_DIR}/libcef.dll"
+
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CEF_DEBUG_DIR}/chrome_elf.dll"
+            "${_CORONA_DESTINATION_DIR}/chrome_elf.dll"
+
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CEF_DEBUG_DIR}/libEGL.dll"
+            "${_CORONA_DESTINATION_DIR}/libEGL.dll"
+
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CEF_DEBUG_DIR}/libGLESv2.dll"
+            "${_CORONA_DESTINATION_DIR}/libGLESv2.dll"
+
+            # Common CEF runtime file (present in most builds)
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CEF_DEBUG_DIR}/v8_context_snapshot.bin"
+            "${_CORONA_DESTINATION_DIR}/v8_context_snapshot.bin"
+
+                        # 复制所有资源文件 (locales/, .pak, .dat 等) 到可执行文件目录
+            # 注意：CEF 默认期望这些文件就在 exe 旁边，而不是在 Resources 子目录中
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CEF_RES_DIR}"
+            "${_CORONA_DESTINATION_DIR}"
+    )
+
 endfunction()
 
 # ------------------------------------------------------------------------------
