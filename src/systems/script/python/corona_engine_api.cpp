@@ -490,6 +490,9 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             }
             batch_executor << batch_executor.commit();
             
+            // 强制等待每一批上传完成，防止短时间内提交过多 CommandBuffer 导致 Device Lost (TDR) 或内存问题
+            batch_executor.waitForDeferredResources();
+            
             CFW_LOG_DEBUG("[Geometry] Uploaded texture batch {}-{}/{}", 
                          batch_start, batch_end - 1, pending_uploads.size());
         }
