@@ -191,7 +191,12 @@ void OpticsSystem::optics_pipeline(float frame_count) const {
                             for (auto& m : geom->mesh_handles) {
                                 hardware_->rasterizerPipeline["pushConsts.modelMatrix"] = model_matrix;
                                 hardware_->rasterizerPipeline["pushConsts.uniformBufferIndex"] = hardware_->gbufferUniformBuffer.storeDescriptor();
-                                hardware_->rasterizerPipeline["pushConsts.textureIndex"] = m.textureBuffer.storeDescriptor();
+                                // 检查纹理是否有效，避免对未初始化的 HardwareImage 调用 storeDescriptor()
+                                if (m.textureBuffer) {
+                                    hardware_->rasterizerPipeline["pushConsts.textureIndex"] = m.textureBuffer.storeDescriptor();
+                                } else {
+                                    hardware_->rasterizerPipeline["pushConsts.textureIndex"] = static_cast<uint32_t>(0);
+                                }
                                 // 传递材质颜色到着色器
                                 ktm::fvec4 materialColor{m.materialColor[0], m.materialColor[1], m.materialColor[2], m.materialColor[3]};
                                 hardware_->rasterizerPipeline["pushConsts.materialColor"] = materialColor;

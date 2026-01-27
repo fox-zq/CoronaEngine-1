@@ -432,6 +432,29 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             }
         }
 
+        // 为没有纹理的网格使用全局共享的默认 1x1 白色占位纹理
+        // 避免为每个网格创建独立的纹理，防止 GPU 资源耗尽
+        if (!dev.textureBuffer) {
+            static HardwareImage shared_placeholder_texture = []() {
+                HardwareImageCreateInfo placeholder_info{};
+                placeholder_info.width = 1;
+                placeholder_info.height = 1;
+                placeholder_info.format = ImageFormat::RGBA8_SRGB;
+                placeholder_info.usage = ImageUsage::SampledImage;
+                placeholder_info.arrayLayers = 1;
+                placeholder_info.mipLevels = 1;
+
+                static const unsigned char white_pixel[4] = {255, 255, 255, 255};
+                HardwareImage texture(placeholder_info);
+                HardwareExecutor temp_executor;
+                temp_executor << texture.copyFrom(white_pixel) << temp_executor.commit();
+                CFW_LOG_INFO("[Geometry] Created shared default white placeholder texture (1x1)");
+                return texture;
+            }();
+
+            dev.textureBuffer = shared_placeholder_texture;
+        }
+
         mesh_devices.emplace_back(std::move(dev));
     }
 
