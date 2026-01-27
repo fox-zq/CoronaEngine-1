@@ -43,6 +43,10 @@ struct BrowserTab {
     bool bufferDirty = false;
 };
 
+
+// Expose Vulkan backend pointer so browser texture helpers can access device/queue
+namespace Corona::Systems { class VulkanBackend; extern VulkanBackend* g_vulkan_backend; }
+
 // 离屏渲染的 CefRenderHandler
 class OffscreenRenderHandler : public CefRenderHandler {
 public:

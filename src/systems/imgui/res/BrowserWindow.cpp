@@ -159,10 +159,11 @@ void SimpleApp::OnBeforeCommandLineProcessing(const CefString& process_type,
     command_line->AppendSwitch("allow-file-access");
     // 禁用沙箱（仅用于开发）
     command_line->AppendSwitch("no-sandbox");
-    // 启用硬件加速
-    command_line->AppendSwitch("enable-gpu");
-    // 禁用GPU黑名单
-    command_line->AppendSwitch("ignore-gpu-blacklist");
+    // Disable GPU to avoid GPU subprocess crashes on some systems/configs
+    // (CEF will fall back to software rendering)
+    command_line->AppendSwitch("disable-gpu");
+    command_line->AppendSwitch("disable-gpu-compositing");
+    //command_line->AppendSwitch("disable-surfaces");
     // 启用插件
     command_line->AppendSwitch("enable-plugins");
     // 启用网络服务

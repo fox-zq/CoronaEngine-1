@@ -67,6 +67,10 @@ class ImguiSystem : public Kernel::SystemBase {
      */
     void update() override;
 
+    // Run the system thread loop; override to perform graphics initialization
+    // on the system thread so SDL event handling runs on the same thread
+    void thread_loop() override;
+
     /**
      * @brief 关闭显示系统
      *
@@ -79,7 +83,7 @@ class ImguiSystem : public Kernel::SystemBase {
         bool showDemoWindow;
         bool running;
         SDL_Window* window;
-        ImGuiIO io;
+        ImGuiIO *io = nullptr;
 
         std::unique_ptr<VulkanBackend> m_VulkanBackend;
 };

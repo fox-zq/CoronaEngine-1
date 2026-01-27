@@ -15,7 +15,7 @@ namespace Corona::Systems {
         g_messageRouterConfig.js_query_function = "cefQuery"; // JS端调用的函数名
         g_messageRouterConfig.js_cancel_function = "cefQueryCancel"; // JS端取消函数名
 
-        // CEF 初始化
+        // CEF 初始化 (main process check and CefInitialize)
         CefMainArgs mainArgs(GetModuleHandle(nullptr));
 
         // 创建App实例
@@ -28,7 +28,7 @@ namespace Corona::Systems {
         CefSettings settings;
         settings.multi_threaded_message_loop = true;
         settings.windowless_rendering_enabled = true; // 启用离屏渲染
-
+     
         settings.no_sandbox = true; // 禁用沙箱
         settings.remote_debugging_port = 9222; // 启用远程调试
 
@@ -68,37 +68,45 @@ namespace Corona::Systems {
             return EXIT_FAILURE;
         }
 
+        // Defer heavy graphics initialization to the system thread (thread_loop)
+        running = true;
+
+        return true;
+    }
+
+    void ImguiSystem::thread_loop() {
+        // Perform SDL/Vulkan/ImGui initialization on this thread so event handling
+        // and rendering occur on the same thread that calls update(). This avoids
+        // windows becoming unresponsive when SDL event polling is done from another thread.
+
         // SDL 初始化
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             std::cerr << "SDL_Init Error: " << SDL_GetError() << '\n';
             CefShutdown();
-            return EXIT_FAILURE;
+            running = false;
+            return;
         }
-
-        // 设置 Vulkan 属性
-        // SDL_WINDOW_VULKAN flag is needed for Vulkan
 
         // 创建 SDL 窗口 (带 Vulkan 支持)
         window = SDL_CreateWindow("Corona Engine (Vulkan)", 1400, 900,
-                                  SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN); // Hidden initially to avoid flash?
-
+                                  SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
         if (window == nullptr) {
             std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << '\n';
             SDL_Quit();
             CefShutdown();
-            return EXIT_FAILURE;
+            running = false;
+            return;
         }
 
         SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
         SDL_ShowWindow(window);
 
-        // 初始化 Volk
         if (volkInitialize() != VK_SUCCESS) {
             std::cerr << "Failed to initialize Volk\n";
-            return EXIT_FAILURE;
+            running = false;
+            return;
         }
 
-        // 获取 SDL 必需的 Vulkan 扩展 (SDL3 方式)
         uint32_t extensions_count = 0;
         char const* const* extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
         std::vector<const char*> extensions;
@@ -108,30 +116,28 @@ namespace Corona::Systems {
             }
         }
 
-        // 初始化 Vulkan Backend
         m_VulkanBackend = std::make_unique<VulkanBackend>(window);
         m_VulkanBackend->Initialize(extensions);
+        // expose backend for browser helpers
+        Corona::Systems::g_vulkan_backend = m_VulkanBackend.get();
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
-        io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        io.ConfigFlags |= ImGuiConfigFlags_DockingEnable; // 启用 Docking
-        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // 启用多视口
+        io = &ImGui::GetIO();
+        io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        io->ConfigFlags |= ImGuiConfigFlags_DockingEnable; // 启用 Docking
+        io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // 启用多视口
 
         ImGui::StyleColorsDark();
 
-        // 当启用 viewports 时调整样式
         ImGuiStyle &style = ImGui::GetStyle();
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
             style.WindowRounding = 0.0f;
             style.Colors[ImGuiCol_WindowBg].w = 1.0f;
         }
 
-        // 使用 SDL3 平台后端初始化 ImGui
         ImGui_ImplSDL3_InitForVulkan(window);
 
-        // 使用 Vulkan 渲染后端初始化 ImGui
         ImGui_ImplVulkan_InitInfo init_info = {};
         init_info.Instance = m_VulkanBackend->GetInstance();
         init_info.PhysicalDevice = m_VulkanBackend->GetPhysicalDevice();
@@ -146,32 +152,64 @@ namespace Corona::Systems {
 
         ImGui_ImplVulkan_Init(&init_info);
 
+        
+        CreateBrowserTab("https://www.google.com");
+
+
         showDemoWindow = false;
-        running = true;
-        return true;
+
+        // Main loop: call update() until should_run_ becomes false
+        using Corona::Kernel::SystemState;
+        while (running && get_state() == SystemState::running) {
+            // call update which will poll events, render, etc.
+            update();
+        }
+
+        // Cleanup
+        ImGui_ImplVulkan_Shutdown();
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+
+        if (m_VulkanBackend) {
+            m_VulkanBackend->Shutdown();
+            m_VulkanBackend.reset();
+            Corona::Systems::g_vulkan_backend = nullptr;
+        }
+
+        if (window) {
+            SDL_DestroyWindow(window);
+            window = nullptr;
+        }
+        SDL_Quit();
+
+        CefShutdown();
     }
 
     void ImguiSystem::update() {
+        if (!running) {
+            return;
+        }
+
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
+
             if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
             if (event.type == SDL_EVENT_WINDOW_RESIZED && event.window.windowID == SDL_GetWindowID(window)) {
                 // Resize swapchain
-                 m_VulkanBackend->SetSwapChainRebuild(true);
+                m_VulkanBackend->SetSwapChainRebuild(true);
             }
         }
 
-        if (m_VulkanBackend->IsSwapChainRebuild())
-        {
+        if (m_VulkanBackend->IsSwapChainRebuild()) {
             int width, height;
             SDL_GetWindowSize(window, &width, &height);
             m_VulkanBackend->RebuildSwapChain(width, height);
         }
 
         // Start the Dear ImGui frame
-        m_VulkanBackend->NewFrame(); // Must be called!
+        m_VulkanBackend->NewFrame();  // Must be called!
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
@@ -184,7 +222,7 @@ namespace Corona::Systems {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
         dockSpaceFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                ImGuiWindowFlags_NoMove;
+                            ImGuiWindowFlags_NoMove;
         dockSpaceFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -237,7 +275,7 @@ namespace Corona::Systems {
 
         // 渲染每个浏览器标签页窗口
         std::vector<BrowserTab *> tabsToClose;
-        for (auto *tab: g_tabs) {
+        for (auto *tab : g_tabs) {
             if (!tab->open) {
                 tabsToClose.push_back(tab);
                 continue;
@@ -252,7 +290,7 @@ namespace Corona::Systems {
                 // URL 输入框和导航按钮
                 ImGui::PushItemWidth(-200);
                 if (ImGui::InputText("##url", tab->urlBuffer, sizeof(tab->urlBuffer),
-                                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                        ImGuiInputTextFlags_EnterReturnsTrue)) {
                     if (tab->client && tab->client->GetBrowser()) {
                         tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->urlBuffer);
                     }
@@ -285,8 +323,8 @@ namespace Corona::Systems {
 
                 // 获取可用空间
                 ImVec2 availSize = ImGui::GetContentRegionAvail();
-                int newWidth = (int) availSize.x;
-                int newHeight = (int) availSize.y;
+                int newWidth = (int)availSize.x;
+                int newHeight = (int)availSize.y;
 
                 // 检查是否需要调整大小
                 if (newWidth > 0 && newHeight > 0 &&
@@ -309,60 +347,81 @@ namespace Corona::Systems {
 
                 // 显示浏览器内容
                 if (tab->textureId != VK_NULL_HANDLE) {
-                    ImGui::Image((ImTextureID) (intptr_t) tab->textureId, availSize);
+                    ImGui::Image((ImTextureID)(intptr_t)tab->textureId, availSize);
 
                     // Input handling code...
                     // (Simplified for brevity, assuming existing code handles input well)
+                    // 处理鼠标事件
+                    if (ImGui::IsItemHovered()) {
+                        CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr;
+                        if (browser) {
+                            ImVec2 mousePos = ImGui::GetMousePos();
+                            ImVec2 itemPos = ImGui::GetItemRectMin();
+                            int x = (int)(mousePos.x - itemPos.x);
+                            int y = (int)(mousePos.y - itemPos.y);
+
+                            CefMouseEvent mouseEvent;
+                            mouseEvent.x = x;
+                            mouseEvent.y = y;
+                            mouseEvent.modifiers = 0;
+
+                            browser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
+
+                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                                browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
+                            }
+                            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                                browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
+                            }
+
+                            // 滚轮事件
+                            float wheel = io->MouseWheel;
+                            if (wheel != 0) {
+                                browser->GetHost()->SendMouseWheelEvent(mouseEvent, 0, (int)(wheel * 100));
+                            }
+                        }
+                    }
                 }
             }
             ImGui::End();
         }
 
         // 关闭标记为关闭的标签页
-        for (auto *tab: tabsToClose) {
+        for (auto *tab : tabsToClose) {
             g_tabs.erase(std::remove(g_tabs.begin(), g_tabs.end(), tab), g_tabs.end());
             CloseBrowserTab(tab);
         }
 
         ImGui::Render();
-        ImDrawData* draw_data = ImGui::GetDrawData();
+        ImDrawData *draw_data = ImGui::GetDrawData();
         const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
-        if (!is_minimized)
-        {
+        if (!is_minimized) {
             m_VulkanBackend->RenderFrame(draw_data);
             m_VulkanBackend->PresentFrame();
         }
 
         // Update and Render additional Platform Windows
-        if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
             ImGui::UpdatePlatformWindows();
             ImGui::RenderPlatformWindowsDefault();
         }
+
     }
 
     void ImguiSystem::shutdown() {
         CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
 
-        if (m_VulkanBackend) {
-            m_VulkanBackend->Shutdown();
-        }
+        // Signal thread to stop if running
+        running = false;
 
+        // Vulkan backend and SDL cleanup are performed in thread_loop when the
+        // system thread exits. Here just close browser tabs and clear state.
         for (auto *tab: g_tabs) {
             CloseBrowserTab(tab);
         }
         g_tabs.clear();
-
-        ImGui_ImplVulkan_Shutdown();
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext();
-
-        m_VulkanBackend.reset(); // Destroy backend before window
-
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-
-        CefShutdown();
     }
 
 
 }  // namespace Corona::Systems
+
