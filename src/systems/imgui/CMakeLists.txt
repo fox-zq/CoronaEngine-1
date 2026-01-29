@@ -37,6 +37,8 @@ corona_add_system(imgui
         psapi
         version
         winmm
+        Python::Python
+        nanobind-static
     INCLUDE_DIRS
         ${CMAKE_SOURCE_DIR}/build_deps/imgui-src
         ${volk_SOURCE_DIR}

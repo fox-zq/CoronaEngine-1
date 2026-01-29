@@ -1,4 +1,7 @@
 ﻿#pragma once
+#include <Python.h>
+//#include <nanobind/nanobind.h>
+//namespace nb = nanobind;
 
 #include <string>
 #include <vector>
@@ -71,36 +74,12 @@ public:
 
     // 处理来自JS的请求
     virtual bool OnQuery(CefRefPtr<CefBrowser> browser,
-        CefRefPtr<CefFrame> frame,
-        int64_t query_id,
-        const CefString& request,
-        bool persistent,
-        CefRefPtr<Callback> callback) override {
-        CEF_REQUIRE_UI_THREAD();
-        std::string req = request.ToString();
-        std::cout << "[Browser] Received query: " << req << std::endl;
-
-
-
-
-
-        if (req == "getVersion") {
-            callback->Success("Browser Version 1.0.0");
-            return true;
-        }
-        else if (req == "calculate") {
-            callback->Success("42");  // 计算结果
-            return true;
-        }
-        else if (req == "testPython") {
-        
-            return true;
-        }
-
-        // 默认处理
-        callback->Failure(400, "Unknown request: " + req);
-        return true;
-    }
+                         CefRefPtr<CefFrame> frame,
+                         int64_t query_id,
+                         const CefString& request,
+                         bool persistent,
+                         CefRefPtr<Callback> callback) override;
+    
 
     virtual void OnQueryCanceled(CefRefPtr<CefBrowser> browser,
         CefRefPtr<CefFrame> frame,
@@ -112,6 +91,10 @@ public:
 private:
     IMPLEMENT_REFCOUNTING(BrowserSideJSHandler);
     DISALLOW_COPY_AND_ASSIGN(BrowserSideJSHandler);
+
+
+    PyObject* pFunc;
+
 };
 
 // 离屏渲染的 CefClient
@@ -255,7 +238,7 @@ extern int g_tabCounter;
 VkDescriptorSet CreateBrowserTexture(int width, int height);
 std::string ConvertLocalPathToUrl(const std::string& localPath);
 std::string ResolveHtmlPathForCef(const std::string& maybeRelativePath);
-BrowserTab* CreateBrowserTab(const std::string& url);
+extern "C" BrowserTab* CreateBrowserTab(const std::string& url);
 void UpdateBrowserTexture(BrowserTab* tab);
 void CloseBrowserTab(BrowserTab* tab);
 
@@ -291,5 +274,4 @@ private:
 
     IMPLEMENT_REFCOUNTING(SimpleApp);
 };
-
 

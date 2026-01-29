@@ -6,7 +6,36 @@
 #include <corona/systems/imgui/imgui_system.h>
 #include <corona/systems/imgui/res/BrowserWindow.h>
 
+#include <nanobind/nanobind.h>
+namespace nb = nanobind;
+
+ NB_MODULE(Imgui, m) {
+     m.doc() = "CoronaEngine embedded Python module (nanobind)";
+
+      m.def("create_browser_tab", [](nb::object py_url) -> BrowserTab * {
+                try {
+                    // 手动转换 Python 字符串
+                    if (!py_url.is_valid()) {
+                        std::cerr << "[ERROR] Invalid Python object!" << std::endl;
+                        return nullptr;
+                    }
+                
+                    // 获取字符串表示
+                    nb::str py_str = nb::str(py_url);
+                    std::string url = py_str.c_str();
+                
+                    std::cout << "[NANOBIND PYOBJ] URL from Python: " << url << std::endl;
+                    return CreateBrowserTab(url);
+                
+                } catch (const std::exception& e) {
+                    std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
+                    return nullptr;
+                } }, nb::arg("url") = "", nb::rv_policy::take_ownership);
+ }
+
 CefMessageRouterConfig g_messageRouterConfig;
+
+extern "C" PyObject *PyInit_Imgui();
 
 namespace Corona::Systems {
     bool ImguiSystem::initialize(Kernel::ISystemContext *ctx) {
@@ -153,8 +182,49 @@ namespace Corona::Systems {
         ImGui_ImplVulkan_Init(&init_info);
 
         
-        CreateBrowserTab("https://www.google.com");
+        //CreateBrowserTab("https://www.google.com");
+        CreateBrowserTab(ResolveHtmlPathForCef("/test.html"));
 
+                    // 注册 nanobind 导出的 CoronaEngine 模块
+        PyImport_AppendInittab("Imgui", &PyInit_Imgui);
+
+        if (!Py_IsInitialized()) {
+            Py_Initialize();
+            PyEval_InitThreads();  // initialize and acquire the GIL
+            PyEval_SaveThread();   // release GIL
+        }
+
+        PyGILState_STATE gstate = PyGILState_Ensure();
+
+        PyObject *module_name = PyUnicode_FromString("Imgui");
+        PyObject *imgui_module = PyImport_Import(module_name);
+
+        if (imgui_module == nullptr) {
+            std::cerr << "[ERROR] Failed to import Imgui module from Python!" << std::endl;
+            PyErr_Print();  // 打印 Python 错误
+        } else {
+            std::cout << "[DEBUG] Successfully imported Imgui module!" << std::endl;
+
+            // 测试 create_browser_tab 函数是否存在
+            PyObject *func = PyObject_GetAttrString(imgui_module, "create_browser_tab");
+            if (func && PyCallable_Check(func)) {
+                std::cout << "[DEBUG] create_browser_tab function is available!" << std::endl;
+            } else {
+                std::cerr << "[ERROR] create_browser_tab function not found or not callable!" << std::endl;
+            }
+            Py_XDECREF(func);
+        }
+
+        PyRun_SimpleString("import sys");
+        PyRun_SimpleString("import os");
+        PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
+        PyObject *pName = PyUnicode_FromString("test");
+        PyObject *pModule = PyImport_Import(pName);
+
+        PyObject *pFunc = PyObject_GetAttrString(pModule, "test2");
+        PyObject *pValue = PyObject_CallObject(pFunc, NULL);
+
+        PyGILState_Release(gstate);
 
         showDemoWindow = false;
 
