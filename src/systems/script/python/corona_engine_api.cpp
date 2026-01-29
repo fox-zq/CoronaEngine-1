@@ -414,9 +414,11 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                                 create_info.format = ImageFormat::BC1_RGB_SRGB;
                             } else if (compressed.format == Resource::CompressedData::Format::BC3) {
                                 create_info.format = ImageFormat::BC3_RGBA_SRGB;
+                            } else if (compressed.format == Resource::CompressedData::Format::ASTC_4x4) {
+                                create_info.format = ImageFormat::ASTC_4x4_SRGB;
                             } else {
-                                CFW_LOG_WARNING("[Geometry] Unsupported compressed format, falling back to BC3");
-                                create_info.format = ImageFormat::BC3_RGBA_SRGB;
+                                CFW_LOG_WARNING("[Geometry] Unsupported compressed format, falling back to RGBA8");
+                                // 如果遇到未知格式，应该使用非压缩路径而非猜测
                             }
 
                             // 复制压缩数据以避免悬空指针（texture_data 可能在上传前失效）
