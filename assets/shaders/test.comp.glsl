@@ -450,31 +450,6 @@ void main()
 	float gbufferDepth = texture(textures[pushConsts.gbufferDepthImage], screenUV).r;
 
 	vec3 renderResult = vec3(0.0f, 0.0f, 0.0f);
-	vec3 skyColor = vec3(0.0f);
-	
-	// 先计算天空颜色（用于透明物体混合）
-	{
-		vec2 aspect_ratio = vec2(float(pushConsts.gbufferSize.x) / float(pushConsts.gbufferSize.y), 1);
-		float fov = tan(radians(45.0));
-		vec2 point_ndc = vec2(float(gl_GlobalInvocationID.x) / float(pushConsts.gbufferSize.x), float(gl_GlobalInvocationID.y) / float(pushConsts.gbufferSize.y));
-
-		vec3 cam_local_point = vec3((2.0 * point_ndc.x - 1.0) * aspect_ratio.x * fov,
-							  (1.0 - 2.0 * point_ndc.y) * aspect_ratio.y * fov,
-							  1.0);
-
-		vec3 cam_origin = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyePosition;
-		vec3 cam_look_at = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyeDir;
-
-		vec3 fwd = normalize(cam_look_at - cam_origin);
-		vec3 up = vec3(0, 1, 0);
-		vec3 right = cross(up, fwd);
-		up = cross(fwd, right);
-
-		vec3 rayOrigin = cam_origin;
-		vec3 rayDir = normalize(fwd + up * cam_local_point.y + right * cam_local_point.x);
-
-		skyColor = getAtmosphericSky(rayOrigin, rayDir, pushConsts.sun_dir, 20.0f);
-	}
 
 	if (gbufferDepth < (1.0 - 1e-3)) // There must be something on the GBuffer.
 	{
@@ -482,33 +457,35 @@ void main()
 		vec4 gbufferBaseColor = imageLoad(inputImageRGBA16[pushConsts.gbufferBaseColorImage], ivec2(gl_GlobalInvocationID.xy));
 		vec4 gbufferNormal = imageLoad(inputImageRGBA16[pushConsts.gbufferNormalImage], ivec2(gl_GlobalInvocationID.xy));
 
-		vec3 litColor = calculateColor(gbufferPostion.xyz, gbufferNormal.xyz,
+		renderResult = calculateColor(gbufferPostion.xyz, gbufferNormal.xyz,
             uniformBufferObjects[pushConsts.uniformBufferIndex].lightPosition,
             pushConsts.lightColor,
             gbufferBaseColor.xyz, 0.5, 0.5);
-        litColor = max(litColor, vec3(0.01, 0.01, 0.01));
-        
-        // 透明度混合：使用 alpha 通道与天空/背景混合
-        float alpha = gbufferBaseColor.a;
-        if (alpha < 1.0) {
-            // 玻璃效果：添加菲涅尔反射
-            vec3 viewDir = normalize(uniformBufferObjects[pushConsts.uniformBufferIndex].eyePosition - gbufferPostion.xyz);
-            vec3 normal = normalize(gbufferNormal.xyz);
-            float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 3.0);
-            
-            // 混合玻璃颜色和天空
-            vec3 glassColor = litColor * alpha;
-            vec3 transmittedColor = skyColor * (1.0 - alpha);
-            vec3 reflectedColor = skyColor * fresnel * 0.5;
-            
-            renderResult = glassColor + transmittedColor + reflectedColor;
-        } else {
-            renderResult = litColor;
-        }
+        renderResult = max(renderResult,vec3(0.01,0.01,0.01));
 	}
     else
     {
-        renderResult = skyColor;
+        vec2 aspect_ratio = vec2(float(pushConsts.gbufferSize.x) / float(pushConsts.gbufferSize.y), 1);
+        float fov = tan(radians(45.0));
+        vec2 point_ndc = vec2(float(gl_GlobalInvocationID.x) / float(pushConsts.gbufferSize.x), float(gl_GlobalInvocationID.y) / float(pushConsts.gbufferSize.y));
+
+
+        vec3 cam_local_point = vec3((2.0 * point_ndc.x - 1.0) * aspect_ratio.x * fov,
+                              (1.0 - 2.0 * point_ndc.y) * aspect_ratio.y * fov,
+                              1.0);
+
+        vec3 cam_origin = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyePosition;
+        vec3 cam_look_at = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyeDir;
+
+        vec3 fwd = normalize(cam_look_at - cam_origin);
+        vec3 up = vec3(0, 1, 0);
+        vec3 right = cross(up, fwd);
+        up = cross(fwd, right);
+
+        vec3 rayOrigin = cam_origin;
+        vec3 rayDir = normalize(fwd + up * cam_local_point.y + right * cam_local_point.x);
+
+        renderResult = getAtmosphericSky(rayOrigin, rayDir,pushConsts.sun_dir,20.0f);
     }
 
 	imageStore(inputImageRGBA16[pushConsts.finalOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(renderResult, 1.0f));

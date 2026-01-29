@@ -367,25 +367,11 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                                 ? mesh.material_index
                                 : 0;
 
-        // 读取材质颜色和透明度属性
+        // 读取材质颜色
         if (mesh.material_index != Resource::InvalidIndex &&
             mesh.material_index < scene->data.materials.size()) {
             const auto& material = scene->data.materials[mesh.material_index];
             dev.materialColor = material.base_color;
-            
-            // 设置透明度属性
-            dev.opacity = material.opacity;
-            dev.specularTransmission = material.specular_transmission;
-            dev.ior = material.ior;
-            dev.isTransparent = material.is_transparent();
-            
-            // 如果是透明材质，将 alpha 设置为 opacity
-            if (dev.isTransparent) {
-                dev.materialColor[3] = material.opacity;
-                CFW_LOG_INFO("[Geometry] Mesh {} is TRANSPARENT: opacity={}, transmission={}, ior={}",
-                             mesh_idx, dev.opacity, dev.specularTransmission, dev.ior);
-            }
-            
             CFW_LOG_DEBUG("[Geometry] Mesh {} using material color: ({}, {}, {}, {})",
                           mesh_idx, dev.materialColor[0], dev.materialColor[1],
                           dev.materialColor[2], dev.materialColor[3]);

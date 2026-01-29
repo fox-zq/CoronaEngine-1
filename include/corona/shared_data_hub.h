@@ -24,12 +24,6 @@ struct MeshDevice {
     
     // 材质颜色 (RGBA)
     std::array<float, 4> materialColor{1.0f, 1.0f, 1.0f, 1.0f};
-    
-    // 透明度相关属性
-    float opacity = 1.0f;                    // 不透明度 (0=完全透明, 1=完全不透明)
-    float specularTransmission = 0.0f;       // 镜面透射 (用于玻璃)
-    float ior = 1.5f;                        // 折射率
-    bool isTransparent = false;              // 是否为透明材质
 };
 
 
