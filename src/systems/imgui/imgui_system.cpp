@@ -12,12 +12,18 @@ namespace nb = nanobind;
  NB_MODULE(Imgui, m) {
      m.doc() = "CoronaEngine embedded Python module (nanobind)";
 
-      m.def("create_browser_tab", [](nb::object py_url) -> BrowserTab * {
+      // 注册 BrowserTab 类到 Python
+     nb::class_<BrowserTab>(m, "BrowserTab")
+         .def("__repr__", [](BrowserTab &self) {
+             return "<BrowserTab object>";
+         });
+
+      m.def("create_browser_tab", [](nb::object py_url) -> int {
                 try {
                     // 手动转换 Python 字符串
                     if (!py_url.is_valid()) {
                         std::cerr << "[ERROR] Invalid Python object!" << std::endl;
-                        return nullptr;
+                        return -1;
                     }
                 
                     // 获取字符串表示
@@ -29,7 +35,7 @@ namespace nb = nanobind;
                 
                 } catch (const std::exception& e) {
                     std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
-                    return nullptr;
+                    return -1;
                 } }, nb::arg("url") = "", nb::rv_policy::take_ownership);
  }
 
@@ -196,25 +202,6 @@ namespace Corona::Systems {
 
         PyGILState_STATE gstate = PyGILState_Ensure();
 
-        PyObject *module_name = PyUnicode_FromString("Imgui");
-        PyObject *imgui_module = PyImport_Import(module_name);
-
-        if (imgui_module == nullptr) {
-            std::cerr << "[ERROR] Failed to import Imgui module from Python!" << std::endl;
-            PyErr_Print();  // 打印 Python 错误
-        } else {
-            std::cout << "[DEBUG] Successfully imported Imgui module!" << std::endl;
-
-            // 测试 create_browser_tab 函数是否存在
-            PyObject *func = PyObject_GetAttrString(imgui_module, "create_browser_tab");
-            if (func && PyCallable_Check(func)) {
-                std::cout << "[DEBUG] create_browser_tab function is available!" << std::endl;
-            } else {
-                std::cerr << "[ERROR] create_browser_tab function not found or not callable!" << std::endl;
-            }
-            Py_XDECREF(func);
-        }
-
         PyRun_SimpleString("import sys");
         PyRun_SimpleString("import os");
         PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
@@ -344,15 +331,15 @@ namespace Corona::Systems {
         }
 
         // 渲染每个浏览器标签页窗口
-        std::vector<BrowserTab *> tabsToClose;
-        for (auto *tab : g_tabs) {
+        std::vector<int> tabsToClose;
+        for (auto &[tabId, tab] : g_tabs) {
             if (!tab->open) {
-                tabsToClose.push_back(tab);
+                tabsToClose.push_back(tabId);
                 continue;
             }
 
             // 更新纹理
-            UpdateBrowserTexture(tab);
+            UpdateBrowserTexture(tabId);
 
             ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
 
@@ -457,9 +444,9 @@ namespace Corona::Systems {
         }
 
         // 关闭标记为关闭的标签页
-        for (auto *tab : tabsToClose) {
-            g_tabs.erase(std::remove(g_tabs.begin(), g_tabs.end(), tab), g_tabs.end());
-            CloseBrowserTab(tab);
+        for (auto tabId : tabsToClose) {
+            CloseBrowserTab(tabId);
+            g_tabs.erase(tabId);
         }
 
         ImGui::Render();
@@ -486,8 +473,8 @@ namespace Corona::Systems {
 
         // Vulkan backend and SDL cleanup are performed in thread_loop when the
         // system thread exits. Here just close browser tabs and clear state.
-        for (auto *tab: g_tabs) {
-            CloseBrowserTab(tab);
+        for (auto &[tabId, tab] : g_tabs) {
+            CloseBrowserTab(tabId);
         }
         g_tabs.clear();
     }

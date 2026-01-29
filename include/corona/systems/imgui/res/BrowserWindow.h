@@ -232,15 +232,15 @@ private:
 };
 
 // 全局变量声明
-extern std::vector<BrowserTab*> g_tabs;
+extern std::unordered_map<int, BrowserTab*> g_tabs;
 extern int g_tabCounter;
 // 函数声明
 VkDescriptorSet CreateBrowserTexture(int width, int height);
 std::string ConvertLocalPathToUrl(const std::string& localPath);
 std::string ResolveHtmlPathForCef(const std::string& maybeRelativePath);
-extern "C" BrowserTab* CreateBrowserTab(const std::string& url);
-void UpdateBrowserTexture(BrowserTab* tab);
-void CloseBrowserTab(BrowserTab* tab);
+extern "C" int CreateBrowserTab(const std::string& url);
+void UpdateBrowserTexture(int tabId);
+void CloseBrowserTab(int tabId);
 
 // 自定义 App 类
 class SimpleApp : public CefApp, public CefRenderProcessHandler {

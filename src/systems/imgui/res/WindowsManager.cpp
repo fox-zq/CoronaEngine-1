@@ -6,7 +6,7 @@
 #include <map>
 
 // 全局变量定义
-std::vector<BrowserTab*> g_tabs;
+std::unordered_map<int, BrowserTab*> g_tabs;
 int g_tabCounter = 0;
 
 // Track owned Vulkan resources for each ImGui descriptor set
@@ -216,9 +216,12 @@ std::string ResolveHtmlPathForCef(const std::string& maybeRelativePath) {
 }
 
 // 创建新的浏览器标签页
-BrowserTab* CreateBrowserTab(const std::string& url) {
+int CreateBrowserTab(const std::string& url) {
     BrowserTab* tab = new BrowserTab();
-    tab->name = "Browser " + std::to_string(++g_tabCounter);
+
+    int tabId = ++g_tabCounter;
+    
+    tab->name = "Browser " + std::to_string(tabId);
 
     // 转换本地路径为URL
     std::string fullUrl = ConvertLocalPathToUrl(url);
@@ -247,13 +250,14 @@ BrowserTab* CreateBrowserTab(const std::string& url) {
 
     CefBrowserHost::CreateBrowser(windowInfo, tab->client, fullUrl, browserSettings, nullptr, nullptr);
 
-    g_tabs.push_back(tab);
-    return tab;
+    g_tabs[tabId]=tab;
+    return tabId;
 }
 
 // 更新浏览器纹理
-void UpdateBrowserTexture(BrowserTab* tab) {
+void UpdateBrowserTexture(int tabId) {
     using namespace Corona::Systems;
+    BrowserTab* tab = g_tabs[tabId];
     if (!g_vulkan_backend) return;
     if (!(tab->bufferDirty && !tab->pixelBuffer.empty() && tab->textureId != VK_NULL_HANDLE)) return;
 
@@ -405,7 +409,12 @@ void UpdateBrowserTexture(BrowserTab* tab) {
 }
 
 // 关闭浏览器标签页
-void CloseBrowserTab(BrowserTab* tab) {
+void CloseBrowserTab(int tabId) {
+    if (g_tabs.find(tabId) == g_tabs.end()) {
+        return;
+    }
+
+    BrowserTab* tab = g_tabs[tabId];
     if (tab->client && tab->client->GetBrowser()) {
         tab->client->GetBrowser()->GetHost()->CloseBrowser(true);
     }
