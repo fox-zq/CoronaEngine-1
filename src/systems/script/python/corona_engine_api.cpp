@@ -398,19 +398,35 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                     if (tex_width > 0 && tex_height > 0 && tex_channels > 0) {
                         constexpr bool use_compressed = false;  // TODO: 测试模型兼容性  先不走压缩纹理
 
-                        if (use_compressed) {
-                            // 使用压缩纹理格式
+                        if (texture_data->is_compressed()) {
+                            // 获取压缩数据和格式信息
+                            const auto& compressed = texture_data->get_compressed_data();
+
+                            // 根据实际压缩格式选择正确的 ImageFormat
                             create_info.width = tex_width;
                             create_info.height = tex_height;
-                            create_info.format = ImageFormat::BC1_RGB_UNORM;
                             create_info.usage = ImageUsage::SampledImage;
                             create_info.arrayLayers = 1;
                             create_info.mipLevels = 1;
-                            auto* data_ptr = const_cast<unsigned char*>(texture_data->get_compressed_data().data.data());
+
+                            // 根据压缩格式类型选择对应的 GPU 格式
+                            if (compressed.format == Resource::CompressedData::Format::BC1) {
+                                create_info.format = ImageFormat::BC1_RGB_SRGB;
+                            } else if (compressed.format == Resource::CompressedData::Format::BC3) {
+                                create_info.format = ImageFormat::BC3_RGBA_SRGB;
+                            } else {
+                                CFW_LOG_WARNING("[Geometry] Unsupported compressed format, falling back to BC3");
+                                create_info.format = ImageFormat::BC3_RGBA_SRGB;
+                            }
+
+                            // 复制压缩数据以避免悬空指针（texture_data 可能在上传前失效）
+                            PendingTextureUpload upload{mesh_idx, nullptr, {}, nullptr};
+                            upload.rgba_data.assign(compressed.data.begin(), compressed.data.end());
+                            upload.data_ptr = upload.rgba_data.data();
 
                             dev.textureBuffer = HardwareImage(create_info);
-                            // 延迟上传：添加到待处理列表
-                            pending_uploads.push_back({mesh_idx, &dev.textureBuffer, {}, data_ptr});
+                            upload.texture = &dev.textureBuffer;
+                            pending_uploads.push_back(std::move(upload));
                             texture_created = true;
                         } else {
                             // 使用非压缩 RGBA8 格式，需要确保数据通道匹配
@@ -480,7 +496,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         constexpr size_t kBatchSize = 32;
         for (size_t batch_start = 0; batch_start < pending_uploads.size(); batch_start += kBatchSize) {
             size_t batch_end = std::min(batch_start + kBatchSize, pending_uploads.size());
-            
+
             HardwareExecutor batch_executor;
             for (size_t i = batch_start; i < batch_end; ++i) {
                 auto& upload = pending_uploads[i];
@@ -489,12 +505,12 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                 batch_executor << tex.copyFrom(upload.data_ptr);
             }
             batch_executor << batch_executor.commit();
-            
+
             // 强制等待每一批上传完成，防止短时间内提交过多 CommandBuffer 导致 Device Lost (TDR) 或内存问题
             batch_executor.waitForDeferredResources();
-            
-            CFW_LOG_DEBUG("[Geometry] Uploaded texture batch {}-{}/{}", 
-                         batch_start, batch_end - 1, pending_uploads.size());
+
+            CFW_LOG_DEBUG("[Geometry] Uploaded texture batch {}-{}/{}",
+                          batch_start, batch_end - 1, pending_uploads.size());
         }
 
         CFW_LOG_INFO("[Geometry] Texture batch upload complete");
