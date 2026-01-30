@@ -13,40 +13,69 @@
 #include <nanobind/nanobind.h>
 namespace nb = nanobind;
 
- NB_MODULE(Imgui, m) {
-     m.doc() = "CoronaEngine embedded Python module (nanobind)";
+NB_MODULE(Imgui, m) {
+    m.doc() = "CoronaEngine embedded Python module (nanobind)";
 
-      // 注册 BrowserTab 类到 Python
-     nb::class_<BrowserTab>(m, "BrowserTab")
-         .def("__repr__", [](BrowserTab &self) {
-             return "<BrowserTab object>";
-         });
+    // 注册 BrowserTab 类到 Python
+    //nb::class_<BrowserTab>(m, "BrowserTab")
+    //    .def("__repr__", [](BrowserTab &self) {
+    //        return "<BrowserTab object>";
+    //    });
 
-      m.def("create_browser_tab", [](nb::object py_url) -> int {
-                try {
-                    // 手动转换 Python 字符串
-                    if (!py_url.is_valid()) {
-                        std::cerr << "[ERROR] Invalid Python object!" << std::endl;
-                        return -1;
-                    }
+    // 注册 create_browser_tab 函数到 Python
+    // python 创建浏览器标签页
+    m.def("create_browser_tab", [](nb::object py_url) -> int {
+        try 
+        {
+            // 手动转换 Python 字符串
+            if (!py_url.is_valid()) {
+                std::cerr << "[ERROR] Invalid Python object!" << std::endl;
+                return -1;
+            }
+
+            // 获取字符串表示
+            nb::str py_str = nb::str(py_url);
+            std::string url = py_str.c_str();
                 
-                    // 获取字符串表示
-                    nb::str py_str = nb::str(py_url);
-                    std::string url = py_str.c_str();
-                
-                    std::cout << "[NANOBIND PYOBJ] URL from Python: " << url << std::endl;
-                    return CreateBrowserTab(url);
-                
-                } catch (const std::exception& e) {
-                    std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
-                    return -1;
-                } }, nb::arg("url") = "", nb::rv_policy::take_ownership);
- }
+            std::cout << "[NANOBIND PYOBJ] URL from Python: " << url << std::endl;
+            return CreateBrowserTab(url);
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
+            return -1;
+        }
+    }, nb::arg("url") = "", nb::rv_policy::take_ownership);
+
+    // 注册 execute_javascript 函数到 Python
+    // python 指定标签页执行 JavaScript 代码
+    m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {
+    try {
+        if (g_tabs.find(tab_id) == g_tabs.end()) {
+            return nb::str("{\"success\": false, \"error\": \"Tab not found\"}");
+        }
+
+        nb::str py_str = nb::str(py_js_code);
+        std::string js_code = py_str.c_str();
+        
+        BrowserTab* tab = g_tabs[tab_id];
+        if (tab->client && tab->client->GetBrowser()) {
+            CefRefPtr<CefFrame> frame = tab->client->GetBrowser()->GetMainFrame();
+            if (frame) {
+                // 执行 JavaScript 代码
+                std::cout << "[INFO] Now call tab js:" << tab_id << ",content:" << js_code << std::endl;
+                frame->ExecuteJavaScript(js_code, "", 0);
+            }
+        }
+        return nb::str("{\"success\": true}");
+    } catch (const std::exception& e) {
+        std::cerr << "[ERROR] Exception in execute_javascript: " << e.what() << std::endl;
+        return nb::str("{\"success\": false \"}");
+    } }, nb::arg("tab_id"), nb::arg("js_code"));
+}
 
  
 CefMessageRouterConfig g_messageRouterConfig;
- class SimpleApp;
- class OffscreenCefClient;
 
 extern "C" PyObject *PyInit_Imgui();
 
@@ -197,32 +226,32 @@ namespace Corona::Systems {
         ImGui_ImplVulkan_Init(&init_info);
 
         
-        //CreateBrowserTab("https://www.google.com");
-        CreateBrowserTab(ResolveHtmlPathForCef("CabbageEditor/Frontend/dist/index.html"));
+
+        //CreateBrowserTab(ResolveHtmlPathForCef("CabbageEditor/Frontend/dist/index.html"));
 
                     // 注册 nanobind 导出的 CoronaEngine 模块
         PyImport_AppendInittab("Imgui", &PyInit_Imgui);
+        CreateBrowserTab("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html");
+        //if (!Py_IsInitialized()) {
+        //    Py_Initialize();
+        //    PyEval_InitThreads();  // initialize and acquire the GIL
+        //    PyEval_SaveThread();   // release GIL
+        //}
 
-        if (!Py_IsInitialized()) {
-            Py_Initialize();
-            PyEval_InitThreads();  // initialize and acquire the GIL
-            PyEval_SaveThread();   // release GIL
-        }
+        //PyGILState_STATE gstate = PyGILState_Ensure();
 
-        PyGILState_STATE gstate = PyGILState_Ensure();
+        //PyRun_SimpleString("import sys");
+        //PyRun_SimpleString("import os");
+        //PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
+        //PyObject *pName = PyUnicode_FromString("test");
+        //PyObject *pModule = PyImport_Import(pName);
 
-        PyRun_SimpleString("import sys");
-        PyRun_SimpleString("import os");
-        PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
-        PyObject *pName = PyUnicode_FromString("test");
-        PyObject *pModule = PyImport_Import(pName);
+        //PyObject *pFunc = PyObject_GetAttrString(pModule, "open_browser");
+        //PyObject *pArgs = PyTuple_New(1);
+        //PyTuple_SetItem(pArgs, 0, PyUnicode_FromString("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html"));
+        //PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
 
-        PyObject *pFunc = PyObject_GetAttrString(pModule, "open_browser");
-        PyObject *pArgs = PyTuple_New(1);
-        PyTuple_SetItem(pArgs, 0, PyUnicode_FromString("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html"));
-        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
-
-        PyGILState_Release(gstate);
+        //PyGILState_Release(gstate);
 
         showDemoWindow = false;
 

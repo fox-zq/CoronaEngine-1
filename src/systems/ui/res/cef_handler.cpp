@@ -1,6 +1,33 @@
 ﻿#include "cef_handler.h"
 #include <iostream>
 
+void BrowserSideJSHandler::initialize_python() {
+    if (!Py_IsInitialized()) {
+        Py_Initialize();
+        PyEval_InitThreads();
+        PyEval_SaveThread();
+    }
+
+    PyGILState_STATE gstate = PyGILState_Ensure();
+
+    // 每个处理器独立加载模块
+    PyRun_SimpleString("import sys");
+    PyRun_SimpleString("import os");
+    PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
+
+    PyObject* pName = PyUnicode_FromString("test");
+    PyObject* pModule = PyImport_Import(pName);
+    Py_DECREF(pName);
+
+    if (pModule) {
+        pFunc = PyObject_GetAttrString(pModule, "handle_request");
+        Py_DECREF(pModule);
+    }
+
+    PyGILState_Release(gstate);
+}
+
+
 bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    int64_t query_id,
@@ -25,37 +52,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
         if (!pFunc) {
             std::cout << "=== Loading Python module ===" << std::endl;
 
-            // 设置 Python 路径
-            PyRun_SimpleString("import sys");
-            PyRun_SimpleString("import os");
-            PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
-
-            // 导入模块
-            PyObject* pName = PyUnicode_FromString("test");
-            PyObject* pModule = PyImport_Import(pName);
-            Py_DECREF(pName);
-
-            if (!pModule) {
-                PyErr_Print();
-                std::cerr << "Failed to import module 'test'" << std::endl;
-                callback->Failure(0, "Failed to import Python module");
-                PyGILState_Release(gstate);
-                return false;
-            }
-
-            // 获取函数
-            pFunc = PyObject_GetAttrString(pModule, "handle_request");
-            Py_DECREF(pModule);
-
-            if (!pFunc || !PyCallable_Check(pFunc)) {
-                std::cerr << "Function 'handle_request' not found or not callable" << std::endl;
-                callback->Failure(0, "Python function not found");
-                Py_XDECREF(pFunc);
-                pFunc = nullptr;
-                PyGILState_Release(gstate);
-                return false;
-            }
-
+            initialize_python();
             std::cout << "Module imported successfully!" << std::endl;
         }
 

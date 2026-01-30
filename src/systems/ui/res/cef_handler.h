@@ -13,6 +13,7 @@
 #include "browser_types.h"
 #include <wrapper/cef_message_router.h>
 #include <iostream>
+#include <mutex>
 
 extern CefMessageRouterConfig g_messageRouterConfig;
 // 离屏渲染的 CefRenderHandler
@@ -30,30 +31,37 @@ class OffscreenRenderHandler : public CefRenderHandler {
 
 class BrowserSideJSHandler : public CefMessageRouterBrowserSide::Handler, public CefBaseRefCounted {
     public:
-    BrowserSideJSHandler() {
+        BrowserSideJSHandler() {
+           initialize_python();
+        };
+        ~BrowserSideJSHandler() {
+            PyGILState_STATE gstate = PyGILState_Ensure();
+            Py_XDECREF(pFunc);
+            PyGILState_Release(gstate);
+        };
 
-    };
+        // 处理来自JS的请求
+        virtual bool OnQuery(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                int64_t query_id,
+                                const CefString& request,
+                                bool persistent,
+                                CefRefPtr<Callback> callback) override;
 
-    // 处理来自JS的请求
-    virtual bool OnQuery(CefRefPtr<CefBrowser> browser,
-                            CefRefPtr<CefFrame> frame,
-                            int64_t query_id,
-                            const CefString& request,
-                            bool persistent,
-                            CefRefPtr<Callback> callback) override;
-
-    virtual void OnQueryCanceled(CefRefPtr<CefBrowser> browser,
-                                    CefRefPtr<CefFrame> frame,
-                                    int64_t query_id) override {
-        CEF_REQUIRE_UI_THREAD();
-        std::cout << "[Browser] Query canceled: " << query_id << std::endl;
-    }
+        virtual void OnQueryCanceled(CefRefPtr<CefBrowser> browser,
+                                        CefRefPtr<CefFrame> frame,
+                                        int64_t query_id) override {
+            CEF_REQUIRE_UI_THREAD();
+            std::cout << "[Browser] Query canceled: " << query_id << std::endl;
+        }
 
     private:
+        PyObject* pFunc;
+        void initialize_python();
+
     IMPLEMENT_REFCOUNTING(BrowserSideJSHandler);
     DISALLOW_COPY_AND_ASSIGN(BrowserSideJSHandler);
 
-    PyObject* pFunc;
 };
 
 // 创建新的Renderer进程处理器

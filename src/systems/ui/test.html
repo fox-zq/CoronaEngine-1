@@ -47,6 +47,8 @@
         <button onclick="callPython('multiply', [4, 7])">Multiply</button>
         <button onclick="callPython('get_info')">Get Info</button>
         <button onclick="callPython('calculate', [{ 'a': 10, 'b': 20 }])">Calculate</button>
+        <button onclick="callPython('open_browser', ['file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html'])">open_browser</button>
+        <button onclick="callPython('js_call_func', [{ 'a': 10, 'b': 20 },3,4,5])">js_call_func</button>
     </div>
 
     <div style="margin-top: 20px;">
@@ -161,6 +163,12 @@
         add: (a, b) => callPython('add', [a, b]),
         multiply: (a, b) => callPython('multiply', [a, b])
         };
+
+
+         window.test = (args) => {
+            console.log(args);
+            callPython('greet', ['World']);
+          }
 
     </script>
 </body>

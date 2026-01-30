@@ -9,6 +9,9 @@ try:
 except ImportError:
     HAS_IMGUI = False
 
+
+tab_list = []
+
 def handle_request(json_str):
     """
     处理 JSON 格式的请求
@@ -38,6 +41,19 @@ def handle_request(json_str):
             result = open_browser(*args) if args else open_browser()
         elif func_name == "get_version":
             result = get_version()
+        elif func_name == "js_call_func":
+        
+            args_str = ','.join(
+                f"'{arg}'" if isinstance(arg, str) else str(arg)
+                for arg in args
+            )
+
+            js_code = f"""
+                window.test("{func_name}({args_str})");
+            """
+            for i in tab_list:
+                Imgui.execute_javascript(i,js_code)
+            result = f"Called js function '{func_name}' with args: {args_str}"
         else:
             # 尝试动态调用函数
             if hasattr(sys.modules[__name__], func_name):
@@ -55,28 +71,6 @@ def handle_request(json_str):
         return create_error_response(f"Invalid JSON: {str(e)}")
     except Exception as e:
         return create_error_response(f"Error processing request: {str(e)}")
-
-# 兼容旧版 test() 函数
-def test(func_name, args=""):
-    """旧版兼容函数"""
-    try:
-        # 尝试解析 args 为 JSON 数组
-        if args:
-            arg_list = json.loads(args) if args.startswith('[') else [args]
-        else:
-            arg_list = []
-        
-        request = {"function": func_name, "args": arg_list}
-        result = handle_request(json.dumps(request))
-        
-        # 提取 data 字段或直接返回
-        try:
-            result_dict = json.loads(result)
-            return result_dict.get('data', result_dict.get('result', result))
-        except:
-            return result
-    except Exception as e:
-        return f"Error in test(): {str(e)}"
 
 # 工具函数：创建标准响应
 def create_success_response(data):
@@ -143,7 +137,8 @@ def get_version():
 def open_browser(url="https://www.baidu.com"):
     if HAS_IMGUI:
         try:
-            Imgui.create_browser_tab(url)
+            tab_id = Imgui.create_browser_tab(url)
+            tab_list.append(tab_id)
             return f"Opened: {url}"
         except Exception as e:
             return f"Failed to open browser: {str(e)}"
