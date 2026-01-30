@@ -24,7 +24,7 @@ NB_MODULE(Imgui, m) {
 
     // 注册 create_browser_tab 函数到 Python
     // python 创建浏览器标签页
-    m.def("create_browser_tab", [](nb::object py_url) -> int {
+    m.def("create_browser_tab", [](nb::object py_url, nb::object py_path) -> int {
         try 
         {
             // 手动转换 Python 字符串
@@ -34,18 +34,20 @@ NB_MODULE(Imgui, m) {
             }
 
             // 获取字符串表示
-            nb::str py_str = nb::str(py_url);
-            std::string url = py_str.c_str();
-                
+            nb::str py_url_str = nb::str(py_url);
+            std::string url = py_url_str.c_str();
+
+            nb::str py_path_str = nb::str(py_path);
+            std::string path = py_path_str.c_str();
+
             std::cout << "[NANOBIND PYOBJ] URL from Python: " << url << std::endl;
-            return CreateBrowserTab(url);
+            return CreateBrowserTab(url, path);
         }
         catch (const std::exception& e)
         {
             std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
             return -1;
-        }
-    }, nb::arg("url") = "", nb::rv_policy::take_ownership);
+        } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
 
     // 注册 execute_javascript 函数到 Python
     // python 指定标签页执行 JavaScript 代码

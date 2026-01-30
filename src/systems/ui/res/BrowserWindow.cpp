@@ -225,7 +225,7 @@ std::string ResolveHtmlPathForCef(const std::string& maybeRelativePath) {
 }
 
 // 创建新的浏览器标签页
-int CreateBrowserTab(const std::string& url) {
+int CreateBrowserTab(const std::string& url, const std::string& path) {
     BrowserTab* tab = new BrowserTab();
 
     int tabId = ++g_tabCounter;
@@ -234,7 +234,27 @@ int CreateBrowserTab(const std::string& url) {
 
     // 转换本地路径为URL
     std::string fullUrl = ConvertLocalPathToUrl(url);
+
+
+    // 如果提供了 fragment，添加到 URL
+    if (!path.empty()) {
+        // 移除 fragment 开头的 #（如果有）
+        std::string cleanFragment = path;
+        if (cleanFragment.starts_with("#")) {
+            cleanFragment = cleanFragment.substr(1);
+        }
+
+        // 确保 URL 不包含其他 fragment
+        size_t hashPos = fullUrl.find('#');
+        if (hashPos != std::string::npos) {
+            fullUrl = fullUrl.substr(0, hashPos);
+        }
+
+        // 添加 fragment
+        fullUrl += "#" + cleanFragment;
+    }
     std::cout << "Loading URL: " << fullUrl << std::endl;
+
     tab->url = fullUrl;
     strncpy(tab->urlBuffer, fullUrl.c_str(), sizeof(tab->urlBuffer) - 1);
 
@@ -258,7 +278,6 @@ int CreateBrowserTab(const std::string& url) {
     browserSettings.webgl = STATE_ENABLED;
 
     CefBrowserHost::CreateBrowser(windowInfo, tab->client, fullUrl, browserSettings, nullptr, nullptr);
-
     g_tabs[tabId] = tab;
     return tabId;
 }

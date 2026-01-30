@@ -134,10 +134,10 @@ def get_version():
         "platform": sys.platform
     }
 
-def open_browser(url="https://www.baidu.com"):
+def open_browser(url="https://www.baidu.com", path=""):
     if HAS_IMGUI:
         try:
-            tab_id = Imgui.create_browser_tab(url)
+            tab_id = Imgui.create_browser_tab(url, path)
             tab_list.append(tab_id)
             return f"Opened: {url}"
         except Exception as e:
