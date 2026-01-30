@@ -1,9 +1,13 @@
 #include <corona/engine.h>
+#include <corona/kernel/core/i_logger.h>
 #include <corona/systems/script/python_api.h>
 
 #include <csignal>
-#include <iostream>
 #include <thread>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 // 全局引擎实例指针，用于信号处理
 static Corona::Engine* g_engine = nullptr;
@@ -14,11 +18,40 @@ static Corona::Engine* g_engine = nullptr;
  * 捕获 Ctrl+C 等中断信号，优雅退出引擎
  */
 void signal_handler(int signal) {
-    if (signal == SIGINT || signal == SIGTERM) {
-        std::cout << "\n[Signal] Interrupt received, requesting engine shutdown..." << std::endl;
-        if (g_engine) {
-            g_engine->request_exit();
-        }
+    auto signal_name = "Unknown";
+    switch (signal) {
+        case SIGINT:
+            signal_name = "SIGINT (Ctrl+C)";
+            break;
+        case SIGTERM:
+            signal_name = "SIGTERM";
+            break;
+        case SIGABRT:
+            signal_name = "SIGABRT";
+            break;
+        case SIGSEGV:
+            signal_name = "SIGSEGV (Segmentation Fault)";
+            break;
+        case SIGFPE:
+            signal_name = "SIGFPE (Floating Point Exception)";
+            break;
+        case SIGILL:
+            signal_name = "SIGILL (Illegal Instruction)";
+            break;
+#ifdef SIGBREAK
+        case SIGBREAK:
+            signal_name = "SIGBREAK (Ctrl+Break)";
+            break;
+#endif
+        default:
+            break;
+    }
+
+    CFW_LOG_WARNING("[Signal] Received signal {}: {}, requesting engine shutdown...", signal, signal_name);
+    CFW_LOG_FLUSH();
+
+    if (g_engine) {
+        g_engine->request_exit();
     }
 }
 
@@ -32,15 +65,15 @@ void signal_handler(int signal) {
  * 4. 优雅关闭引擎
  */
 int main(int argc, char* argv[]) {
-    std::cout << std::endl;
-    std::cout << "    +==================================================================+" << std::endl;
-    std::cout << "    |                                                                  |" << std::endl;
-    std::cout << "    |                      CoronaEngine v0.5.0                         |" << std::endl;
-    std::cout << "    |                                                                  |" << std::endl;
-    std::cout << "    |              A Modern Game Engine Framework                      |" << std::endl;
-    std::cout << "    |                                                                  |" << std::endl;
-    std::cout << "    +==================================================================+" << std::endl;
-    std::cout << std::endl;
+    CFW_LOG_NOTICE(
+        "\n"
+        "    +==================================================================+\n"
+        "    |                                                                  |\n"
+        "    |                      CoronaEngine v0.5.0                         |\n"
+        "    |                                                                  |\n"
+        "    |              A Modern Game Engine Framework                      |\n"
+        "    |                                                                  |\n"
+        "    +==================================================================+\n");
 
     // 创建引擎实例
     Corona::Engine engine;
@@ -50,28 +83,33 @@ int main(int argc, char* argv[]) {
     g_engine = &engine;
 
     // 注册信号处理器
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
+    std::signal(SIGINT, signal_handler);   // Ctrl+C
+    std::signal(SIGTERM, signal_handler);  // 终止请求
+    std::signal(SIGABRT, signal_handler);  // 异常终止
+    std::signal(SIGSEGV, signal_handler);  // 段错误
+    std::signal(SIGFPE, signal_handler);   // 浮点异常
+    std::signal(SIGILL, signal_handler);   // 非法指令
+#ifdef SIGBREAK
+    std::signal(SIGBREAK, signal_handler);  // Windows Ctrl+Break
+#endif
 
     // ========================================
     // 1. 初始化引擎
     // ========================================
-    std::cout << "[Main] Initializing engine..." << std::endl;
+    CFW_LOG_INFO("[Main] Initializing engine...");
 
     if (!engine.initialize()) {
-        std::cerr << "[Main] ERROR: Failed to initialize engine!" << std::endl;
+        CFW_LOG_ERROR("[Main] Failed to initialize engine!");
         return -1;
     }
 
-    std::cout << "[Main] Engine initialized successfully" << std::endl;
-    std::cout << std::endl;
+    CFW_LOG_INFO("[Main] Engine initialized successfully");
 
     // ========================================
     // 2. 启动主循环（在独立线程）
     // ========================================
-    std::cout << "[Main] Starting engine main loop..." << std::endl;
-    std::cout << "[Main] Press Ctrl+C to exit" << std::endl;
-    std::cout << std::endl;
+    CFW_LOG_INFO("[Main] Starting engine main loop...");
+    CFW_LOG_INFO("[Main] Press Ctrl+C to exit");
 
     // 在独立线程运行引擎主循环
     std::thread engine_thread([&engine]() {
@@ -88,16 +126,16 @@ int main(int argc, char* argv[]) {
     // ========================================
     // 4. 关闭引擎
     // ========================================
-    std::cout << std::endl;
-    std::cout << "[Main] Shutting down engine..." << std::endl;
+    CFW_LOG_INFO("[Main] Shutting down engine...");
 
     engine.shutdown();
 
-    std::cout << "[Main] Engine shutdown complete" << std::endl;
-    std::cout << std::endl;
-    std::cout << "+==================================================================+" << std::endl;
-    std::cout << "|                Thank you for using CoronaEngine!                 |" << std::endl;
-    std::cout << "+==================================================================+" << std::endl;
+    CFW_LOG_NOTICE(
+        "[Main] Engine shutdown complete\n"
+        "\n"
+        "+==================================================================+\n"
+        "|                Thank you for using CoronaEngine!                 |\n"
+        "+==================================================================+\n");
 
     g_engine = nullptr;
     return 0;
