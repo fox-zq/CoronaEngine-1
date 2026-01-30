@@ -1,0 +1,114 @@
+﻿#pragma once
+#include <cef_app.h>
+#include "cef_handler.h"
+
+struct BrowserTab;
+
+class OffscreenRenderHandler;
+class BrowserSideJSHandler;
+
+// 离屏渲染的 CefClient
+class OffscreenCefClient : public CefClient,
+                            public CefLifeSpanHandler,
+                            public CefLoadHandler,
+                            public CefRequestHandler,
+                            public CefRenderHandler,
+                            public CefDisplayHandler {
+    public:
+    OffscreenCefClient();
+    void SetTab(BrowserTab* tab);
+
+    CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return renderHandler_; }
+    CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+    CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+    CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+    CefRefPtr<CefBrowser> GetBrowser() { return browser_; }
+    void Resize(int width, int height);
+
+    bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefFrame> frame,
+                        CefRefPtr<CefRequest> request,
+                        bool user_gesture,
+                        bool is_redirect) override;
+
+    void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
+    void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
+                    const RectList& dirtyRects, const void* buffer,
+                    int width, int height) override;
+    bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,
+                            cef_log_severity_t level,
+                            const CefString& message,
+                            const CefString& source,
+                            int line) override;
+
+    void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override;
+
+    void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
+    void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
+
+    void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                    TerminationStatus status,
+                                    int error_code,
+                                    const CefString& error_string) override {
+        CEF_REQUIRE_UI_THREAD();
+        browser_side_router_->OnRenderProcessTerminated(browser);
+    }
+
+    virtual bool OnProcessMessageReceived(
+        CefRefPtr<CefBrowser> browser,
+        CefRefPtr<CefFrame> frame,
+        CefProcessId source_process,
+        CefRefPtr<CefProcessMessage> message) override {
+        CEF_REQUIRE_UI_THREAD();
+        if (message->GetName() == "RendererMessage") {
+            // Render 进程已启动并发送了消息
+            std::string msg = message->GetArgumentList()->GetString(0);
+            std::cout << "收到 Render 进程消息: " << msg << std::endl;
+            return true;
+        }
+        // 处理Renderer进程发来的消息
+        return browser_side_router_->OnProcessMessageReceived(browser, frame, source_process, message);
+    }
+
+    private:
+    CefRefPtr<CefBrowser> browser_;
+    CefRefPtr<OffscreenRenderHandler> renderHandler_;
+    CefRefPtr<CefMessageRouterBrowserSide> browser_side_router_;
+    BrowserSideJSHandler* m_jsHandler;
+
+    IMPLEMENT_REFCOUNTING(OffscreenCefClient);
+};
+
+    
+
+// 自定义 App 类
+class SimpleApp : public CefApp, public CefRenderProcessHandler {
+    public:
+    SimpleApp();
+
+    CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
+        return renderProcessHandler_;
+    }
+    // virtual CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
+    //     return this;
+    // }
+
+    virtual void OnBeforeCommandLineProcessing(const CefString& process_type,
+                                                CefRefPtr<CefCommandLine> command_line) override;
+
+    //// CefBrowserProcessHandler 方法
+    // virtual void OnContextInitialized() override {
+    //     CEF_REQUIRE_UI_THREAD();
+
+    //    // 创建浏览器窗口
+    //    //CreateBrowserTab(ResolveHtmlPathForCef("/test.html"));
+    //}
+
+    private:
+    CefRefPtr<CefRenderProcessHandler> renderProcessHandler_;
+    CefRefPtr<CefMessageRouterRendererSide> renderer_side_router_;
+
+    IMPLEMENT_REFCOUNTING(SimpleApp);
+};

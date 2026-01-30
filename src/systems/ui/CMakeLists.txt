@@ -17,7 +17,8 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
     vulkan_backend.cpp
     res/BrowserWindow.cpp
-    res/WindowsManager.cpp
+    res/cef_client.cpp
+    res/cef_handler.cpp
 )
 
 

@@ -1,20 +1,31 @@
-﻿#include <corona/systems/imgui/res/BrowserWindow.h>
-#include <corona/systems/imgui/vulkan_backend.h>
+﻿// BrowserWindow.cpp
+#include "BrowserWindow.h"
+#include "cef_client.h"
+#include "browser_types.h"
 #include <imgui_impl_vulkan.h>
+
+#include <corona/systems/ui/vulkan_backend.h>
 #include <iostream>
 #include <cstring>
 #include <map>
+#include <filesystem>
+
 
 // 全局变量定义
 std::unordered_map<int, BrowserTab*> g_tabs;
 int g_tabCounter = 0;
-
-// Track owned Vulkan resources for each ImGui descriptor set
-struct OwnedImage { VkImage image; VkDeviceMemory memory; VkImageView view; VkSampler sampler; uint32_t width; uint32_t height; };
+Corona::Systems::VulkanBackend* g_vulkan_backend = nullptr;
+class OffscreenCefClient;
+    // Track owned Vulkan resources for each ImGui descriptor set
+struct OwnedImage {
+    VkImage image;
+    VkDeviceMemory memory;
+    VkImageView view;
+    VkSampler sampler;
+    uint32_t width;
+    uint32_t height;
+};
 static std::map<VkDescriptorSet, OwnedImage> ownedImages;
-
-// Define the global backend pointer
-namespace Corona::Systems { VulkanBackend* g_vulkan_backend = nullptr; }
 
 using namespace Corona::Systems;
 
@@ -125,7 +136,7 @@ VkDescriptorSet CreateBrowserTexture(int width, int height) {
     VkDescriptorSet descriptor = ImGui_ImplVulkan_AddTexture(sampler, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Store owned resources for later cleanup
-    ownedImages[descriptor] = { image, image_memory, image_view, sampler, (uint32_t)width, (uint32_t)height };
+    ownedImages[descriptor] = {image, image_memory, image_view, sampler, (uint32_t)width, (uint32_t)height};
 
     return descriptor;
 }
@@ -157,11 +168,9 @@ std::string ConvertLocalPathToUrl(const std::string& localPath) {
         for (char c : localPath) {
             if (c == '\\') {
                 url += '/';
-            }
-            else if (c == ' ') {
+            } else if (c == ' ') {
                 url += "%20";
-            }
-            else {
+            } else {
                 url += c;
             }
         }
@@ -220,7 +229,7 @@ int CreateBrowserTab(const std::string& url) {
     BrowserTab* tab = new BrowserTab();
 
     int tabId = ++g_tabCounter;
-    
+
     tab->name = "Browser " + std::to_string(tabId);
 
     // 转换本地路径为URL
@@ -250,7 +259,7 @@ int CreateBrowserTab(const std::string& url) {
 
     CefBrowserHost::CreateBrowser(windowInfo, tab->client, fullUrl, browserSettings, nullptr, nullptr);
 
-    g_tabs[tabId]=tab;
+    g_tabs[tabId] = tab;
     return tabId;
 }
 
@@ -370,8 +379,8 @@ void UpdateBrowserTexture(int tabId) {
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
-    region.imageOffset = {0,0,0};
-    region.imageExtent = { (uint32_t)tab->width, (uint32_t)tab->height, 1 };
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {(uint32_t)tab->width, (uint32_t)tab->height, 1};
 
     vkCmdCopyBufferToImage(cmdBuf, stagingBuffer, found->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 

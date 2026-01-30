@@ -3,9 +3,13 @@
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
-#include <corona/systems/imgui/imgui_system.h>
-#include <corona/systems/imgui/res/BrowserWindow.h>
-
+#include <corona/systems/ui/imgui_system.h>
+#include "res/BrowserWindow.h"
+#include "res/cef_client.h"
+#include "res/browser_types.h"
+#include <iostream>
+#include <filesystem>
+#include <SDL3/SDL_vulkan.h>
 #include <nanobind/nanobind.h>
 namespace nb = nanobind;
 
@@ -39,11 +43,16 @@ namespace nb = nanobind;
                 } }, nb::arg("url") = "", nb::rv_policy::take_ownership);
  }
 
+ 
 CefMessageRouterConfig g_messageRouterConfig;
+ class SimpleApp;
+ class OffscreenCefClient;
 
 extern "C" PyObject *PyInit_Imgui();
 
 namespace Corona::Systems {
+
+
     bool ImguiSystem::initialize(Kernel::ISystemContext *ctx) {
         CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
@@ -143,7 +152,7 @@ namespace Corona::Systems {
         }
 
         uint32_t extensions_count = 0;
-        char const* const* extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
+        char const *const *extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
         std::vector<const char*> extensions;
         if (extensions_names) {
             for (uint32_t i = 0; i < extensions_count; i++) {
@@ -154,7 +163,7 @@ namespace Corona::Systems {
         m_VulkanBackend = std::make_unique<VulkanBackend>(window);
         m_VulkanBackend->Initialize(extensions);
         // expose backend for browser helpers
-        Corona::Systems::g_vulkan_backend = m_VulkanBackend.get();
+        g_vulkan_backend = m_VulkanBackend.get();
 
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -189,7 +198,7 @@ namespace Corona::Systems {
 
         
         //CreateBrowserTab("https://www.google.com");
-        CreateBrowserTab(ResolveHtmlPathForCef("/test.html"));
+        CreateBrowserTab(ResolveHtmlPathForCef("CabbageEditor/Frontend/dist/index.html"));
 
                     // 注册 nanobind 导出的 CoronaEngine 模块
         PyImport_AppendInittab("Imgui", &PyInit_Imgui);
@@ -208,8 +217,10 @@ namespace Corona::Systems {
         PyObject *pName = PyUnicode_FromString("test");
         PyObject *pModule = PyImport_Import(pName);
 
-        PyObject *pFunc = PyObject_GetAttrString(pModule, "test2");
-        PyObject *pValue = PyObject_CallObject(pFunc, NULL);
+        PyObject *pFunc = PyObject_GetAttrString(pModule, "open_browser");
+        PyObject *pArgs = PyTuple_New(1);
+        PyTuple_SetItem(pArgs, 0, PyUnicode_FromString("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html"));
+        PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
 
         PyGILState_Release(gstate);
 
@@ -230,7 +241,7 @@ namespace Corona::Systems {
         if (m_VulkanBackend) {
             m_VulkanBackend->Shutdown();
             m_VulkanBackend.reset();
-            Corona::Systems::g_vulkan_backend = nullptr;
+            g_vulkan_backend = nullptr;
         }
 
         if (window) {

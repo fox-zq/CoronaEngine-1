@@ -1,0 +1,167 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Python JSON API Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 10px;
+        }
+
+        .success {
+            color: #28a745;
+        }
+
+        .error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>Python JSON API Test</h1>
+
+    <div>
+        <h3>Test Functions:</h3>
+        <button onclick="callPython('greet', ['World'])">Greet</button>
+        <button onclick="callPython('add', [5, 3])">Add Numbers</button>
+        <button onclick="callPython('multiply', [4, 7])">Multiply</button>
+        <button onclick="callPython('get_info')">Get Info</button>
+        <button onclick="callPython('calculate', [{ 'a': 10, 'b': 20 }])">Calculate</button>
+    </div>
+
+    <div style="margin-top: 20px;">
+        <h3>Custom Call:</h3>
+        <div>
+            <label>Function:</label>
+            <input type="text" id="funcName" value="greet" style="margin: 5px;">
+        </div>
+        <div>
+            <label>Arguments (JSON array):</label><br>
+            <textarea id="funcArgs" rows="3" style="width: 300px; margin: 5px;">["Custom Name"]</textarea>
+        </div>
+        <button onclick="callCustom()">Call Function</button>
+    </div>
+
+    <div class="result">
+        <h3>Result:</h3>
+        <div id="resultContainer">
+            <div id="resultContent">No results yet</div>
+            <div id="resultJSON" style="display: none;">
+                <h4>JSON Response:</h4>
+                <pre id="jsonOutput"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 调用 Python 函数
+        function callPython(funcName, args = null) {
+        const request = {
+        function: funcName,
+        args: args || []
+        };
+
+        console.log("Sending request:", request);
+
+        window.cefQuery({
+        request: JSON.stringify(request),
+        persistent: false,
+        onSuccess: function(response) {
+        console.log(`Python ${funcName} success:`, response);
+        try {
+        // 尝试解析 JSON 响应
+        const jsonResponse = JSON.parse(response);
+        displayResult(funcName, jsonResponse, true);
+        } catch (e) {
+        // 如果不是 JSON，直接显示
+        displayResult(funcName, { data: response }, false);
+        }
+        },
+        onFailure: function(error_code, error_message) {
+        console.error(`Python ${funcName} failed:`, error_message);
+        displayResult(funcName, {
+        success: false,
+        error: error_message
+        }, true, true);
+        }
+        });
+        }
+
+        // 自定义调用
+        function callCustom() {
+        const funcName = document.getElementById('funcName').value;
+        let args = [];
+
+        try {
+        const argsText = document.getElementById('funcArgs').value.trim();
+        if (argsText) {
+        args = JSON.parse(argsText);
+        }
+        } catch (e) {
+        alert("Invalid JSON in arguments field: " + e.message);
+        return;
+        }
+
+        callPython(funcName, args);
+        }
+
+        // 显示结果
+        function displayResult(funcName, result, isJSON = false, isError = false) {
+        const container = document.getElementById('resultContainer');
+        const content = document.getElementById('resultContent');
+        const jsonOutput = document.getElementById('jsonOutput');
+        const jsonContainer = document.getElementById('resultJSON');
+
+        if (isError) {
+        content.className = 'error';
+        content.innerHTML = `<strong>Error in ${funcName}:</strong><br>${result.error || 'Unknown error'}`;
+        } else {
+        content.className = 'success';
+
+        if (isJSON && result.success !== false) {
+        // JSON 响应
+        content.innerHTML = `<strong>${funcName}:</strong><br>${JSON.stringify(result.data, null, 2)}`;
+        jsonOutput.textContent = JSON.stringify(result, null, 2);
+        jsonContainer.style.display = 'block';
+        } else if (isJSON && result.success === false) {
+        // JSON 错误响应
+        content.innerHTML = `<strong>Error in ${funcName}:</strong><br>${result.error || 'Unknown error'}`;
+        content.className = 'error';
+        } else {
+        // 纯文本响应
+        content.innerHTML = `<strong>${funcName}:</strong><br>${result.data || result}`;
+        }
+        }
+        }
+
+        // 在控制台提供方便的调用方法
+        window.py = {
+        call: callPython,
+        greet: (name) => callPython('greet', [name]),
+        add: (a, b) => callPython('add', [a, b]),
+        multiply: (a, b) => callPython('multiply', [a, b])
+        };
+
+    </script>
+</body>
+</html>

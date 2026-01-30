@@ -4,28 +4,20 @@
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
-#include <corona/systems/imgui/vulkan_backend.h>
+#include <corona/systems/ui/vulkan_backend.h>
 
 #include <memory>
-
 #include <SDL3/SDL.h>
 #include <imgui.h>
+    
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
-// CEF headers
-#include <cef_app.h>
-#include <cef_client.h>
-#include <cef_browser.h>
-#include <cef_render_handler.h>
-#include <cef_scheme.h>
-#include <wrapper/cef_helpers.h>
-#include <cef_v8.h>
 #include <windows.h>
 
-#include <wrapper/cef_message_router.h>
-
 namespace Corona::Systems {
+
+    class VulkanBackend;
 
 /**
  * @brief UI系统

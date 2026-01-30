@@ -8,7 +8,7 @@
 #include <corona/systems/mechanics/mechanics_system.h>
 #include <corona/systems/optics/optics_system.h>
 #include <corona/systems/script/script_system.h>
-#include <corona/systems/imgui/imgui_system.h>
+#include <corona/systems/ui/imgui_system.h>
 #include <corona/kernel/core/i_logger.h>
 
 #include <corona/resource/resource_manager.h>
@@ -227,31 +227,31 @@ bool Engine::register_systems() {
     CFW_LOG_INFO("Registering core systems...");
 
     // Display System - 最高优先级
-    sys_mgr->register_system(std::make_shared<Systems::DisplaySystem>());
-    CFW_LOG_INFO("  - DisplaySystem registered (priority 100)");
+    //sys_mgr->register_system(std::make_shared<Systems::DisplaySystem>());
+    //CFW_LOG_INFO("  - DisplaySystem registered (priority 100)");
 
-    // Optics System (光学系统)
-    sys_mgr->register_system(std::make_shared<Systems::OpticsSystem>());
-    CFW_LOG_INFO("  - OpticsSystem registered (priority 90)");
+    //// Optics System (光学系统)
+    //sys_mgr->register_system(std::make_shared<Systems::OpticsSystem>());
+    //CFW_LOG_INFO("  - OpticsSystem registered (priority 90)");
 
-    // Geometry System (几何系统)
-    sys_mgr->register_system(std::make_shared<Systems::GeometrySystem>());
-    CFW_LOG_INFO("  - GeometrySystem registered (priority 85)");
+    //// Geometry System (几何系统)
+    //sys_mgr->register_system(std::make_shared<Systems::GeometrySystem>());
+    //CFW_LOG_INFO("  - GeometrySystem registered (priority 85)");
 
-    // Animation System (动画系统)
-    sys_mgr->register_system(std::make_shared<Systems::KinematicsSystem>());
-    CFW_LOG_INFO("  - AnimationSystem registered (priority 80)");
+    //// Animation System (动画系统)
+    //sys_mgr->register_system(std::make_shared<Systems::KinematicsSystem>());
+    //CFW_LOG_INFO("  - AnimationSystem registered (priority 80)");
 
-    // Mechanics System (力学系统)
-    sys_mgr->register_system(std::make_shared<Systems::MechanicsSystem>());
-    CFW_LOG_INFO("  - MechanicsSystem registered (priority 75)");
+    //// Mechanics System (力学系统)
+    //sys_mgr->register_system(std::make_shared<Systems::MechanicsSystem>());
+    //CFW_LOG_INFO("  - MechanicsSystem registered (priority 75)");
 
-    // Acoustics System (声学系统)
-    sys_mgr->register_system(std::make_shared<Systems::AcousticsSystem>());
-    CFW_LOG_INFO("  - AcousticsSystem registered (priority 70)");
+    //// Acoustics System (声学系统)
+    //sys_mgr->register_system(std::make_shared<Systems::AcousticsSystem>());
+    //CFW_LOG_INFO("  - AcousticsSystem registered (priority 70)");
 
-    sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
-    CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
+    //sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
+    //CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
 
     sys_mgr->register_system(std::make_shared<Systems::ImguiSystem>());
     CFW_LOG_INFO("  - ImguiSystem registered (priority 50)");
