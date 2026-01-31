@@ -98,7 +98,7 @@ class ImguiSystem : public Kernel::SystemBase {
         PendingKeyEvent(EventType t) : type(t) {}
     };
 
-    std::vector<PendingKeyEvent> m_PendingKeyEvents;
+    std::vector<PendingKeyEvent> m_PendingKeyEvents;  // 待处理的键盘事件队列
     int m_ActiveTabId = -1;  // 当前活动的标签页ID
 
     // 调试输出函数

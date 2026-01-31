@@ -20,6 +20,7 @@ namespace nb = nanobind;
 NB_MODULE(Imgui, m) {
     m.doc() = "CoronaEngine embedded Python module (nanobind)";
 
+    // 向python注册创建浏览器标签页函数绑定
     m.def("create_browser_tab", [](nb::object py_url, nb::object py_path) -> int {
         try {
             if (!py_url.is_valid()) {
@@ -34,6 +35,7 @@ NB_MODULE(Imgui, m) {
             return -1;
         } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
 
+    // 向python注册执行JavaScript代码函数绑定
     m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {
         try {
             if (g_tabs.find(tab_id) == g_tabs.end()) {
@@ -62,9 +64,11 @@ namespace Corona::Systems {
 bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
+    // 设置 CEF 消息路由函数名称
     g_messageRouterConfig.js_query_function = "cefQuery";
     g_messageRouterConfig.js_cancel_function = "cefQueryCancel";
 
+    // 初始化 CEF
     CefMainArgs mainArgs(GetModuleHandle(nullptr));
     CefRefPtr<SimpleApp> app(new SimpleApp());
     int exitCode = CefExecuteProcess(mainArgs, app.get(), nullptr);
@@ -72,21 +76,27 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
         return exitCode;
     }
 
+    // 配置 CEF 设置
     CefSettings settings;
-    settings.multi_threaded_message_loop = true;
-    settings.windowless_rendering_enabled = true;
-    settings.no_sandbox = true;
-    settings.remote_debugging_port = 9222;
-    settings.log_severity = LOGSEVERITY_INFO;
-    settings.uncaught_exception_stack_size = 10;
+    settings.multi_threaded_message_loop = true;  // 启用多线程消息循环
+    settings.windowless_rendering_enabled = true;  // 启用无窗口渲染
+    settings.no_sandbox = true;                    // 禁用沙箱
+    settings.remote_debugging_port = 9222;         // 设置远程调试端口
+    settings.log_severity = LOGSEVERITY_INFO;      // 设置日志级别
+    settings.uncaught_exception_stack_size = 10;   // 设置未捕获异常堆栈大小
 
+
+    // 设置语言为简体中文
     CefString(&settings.locale).FromASCII("zh-CN");
+
+    // 设置资源和本地化文件路径
     std::filesystem::path cache_path = std::filesystem::current_path() / "cache";
     if (!std::filesystem::exists(cache_path)) {
         std::filesystem::create_directories(cache_path);
     }
-
     CefString(&settings.cache_path).FromString(cache_path.string());
+
+    // 设置子进程可执行文件路径和用户代理
     wchar_t exePath[MAX_PATH];
     GetModuleFileNameW(nullptr, exePath, MAX_PATH);
     CefString(&settings.browser_subprocess_path).FromWString(exePath);
@@ -94,6 +104,7 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     settings.background_color = CefColorSetARGB(255, 255, 255, 255);
     settings.persist_session_cookies = true;
 
+    // 处理命令行参数
     CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
     command_line->InitFromString(::GetCommandLineW());
 
@@ -110,6 +121,8 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
 }
 
 void ImguiSystem::thread_loop() {
+    // 在系统线程上运行，以确保 SDL 事件处理在同一线程上进行
+    // 初始化 SDL
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "SDL_Init Error: " << SDL_GetError() << '\n';
         CefShutdown();
@@ -134,12 +147,15 @@ void ImguiSystem::thread_loop() {
     SDL_StartTextInput(window);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 
+
+    // 初始化 Volk
     if (volkInitialize() != VK_SUCCESS) {
         std::cerr << "Failed to initialize Volk\n";
         running = false;
         return;
     }
 
+    // 获取 Vulkan 实例扩展
     uint32_t extensions_count = 0;
     char const* const* extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
     std::vector<const char*> extensions;
@@ -153,6 +169,7 @@ void ImguiSystem::thread_loop() {
     m_VulkanBackend->Initialize(extensions);
     g_vulkan_backend = m_VulkanBackend.get();
 
+    // 初始化 ImGui 上下文
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     io = &ImGui::GetIO();
@@ -168,8 +185,10 @@ void ImguiSystem::thread_loop() {
         style.Colors[ImGuiCol_WindowBg].w = 1.0f;
     }
 
+    // 初始化 ImGui SDL3 和 Vulkan 后端
     ImGui_ImplSDL3_InitForVulkan(window);
 
+    // 设置 ImGui Vulkan 初始化信息
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = m_VulkanBackend->GetInstance();
     init_info.PhysicalDevice = m_VulkanBackend->GetPhysicalDevice();
@@ -184,6 +203,8 @@ void ImguiSystem::thread_loop() {
 
     ImGui_ImplVulkan_Init(&init_info);
 
+
+    // 注册 Imgui 模块到嵌入式 Python 解释器
     PyImport_AppendInittab("Imgui", &PyInit_Imgui);
     CreateBrowserTab("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html");
     showDemoWindow = false;
@@ -193,6 +214,7 @@ void ImguiSystem::thread_loop() {
         update();
     }
 
+    // 清理和关闭
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
@@ -223,6 +245,7 @@ void ImguiSystem::update() {
 
     m_PendingKeyEvents.clear();
 
+    // 处理 SDL 事件
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_TEXT_EDITING) {
             ime_composing = true;
@@ -251,6 +274,7 @@ void ImguiSystem::update() {
             continue;
         }
 
+        // 处理键盘和文本输入事件
         if (event.type == SDL_EVENT_KEY_DOWN ||
             event.type == SDL_EVENT_KEY_UP ||
             event.type == SDL_EVENT_TEXT_INPUT ||
@@ -275,18 +299,19 @@ void ImguiSystem::update() {
             }
         }
 
+        // 将事件传递给 ImGui 进行处理
         if (should_process_in_imgui) {
             ImGui_ImplSDL3_ProcessEvent(&event);
         }
 
         switch (event.type) {
-            case SDL_EVENT_QUIT:
+            case SDL_EVENT_QUIT:  // 退出事件
                 running = false;
                 if (should_process_in_imgui) {
                     ImGui_ImplSDL3_ProcessEvent(&event);
                 }
                 break;
-            case SDL_EVENT_WINDOW_RESIZED:
+            case SDL_EVENT_WINDOW_RESIZED:  // 窗口大小调整事件
                 if (event.window.windowID == SDL_GetWindowID(window)) {
                     m_VulkanBackend->SetSwapChainRebuild(true);
                     if (should_process_in_imgui) {
@@ -294,16 +319,16 @@ void ImguiSystem::update() {
                     }
                 }
                 break;
-            case SDL_EVENT_WINDOW_FOCUS_GAINED:
-            case SDL_EVENT_WINDOW_FOCUS_LOST:
+            case SDL_EVENT_WINDOW_FOCUS_GAINED:  // 窗口获得焦点事件
+            case SDL_EVENT_WINDOW_FOCUS_LOST:    // 窗口失去焦点事件
                 if (should_process_in_imgui) {
                     ImGui_ImplSDL3_ProcessEvent(&event);
                 }
                 break;
-            case SDL_EVENT_MOUSE_BUTTON_DOWN:
-            case SDL_EVENT_MOUSE_BUTTON_UP:
-            case SDL_EVENT_MOUSE_MOTION:
-            case SDL_EVENT_MOUSE_WHEEL:
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:  // 鼠标按钮按下事件
+            case SDL_EVENT_MOUSE_BUTTON_UP:    // 鼠标按钮抬起事件
+            case SDL_EVENT_MOUSE_MOTION:       // 鼠标移动事件
+            case SDL_EVENT_MOUSE_WHEEL:       // 鼠标滚轮事件
                 ImGui_ImplSDL3_ProcessEvent(&event);
                 break;
             default:
@@ -314,16 +339,19 @@ void ImguiSystem::update() {
         }
     }
 
+    // 处理挂起的键盘事件
     if (m_VulkanBackend->IsSwapChainRebuild()) {
         int width, height;
         SDL_GetWindowSize(window, &width, &height);
         m_VulkanBackend->RebuildSwapChain(width, height);
     }
 
+    // 开始新的 ImGui 帧
     m_VulkanBackend->NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
+    // 设置停靠空间
     ImGuiWindowFlags dockSpaceFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -342,6 +370,7 @@ void ImguiSystem::update() {
     ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
 
+    // 创建主菜单栏
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Tab")) {
@@ -381,15 +410,15 @@ void ImguiSystem::update() {
         ImGui::ShowDemoWindow(&showDemoWindow);
     }
 
+    // 渲染浏览器标签页
     std::vector<int> tabsToClose;
-
     for (auto& [tabId, tab] : g_tabs) {
         if (!tab->open) {
             tabsToClose.push_back(tabId);
             continue;
         }
 
-        UpdateBrowserTexture(tabId);
+        UpdateBrowserTexture(tabId);  // 更新浏览器纹理
 
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
         std::string window_id = tab->name + "##" + std::to_string(tabId);
@@ -400,7 +429,7 @@ void ImguiSystem::update() {
                              ImGuiWindowFlags_NoNavFocus)) {
             ImGui::PushItemWidth(-200);
             std::string url_input_id = "##url_" + std::to_string(tabId);
-
+            // URL 输入框
             if (ImGui::InputText(url_input_id.c_str(), tab->urlBuffer, sizeof(tab->urlBuffer),
                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
                 if (tab->client && tab->client->GetBrowser()) {
@@ -412,7 +441,7 @@ void ImguiSystem::update() {
                 url_input_active_tab = tabId;
                 m_ActiveTabId = -1;
             }
-
+            // 导航按钮
             ImGui::PopItemWidth();
             ImGui::SameLine();
             if (ImGui::Button("Go")) {
@@ -438,7 +467,7 @@ void ImguiSystem::update() {
                     tab->client->GetBrowser()->Reload();
                 }
             }
-
+            // 浏览器内容区域
             ImVec2 availSize = ImGui::GetContentRegionAvail();
             int newWidth = (int)availSize.x;
             int newHeight = (int)availSize.y;
@@ -517,6 +546,7 @@ void ImguiSystem::update() {
         }
     }
 
+    // 渲染 ImGui
     ImGui::Render();
     ImDrawData* draw_data = ImGui::GetDrawData();
     const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);

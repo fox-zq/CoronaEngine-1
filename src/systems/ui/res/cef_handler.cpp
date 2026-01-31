@@ -19,6 +19,7 @@ void BrowserSideJSHandler::initialize_python() {
     PyObject* pModule = PyImport_Import(pName);
     Py_DECREF(pName);
 
+    // 获取函数引用
     if (pModule) {
         pFunc = PyObject_GetAttrString(pModule, "handle_request");
         Py_DECREF(pModule);
