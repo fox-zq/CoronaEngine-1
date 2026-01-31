@@ -61,8 +61,19 @@ namespace Corona::Systems {
 
 // 键码转换函数
 static int ConvertSDLKeyCodeToWindows(int sdl_key) {
+    if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
+        return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
+    }
+
+    // 数字键映射
+    if (sdl_key >= SDLK_0 && sdl_key <= SDLK_9) {
+        return 0x30 + (sdl_key - SDLK_0);  // 0-9: 0x30-0x39
+    }
+
     switch (sdl_key) {
         // 符号键映射
+        case SDLK_RETURN:
+            return 0x0D;  // VK_RETURN
         case SDLK_GRAVE:
             return 0xC0;
         case SDLK_MINUS:
@@ -183,7 +194,7 @@ static bool IsModifierKey(int key) {
            key == SDLK_LGUI || key == SDLK_RGUI;
 }
 
-// 判断是否应该发送CHAR事件（导航键、功能键等不应该发送CHAR事件）
+// 判断是否应该发送CHAR事件
 static bool ShouldSendCharEvent(int key, int modifiers) {
     // 修饰键不发送CHAR事件
     if (IsModifierKey(key)) {
@@ -193,6 +204,19 @@ static bool ShouldSendCharEvent(int key, int modifiers) {
     // 功能键不发送CHAR事件
     if ((key >= SDLK_F1 && key <= SDLK_F12)) {
         return false;
+    }
+
+    // 回车键需要发送CHAR事件以便浏览器处理换行
+    if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
+        return true;
+    }
+
+    // Ctrl+字母组合键（用于快捷键）应发送CHAR事件
+    if (modifiers & EVENTFLAG_CONTROL_DOWN) {
+        if ((key >= SDLK_A && key <= SDLK_Z) ||
+            (key >= SDLK_0 && key <= SDLK_9)) {
+            return true;
+        }
     }
 
     // 导航键不发送CHAR事件
@@ -246,11 +270,25 @@ void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
     if (sdl_mod & SDL_KMOD_CAPS) modifiers |= EVENTFLAG_CAPS_LOCK_ON;
     if (sdl_mod & SDL_KMOD_NUM) modifiers |= EVENTFLAG_NUM_LOCK_ON;
 
+    // 检测常见的编辑组合键
+    bool is_common_edit_shortcut = false;
+    if (modifiers & EVENTFLAG_CONTROL_DOWN) {
+        switch (key_code) {
+            case SDLK_A:  // Ctrl+A (全选)
+            case SDLK_C:  // Ctrl+C (复制)
+            case SDLK_V:  // Ctrl+V (粘贴)
+            case SDLK_Z:  // Ctrl+Z (撤销)
+            case SDLK_Y:  // Ctrl+Y (重做/复原)
+                is_common_edit_shortcut = true;
+                break;
+        }
+    }
+
     // 对于Ctrl/Alt+字母等组合键，需要特殊处理
-    bool is_modifier_combo = (modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) && 
-                            ((key_code >= 'a' && key_code <= 'z') || 
-                             (key_code >= 'A' && key_code <= 'Z') ||
-                             (key_code >= '0' && key_code <= '9'));
+    bool is_modifier_combo = (modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) &&
+                             ((key_code >= 'a' && key_code <= 'z') ||
+                              (key_code >= 'A' && key_code <= 'Z') ||
+                              (key_code >= '0' && key_code <= '9'));
 
     // 存储键盘事件
     PendingKeyEvent key_event(PendingKeyEvent::MKEY_EVENT);
@@ -258,7 +296,7 @@ void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
     key_event.scan_code = scan_code;
     key_event.modifiers = modifiers;
     key_event.pressed = pressed;
-    key_event.is_modifier_combo = is_modifier_combo;  // 添加这个标志
+    key_event.is_modifier_combo = is_modifier_combo || is_common_edit_shortcut;  // 标记为组合键
 
     m_PendingKeyEvents.push_back(key_event);
 }
@@ -311,29 +349,59 @@ void ImguiSystem::SendKeyEventsToBrowser(int tabId) {
             cef_key_event.character = pending_event.key_code;
             cef_key_event.unmodified_character = pending_event.key_code;
 
+            // 对于常见的编辑组合键，发送完整的键序列
+            bool is_common_edit_shortcut = false;
+            if (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) {
+                switch (pending_event.key_code) {
+                    case SDLK_A:  // Ctrl+A (全选)
+                    case SDLK_C:  // Ctrl+C (复制)
+                    case SDLK_V:  // Ctrl+V (粘贴)
+                    case SDLK_Z:  // Ctrl+Z (撤销)
+                    case SDLK_Y:  // Ctrl+Y (重做/复原)
+                        is_common_edit_shortcut = true;
+                        break;
+                }
+            }
+
             // 发送RAWKEYDOWN或KEYUP事件
             browser->GetHost()->SendKeyEvent(cef_key_event);
 
-            // 重要修改：不发送KEYEVENT_CHAR事件，让文本输入事件处理字符
-            // 只发送特殊功能键的CHAR事件
-            if (pending_event.pressed) {
-                // 只对需要特殊处理的键发送CHAR事件
-                switch (pending_event.key_code) {
-                    case SDLK_RETURN:
-                    case SDLK_KP_ENTER:
-                    case SDLK_TAB:
-                    case SDLK_BACKSPACE:
-                    case SDLK_DELETE:
-                    case SDLK_ESCAPE:
-                        // 这些特殊键需要发送CHAR事件
-                        cef_key_event.type = KEYEVENT_CHAR;
-                        browser->GetHost()->SendKeyEvent(cef_key_event);
-                        break;
+            // 特殊处理回车键：总是发送CHAR事件
+            if (pending_event.pressed &&
+                (pending_event.key_code == SDLK_RETURN || pending_event.key_code == SDLK_KP_ENTER)) {
+                // 对于回车键，需要发送CHAR事件以便浏览器能处理换行
+                CefKeyEvent char_event = cef_key_event;
+                char_event.type = KEYEVENT_CHAR;
+                char_event.character = 0x0D;  // 回车符的ASCII码
+                char_event.unmodified_character = 0x0D;
+                browser->GetHost()->SendKeyEvent(char_event);
+            }
 
-                    default:
-                        // 对于字母、数字、符号等常规字符，不发送CHAR事件
-                        // 这些字符将通过TEXT_EVENT处理
-                        break;
+            // 对于组合键，需要发送CHAR事件以确保浏览器能正确处理
+            if (pending_event.pressed && pending_event.is_modifier_combo) {
+                // 对于编辑组合键，发送CHAR事件
+                if (is_common_edit_shortcut) {
+                    cef_key_event.type = KEYEVENT_CHAR;
+                    browser->GetHost()->SendKeyEvent(cef_key_event);
+                } else {
+                    // 对于其他组合键，根据原始逻辑处理
+                    switch (pending_event.key_code) {
+                        case SDLK_RETURN:
+                        case SDLK_KP_ENTER:
+                        case SDLK_TAB:
+                        case SDLK_BACKSPACE:
+                        case SDLK_DELETE:
+                        case SDLK_ESCAPE:
+                            // 这些特殊键需要发送CHAR事件
+                            cef_key_event.type = KEYEVENT_CHAR;
+                            browser->GetHost()->SendKeyEvent(cef_key_event);
+                            break;
+
+                        default:
+                            // 对于字母、数字、符号等常规组合键，不发送CHAR事件
+                            // 这些字符将通过TEXT_EVENT处理
+                            break;
+                    }
                 }
             }
         } else if (pending_event.type == PendingKeyEvent::TEXT_EVENT) {
