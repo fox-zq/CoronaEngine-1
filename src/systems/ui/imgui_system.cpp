@@ -59,419 +59,6 @@ extern "C" PyObject* PyInit_Imgui();
 
 namespace Corona::Systems {
 
-// 键码转换函数
-static int ConvertSDLKeyCodeToWindows(int sdl_key) {
-    if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
-        return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
-    }
-
-    // 数字键映射
-    if (sdl_key >= SDLK_0 && sdl_key <= SDLK_9) {
-        return 0x30 + (sdl_key - SDLK_0);  // 0-9: 0x30-0x39
-    }
-
-    switch (sdl_key) {
-        // 符号键映射
-        case SDLK_RETURN:
-            return 0x0D;  // VK_RETURN
-        case SDLK_GRAVE:
-            return 0xC0;
-        case SDLK_MINUS:
-            return 0xBD;
-        case SDLK_EQUALS:
-            return 0xBB;
-        case SDLK_LEFTBRACKET:
-            return 0xDB;
-        case SDLK_RIGHTBRACKET:
-            return 0xDD;
-        case SDLK_BACKSLASH:
-            return 0xDC;
-        case SDLK_SEMICOLON:
-            return 0xBA;
-        case SDLK_APOSTROPHE:
-            return 0xDE;
-        case SDLK_COMMA:
-            return 0xBC;
-        case SDLK_PERIOD:
-            return 0xBE;
-        case SDLK_SLASH:
-            return 0xBF;
-
-        // 导航键映射
-        case SDLK_LEFT:
-            return 0x25;  // VK_LEFT
-        case SDLK_UP:
-            return 0x26;  // VK_UP
-        case SDLK_RIGHT:
-            return 0x27;  // VK_RIGHT
-        case SDLK_DOWN:
-            return 0x28;  // VK_DOWN
-        case SDLK_HOME:
-            return 0x24;  // VK_HOME
-        case SDLK_END:
-            return 0x23;  // VK_END
-        case SDLK_PAGEUP:
-            return 0x21;  // VK_PRIOR
-        case SDLK_PAGEDOWN:
-            return 0x22;  // VK_NEXT
-        case SDLK_INSERT:
-            return 0x2D;  // VK_INSERT
-        case SDLK_DELETE:
-            return 0x2E;  // VK_DELETE
-        case SDLK_BACKSPACE:
-            return 0x08;  // VK_BACK
-
-        // 小键盘键
-        case SDLK_KP_0:
-            return 0x60;
-        case SDLK_KP_1:
-            return 0x61;
-        case SDLK_KP_2:
-            return 0x62;
-        case SDLK_KP_3:
-            return 0x63;
-        case SDLK_KP_4:
-            return 0x64;
-        case SDLK_KP_5:
-            return 0x65;
-        case SDLK_KP_6:
-            return 0x66;
-        case SDLK_KP_7:
-            return 0x67;
-        case SDLK_KP_8:
-            return 0x68;
-        case SDLK_KP_9:
-            return 0x69;
-        case SDLK_KP_MULTIPLY:
-            return 0x6A;
-        case SDLK_KP_PLUS:
-            return 0x6B;
-        case SDLK_KP_MINUS:
-            return 0x6D;
-        case SDLK_KP_DECIMAL:
-            return 0x6E;
-        case SDLK_KP_DIVIDE:
-            return 0x6F;
-        case SDLK_KP_ENTER:
-            return 0x0D;
-
-        // 功能键
-        case SDLK_F1:
-            return 0x70;
-        case SDLK_F2:
-            return 0x71;
-        case SDLK_F3:
-            return 0x72;
-        case SDLK_F4:
-            return 0x73;
-        case SDLK_F5:
-            return 0x74;
-        case SDLK_F6:
-            return 0x75;
-        case SDLK_F7:
-            return 0x76;
-        case SDLK_F8:
-            return 0x77;
-        case SDLK_F9:
-            return 0x78;
-        case SDLK_F10:
-            return 0x79;
-        case SDLK_F11:
-            return 0x7A;
-        case SDLK_F12:
-            return 0x7B;
-
-        default:
-            return sdl_key;
-    }
-}
-
-// 判断是否是修饰键
-static bool IsModifierKey(int key) {
-    return key == SDLK_LCTRL || key == SDLK_RCTRL ||
-           key == SDLK_LSHIFT || key == SDLK_RSHIFT ||
-           key == SDLK_LALT || key == SDLK_RALT ||
-           key == SDLK_LGUI || key == SDLK_RGUI;
-}
-
-// 判断是否应该发送CHAR事件
-static bool ShouldSendCharEvent(int key, int modifiers) {
-    // 修饰键不发送CHAR事件
-    if (IsModifierKey(key)) {
-        return false;
-    }
-
-    // 功能键不发送CHAR事件
-    if ((key >= SDLK_F1 && key <= SDLK_F12)) {
-        return false;
-    }
-
-    // 回车键需要发送CHAR事件以便浏览器处理换行
-    if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
-        return true;
-    }
-
-    // Ctrl+字母组合键（用于快捷键）应发送CHAR事件
-    if (modifiers & EVENTFLAG_CONTROL_DOWN) {
-        if ((key >= SDLK_A && key <= SDLK_Z) ||
-            (key >= SDLK_0 && key <= SDLK_9)) {
-            return true;
-        }
-    }
-
-    // 导航键不发送CHAR事件
-    switch (key) {
-        case SDLK_ESCAPE:
-        case SDLK_TAB:
-        case SDLK_CAPSLOCK:
-        case SDLK_PRINTSCREEN:
-        case SDLK_SCROLLLOCK:
-        case SDLK_PAUSE:
-        case SDLK_INSERT:
-        case SDLK_HOME:
-        case SDLK_PAGEUP:
-        case SDLK_DELETE:
-        case SDLK_END:
-        case SDLK_PAGEDOWN:
-        case SDLK_RIGHT:
-        case SDLK_LEFT:
-        case SDLK_DOWN:
-        case SDLK_UP:
-        case SDLK_NUMLOCKCLEAR:
-        case SDLK_KP_CLEAR:
-        case SDLK_BACKSPACE:
-            return false;
-    }
-
-    // 如果Alt键按下，通常不发送CHAR事件（用于菜单快捷键）
-    if (modifiers & EVENTFLAG_ALT_DOWN) {
-        if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
-            return true;
-        }
-        return false;
-    }
-
-    return true;
-}
-
-// 处理SDL键盘事件
-void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
-    bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
-    int key_code = event.key.key;
-    int scan_code = event.key.scancode;
-    int modifiers = 0;
-
-    // 转换SDL modifiers到CEF modifiers
-    Uint32 sdl_mod = event.key.mod;
-    if (sdl_mod & SDL_KMOD_CTRL) modifiers |= EVENTFLAG_CONTROL_DOWN;
-    if (sdl_mod & SDL_KMOD_SHIFT) modifiers |= EVENTFLAG_SHIFT_DOWN;
-    if (sdl_mod & SDL_KMOD_ALT) modifiers |= EVENTFLAG_ALT_DOWN;
-    if (sdl_mod & SDL_KMOD_GUI) modifiers |= EVENTFLAG_COMMAND_DOWN;
-    if (sdl_mod & SDL_KMOD_CAPS) modifiers |= EVENTFLAG_CAPS_LOCK_ON;
-    if (sdl_mod & SDL_KMOD_NUM) modifiers |= EVENTFLAG_NUM_LOCK_ON;
-
-    // 检测常见的编辑组合键
-    bool is_common_edit_shortcut = false;
-    if (modifiers & EVENTFLAG_CONTROL_DOWN) {
-        switch (key_code) {
-            case SDLK_A:  // Ctrl+A (全选)
-            case SDLK_C:  // Ctrl+C (复制)
-            case SDLK_V:  // Ctrl+V (粘贴)
-            case SDLK_Z:  // Ctrl+Z (撤销)
-            case SDLK_Y:  // Ctrl+Y (重做/复原)
-                is_common_edit_shortcut = true;
-                break;
-        }
-    }
-
-    // 对于Ctrl/Alt+字母等组合键，需要特殊处理
-    bool is_modifier_combo = (modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) &&
-                             ((key_code >= 'a' && key_code <= 'z') ||
-                              (key_code >= 'A' && key_code <= 'Z') ||
-                              (key_code >= '0' && key_code <= '9'));
-
-    // 存储键盘事件
-    PendingKeyEvent key_event(PendingKeyEvent::MKEY_EVENT);
-    key_event.key_code = key_code;
-    key_event.scan_code = scan_code;
-    key_event.modifiers = modifiers;
-    key_event.pressed = pressed;
-    key_event.is_modifier_combo = is_modifier_combo || is_common_edit_shortcut;  // 标记为组合键
-
-    m_PendingKeyEvents.push_back(key_event);
-}
-
-// 处理SDL文本输入事件
-void ImguiSystem::ProcessSDLTextEvent(const SDL_Event& event) {
-    if (event.text.text && event.text.text[0]) {
-        PendingKeyEvent text_event(PendingKeyEvent::TEXT_EVENT);
-        text_event.text = event.text.text;
-        m_PendingKeyEvents.push_back(text_event);
-    }
-}
-
-// 处理SDL IME事件
-void ImguiSystem::ProcessSDLIMEEvent(const SDL_Event& event) {
-    if (event.edit.text && event.edit.text[0]) {
-        PendingKeyEvent ime_event(PendingKeyEvent::IME_COMPOSITION);
-        ime_event.text = event.edit.text;
-        ime_event.ime_start = event.edit.start;
-        ime_event.ime_length = event.edit.length;
-        m_PendingKeyEvents.push_back(ime_event);
-    }
-}
-
-// 发送键盘事件到浏览器
-void ImguiSystem::SendKeyEventsToBrowser(int tabId) {
-    if (g_tabs.find(tabId) == g_tabs.end() || !g_tabs[tabId]->client ||
-        !g_tabs[tabId]->client->GetBrowser()) {
-        return;
-    }
-
-    BrowserTab* tab = g_tabs[tabId];
-    CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
-
-    for (const auto& pending_event : m_PendingKeyEvents) {
-        if (pending_event.type == PendingKeyEvent::MKEY_EVENT) {
-            CefKeyEvent cef_key_event;
-
-            // 设置事件类型
-            cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
-
-            // 转换键码
-            cef_key_event.windows_key_code = ConvertSDLKeyCodeToWindows(pending_event.key_code);
-            cef_key_event.native_key_code = pending_event.scan_code;
-
-            // 设置修饰键
-            cef_key_event.modifiers = pending_event.modifiers;
-
-            // 对于组合键（如Ctrl+C），需要特殊处理
-            cef_key_event.character = pending_event.key_code;
-            cef_key_event.unmodified_character = pending_event.key_code;
-
-            // 对于常见的编辑组合键，发送完整的键序列
-            bool is_common_edit_shortcut = false;
-            if (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) {
-                switch (pending_event.key_code) {
-                    case SDLK_A:  // Ctrl+A (全选)
-                    case SDLK_C:  // Ctrl+C (复制)
-                    case SDLK_V:  // Ctrl+V (粘贴)
-                    case SDLK_Z:  // Ctrl+Z (撤销)
-                    case SDLK_Y:  // Ctrl+Y (重做/复原)
-                        is_common_edit_shortcut = true;
-                        break;
-                }
-            }
-
-            // 发送RAWKEYDOWN或KEYUP事件
-            browser->GetHost()->SendKeyEvent(cef_key_event);
-
-            // 特殊处理回车键：总是发送CHAR事件
-            if (pending_event.pressed &&
-                (pending_event.key_code == SDLK_RETURN || pending_event.key_code == SDLK_KP_ENTER)) {
-                // 对于回车键，需要发送CHAR事件以便浏览器能处理换行
-                CefKeyEvent char_event = cef_key_event;
-                char_event.type = KEYEVENT_CHAR;
-                char_event.character = 0x0D;  // 回车符的ASCII码
-                char_event.unmodified_character = 0x0D;
-                browser->GetHost()->SendKeyEvent(char_event);
-            }
-
-            // 对于组合键，需要发送CHAR事件以确保浏览器能正确处理
-            if (pending_event.pressed && pending_event.is_modifier_combo) {
-                // 对于编辑组合键，发送CHAR事件
-                if (is_common_edit_shortcut) {
-                    cef_key_event.type = KEYEVENT_CHAR;
-                    browser->GetHost()->SendKeyEvent(cef_key_event);
-                } else {
-                    // 对于其他组合键，根据原始逻辑处理
-                    switch (pending_event.key_code) {
-                        case SDLK_RETURN:
-                        case SDLK_KP_ENTER:
-                        case SDLK_TAB:
-                        case SDLK_BACKSPACE:
-                        case SDLK_DELETE:
-                        case SDLK_ESCAPE:
-                            // 这些特殊键需要发送CHAR事件
-                            cef_key_event.type = KEYEVENT_CHAR;
-                            browser->GetHost()->SendKeyEvent(cef_key_event);
-                            break;
-
-                        default:
-                            // 对于字母、数字、符号等常规组合键，不发送CHAR事件
-                            // 这些字符将通过TEXT_EVENT处理
-                            break;
-                    }
-                }
-            }
-        } else if (pending_event.type == PendingKeyEvent::TEXT_EVENT) {
-            // 处理文本输入 - 所有字符输入都通过这里处理
-            const std::string& text = pending_event.text;
-            if (!text.empty()) {
-                // 检查文本中是否包含控制字符
-                bool has_control_chars = false;
-                for (char c : text) {
-                    if (c == '\b' || c == '\t' || c == '\n' || c == '\r') {
-                        has_control_chars = true;
-                        break;
-                    }
-                }
-
-                if (!has_control_chars) {
-                    // 处理普通文本字符
-                    bool is_ascii = true;
-                    for (char c : text) {
-                        if (static_cast<unsigned char>(c) >= 128) {
-                            is_ascii = false;
-                            break;
-                        }
-                    }
-
-                    if (is_ascii) {
-                        // ASCII文本，直接发送
-                        for (char c : text) {
-                            if (c >= 32 && c < 127) {  // 可打印字符
-                                CefKeyEvent cef_text_event;
-                                cef_text_event.type = KEYEVENT_CHAR;
-                                cef_text_event.modifiers = 0;
-                                cef_text_event.windows_key_code = static_cast<uint16_t>(c);
-                                cef_text_event.native_key_code = static_cast<uint16_t>(c);
-                                cef_text_event.character = static_cast<uint16_t>(c);
-                                cef_text_event.unmodified_character = static_cast<uint16_t>(c);
-                                browser->GetHost()->SendKeyEvent(cef_text_event);
-                            }
-                        }
-                    } else {
-                        // 非ASCII文本（中文），使用UTF-16转换
-                        char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
-                        if (utf16_text) {
-                            uint16_t* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
-                            size_t utf16_len = 0;
-                            while (utf16_chars[utf16_len] != 0) {
-                                utf16_len++;
-                            }
-                            for (size_t i = 0; i < utf16_len; i++) {
-                                CefKeyEvent cef_text_event;
-                                cef_text_event.type = KEYEVENT_CHAR;
-                                cef_text_event.modifiers = 0;
-                                cef_text_event.windows_key_code = utf16_chars[i];
-                                cef_text_event.native_key_code = utf16_chars[i];
-                                cef_text_event.character = utf16_chars[i];
-                                cef_text_event.unmodified_character = utf16_chars[i];
-                                browser->GetHost()->SendKeyEvent(cef_text_event);
-                            }
-                            SDL_free(utf16_text);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 清空待处理事件
-    m_PendingKeyEvents.clear();
-}
-
 bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
@@ -953,6 +540,224 @@ void ImguiSystem::shutdown() {
     }
     g_tabs.clear();
     m_PendingKeyEvents.clear();
+}
+
+// 发送键盘事件到浏览器
+void ImguiSystem::SendKeyEventsToBrowser(int tabId) {
+    if (g_tabs.find(tabId) == g_tabs.end() || !g_tabs[tabId]->client ||
+        !g_tabs[tabId]->client->GetBrowser()) {
+        return;
+    }
+
+    BrowserTab* tab = g_tabs[tabId];
+    CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
+
+    for (const auto& pending_event : m_PendingKeyEvents) {
+        if (pending_event.type == PendingKeyEvent::MKEY_EVENT) {
+            CefKeyEvent cef_key_event;
+
+            // 设置事件类型
+            cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
+
+            // 转换键码
+            cef_key_event.windows_key_code = ConvertSDLKeyCodeToWindows(pending_event.key_code);
+            cef_key_event.native_key_code = pending_event.scan_code;
+
+            // 设置修饰键
+            cef_key_event.modifiers = pending_event.modifiers;
+
+            // 对于组合键（如Ctrl+C），需要特殊处理
+            cef_key_event.character = pending_event.key_code;
+            cef_key_event.unmodified_character = pending_event.key_code;
+
+            // 对于常见的编辑组合键，发送完整的键序列
+            bool is_common_edit_shortcut = false;
+            if (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) {
+                switch (pending_event.key_code) {
+                    case SDLK_A:  // Ctrl+A (全选)
+                    case SDLK_C:  // Ctrl+C (复制)
+                    case SDLK_V:  // Ctrl+V (粘贴)
+                    case SDLK_Z:  // Ctrl+Z (撤销)
+                    case SDLK_Y:  // Ctrl+Y (重做/复原)
+                        is_common_edit_shortcut = true;
+                        break;
+                }
+            }
+
+            // 发送RAWKEYDOWN或KEYUP事件
+            browser->GetHost()->SendKeyEvent(cef_key_event);
+
+            // 特殊处理回车键：总是发送CHAR事件
+            if (pending_event.pressed &&
+                (pending_event.key_code == SDLK_RETURN || pending_event.key_code == SDLK_KP_ENTER)) {
+                // 对于回车键，需要发送CHAR事件以便浏览器能处理换行
+                CefKeyEvent char_event = cef_key_event;
+                char_event.type = KEYEVENT_CHAR;
+                char_event.character = 0x0D;  // 回车符的ASCII码
+                char_event.unmodified_character = 0x0D;
+                browser->GetHost()->SendKeyEvent(char_event);
+            }
+
+            // 对于组合键，需要发送CHAR事件以确保浏览器能正确处理
+            if (pending_event.pressed && pending_event.is_modifier_combo) {
+                // 对于编辑组合键，发送CHAR事件
+                if (is_common_edit_shortcut) {
+                    cef_key_event.type = KEYEVENT_CHAR;
+                    browser->GetHost()->SendKeyEvent(cef_key_event);
+                } else {
+                    // 对于其他组合键，根据原始逻辑处理
+                    switch (pending_event.key_code) {
+                        case SDLK_RETURN:
+                        case SDLK_KP_ENTER:
+                        case SDLK_TAB:
+                        case SDLK_BACKSPACE:
+                        case SDLK_DELETE:
+                        case SDLK_ESCAPE:
+                            // 这些特殊键需要发送CHAR事件
+                            cef_key_event.type = KEYEVENT_CHAR;
+                            browser->GetHost()->SendKeyEvent(cef_key_event);
+                            break;
+
+                        default:
+                            // 对于字母、数字、符号等常规组合键，不发送CHAR事件
+                            // 这些字符将通过TEXT_EVENT处理
+                            break;
+                    }
+                }
+            }
+        } else if (pending_event.type == PendingKeyEvent::TEXT_EVENT) {
+            // 处理文本输入 - 所有字符输入都通过这里处理
+            const std::string& text = pending_event.text;
+            if (!text.empty()) {
+                // 检查文本中是否包含控制字符
+                bool has_control_chars = false;
+                for (char c : text) {
+                    if (c == '\b' || c == '\t' || c == '\n' || c == '\r') {
+                        has_control_chars = true;
+                        break;
+                    }
+                }
+
+                if (!has_control_chars) {
+                    // 处理普通文本字符
+                    bool is_ascii = true;
+                    for (char c : text) {
+                        if (static_cast<unsigned char>(c) >= 128) {
+                            is_ascii = false;
+                            break;
+                        }
+                    }
+
+                    if (is_ascii) {
+                        // ASCII文本，直接发送
+                        for (char c : text) {
+                            if (c >= 32 && c < 127) {  // 可打印字符
+                                CefKeyEvent cef_text_event;
+                                cef_text_event.type = KEYEVENT_CHAR;
+                                cef_text_event.modifiers = 0;
+                                cef_text_event.windows_key_code = static_cast<uint16_t>(c);
+                                cef_text_event.native_key_code = static_cast<uint16_t>(c);
+                                cef_text_event.character = static_cast<uint16_t>(c);
+                                cef_text_event.unmodified_character = static_cast<uint16_t>(c);
+                                browser->GetHost()->SendKeyEvent(cef_text_event);
+                            }
+                        }
+                    } else {
+                        // 非ASCII文本（中文），使用UTF-16转换
+                        char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
+                        if (utf16_text) {
+                            uint16_t* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
+                            size_t utf16_len = 0;
+                            while (utf16_chars[utf16_len] != 0) {
+                                utf16_len++;
+                            }
+                            for (size_t i = 0; i < utf16_len; i++) {
+                                CefKeyEvent cef_text_event;
+                                cef_text_event.type = KEYEVENT_CHAR;
+                                cef_text_event.modifiers = 0;
+                                cef_text_event.windows_key_code = utf16_chars[i];
+                                cef_text_event.native_key_code = utf16_chars[i];
+                                cef_text_event.character = utf16_chars[i];
+                                cef_text_event.unmodified_character = utf16_chars[i];
+                                browser->GetHost()->SendKeyEvent(cef_text_event);
+                            }
+                            SDL_free(utf16_text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 清空待处理事件
+    m_PendingKeyEvents.clear();
+}
+
+// 处理SDL键盘事件
+void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
+    bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
+    int key_code = event.key.key;
+    int scan_code = event.key.scancode;
+    int modifiers = 0;
+
+    // 转换SDL modifiers到CEF modifiers
+    Uint32 sdl_mod = event.key.mod;
+    if (sdl_mod & SDL_KMOD_CTRL) modifiers |= EVENTFLAG_CONTROL_DOWN;
+    if (sdl_mod & SDL_KMOD_SHIFT) modifiers |= EVENTFLAG_SHIFT_DOWN;
+    if (sdl_mod & SDL_KMOD_ALT) modifiers |= EVENTFLAG_ALT_DOWN;
+    if (sdl_mod & SDL_KMOD_GUI) modifiers |= EVENTFLAG_COMMAND_DOWN;
+    if (sdl_mod & SDL_KMOD_CAPS) modifiers |= EVENTFLAG_CAPS_LOCK_ON;
+    if (sdl_mod & SDL_KMOD_NUM) modifiers |= EVENTFLAG_NUM_LOCK_ON;
+
+    // 检测常见的编辑组合键
+    bool is_common_edit_shortcut = false;
+    if (modifiers & EVENTFLAG_CONTROL_DOWN) {
+        switch (key_code) {
+            case SDLK_A:  // Ctrl+A (全选)
+            case SDLK_C:  // Ctrl+C (复制)
+            case SDLK_V:  // Ctrl+V (粘贴)
+            case SDLK_Z:  // Ctrl+Z (撤销)
+            case SDLK_Y:  // Ctrl+Y (重做/复原)
+                is_common_edit_shortcut = true;
+                break;
+        }
+    }
+
+    // 对于Ctrl/Alt+字母等组合键，需要特殊处理
+    bool is_modifier_combo = (modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) &&
+                             ((key_code >= 'a' && key_code <= 'z') ||
+                              (key_code >= 'A' && key_code <= 'Z') ||
+                              (key_code >= '0' && key_code <= '9'));
+
+    // 存储键盘事件
+    PendingKeyEvent key_event(PendingKeyEvent::MKEY_EVENT);
+    key_event.key_code = key_code;
+    key_event.scan_code = scan_code;
+    key_event.modifiers = modifiers;
+    key_event.pressed = pressed;
+    key_event.is_modifier_combo = is_modifier_combo || is_common_edit_shortcut;  // 标记为组合键
+
+    m_PendingKeyEvents.push_back(key_event);
+}
+
+// 处理SDL文本输入事件
+void ImguiSystem::ProcessSDLTextEvent(const SDL_Event& event) {
+    if (event.text.text && event.text.text[0]) {
+        PendingKeyEvent text_event(PendingKeyEvent::TEXT_EVENT);
+        text_event.text = event.text.text;
+        m_PendingKeyEvents.push_back(text_event);
+    }
+}
+
+// 处理SDL IME事件
+void ImguiSystem::ProcessSDLIMEEvent(const SDL_Event& event) {
+    if (event.edit.text && event.edit.text[0]) {
+        PendingKeyEvent ime_event(PendingKeyEvent::IME_COMPOSITION);
+        ime_event.text = event.edit.text;
+        ime_event.ime_start = event.edit.start;
+        ime_event.ime_length = event.edit.length;
+        m_PendingKeyEvents.push_back(ime_event);
+    }
 }
 
 }  // namespace Corona::Systems
