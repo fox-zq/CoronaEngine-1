@@ -30,6 +30,9 @@ struct BrowserTab {
     char urlBuffer[1024] = "";
     std::vector<uint8_t> pixelBuffer;
     bool bufferDirty = false;
+
+    
+    bool hasFocus = false;
 };
 
 // 全局变量声明（在实际的cpp文件中定义）

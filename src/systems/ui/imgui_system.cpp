@@ -1,526 +1,931 @@
-﻿#include <corona/events/display_system_events.h>
+﻿#include <SDL3/SDL_vulkan.h>
+#include <corona/events/display_system_events.h>
 #include <corona/events/engine_events.h>
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/systems/ui/imgui_system.h>
-#include "res/BrowserWindow.h"
-#include "res/cef_client.h"
-#include "res/browser_types.h"
-#include <iostream>
-#include <filesystem>
-#include <SDL3/SDL_vulkan.h>
 #include <nanobind/nanobind.h>
+
+#include <cstdarg>
+#include <filesystem>
+#include <iostream>
+
+#include "res/BrowserWindow.h"
+#include "res/browser_types.h"
+#include "res/cef_client.h"
+
 namespace nb = nanobind;
 
 NB_MODULE(Imgui, m) {
     m.doc() = "CoronaEngine embedded Python module (nanobind)";
 
-    // 注册 BrowserTab 类到 Python
-    //nb::class_<BrowserTab>(m, "BrowserTab")
-    //    .def("__repr__", [](BrowserTab &self) {
-    //        return "<BrowserTab object>";
-    //    });
-
-    // 注册 create_browser_tab 函数到 Python
-    // python 创建浏览器标签页
     m.def("create_browser_tab", [](nb::object py_url, nb::object py_path) -> int {
-        try 
-        {
-            // 手动转换 Python 字符串
+        try {
             if (!py_url.is_valid()) {
-                std::cerr << "[ERROR] Invalid Python object!" << std::endl;
                 return -1;
             }
-
-            // 获取字符串表示
             nb::str py_url_str = nb::str(py_url);
             std::string url = py_url_str.c_str();
-
             nb::str py_path_str = nb::str(py_path);
             std::string path = py_path_str.c_str();
-
-            std::cout << "[NANOBIND PYOBJ] URL from Python: " << url << std::endl;
             return CreateBrowserTab(url, path);
-        }
-        catch (const std::exception& e)
-        {
-            std::cerr << "[ERROR] Exception in create_browser_tab: " << e.what() << std::endl;
+        } catch (const std::exception& e) {
             return -1;
         } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
 
-    // 注册 execute_javascript 函数到 Python
-    // python 指定标签页执行 JavaScript 代码
     m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {
-    try {
-        if (g_tabs.find(tab_id) == g_tabs.end()) {
-            return nb::str("{\"success\": false, \"error\": \"Tab not found\"}");
-        }
-
-        nb::str py_str = nb::str(py_js_code);
-        std::string js_code = py_str.c_str();
-        
-        BrowserTab* tab = g_tabs[tab_id];
-        if (tab->client && tab->client->GetBrowser()) {
-            CefRefPtr<CefFrame> frame = tab->client->GetBrowser()->GetMainFrame();
-            if (frame) {
-                // 执行 JavaScript 代码
-                std::cout << "[INFO] Now call tab js:" << tab_id << ",content:" << js_code << std::endl;
-                frame->ExecuteJavaScript(js_code, "", 0);
+        try {
+            if (g_tabs.find(tab_id) == g_tabs.end()) {
+                return nb::str("{\"success\": false, \"error\": \"Tab not found\"}");
             }
-        }
-        return nb::str("{\"success\": true}");
-    } catch (const std::exception& e) {
-        std::cerr << "[ERROR] Exception in execute_javascript: " << e.what() << std::endl;
-        return nb::str("{\"success\": false \"}");
-    } }, nb::arg("tab_id"), nb::arg("js_code"));
+            nb::str py_str = nb::str(py_js_code);
+            std::string js_code = py_str.c_str();
+            BrowserTab* tab = g_tabs[tab_id];
+            if (tab->client && tab->client->GetBrowser()) {
+                CefRefPtr<CefFrame> frame = tab->client->GetBrowser()->GetMainFrame();
+                if (frame) {
+                    frame->ExecuteJavaScript(js_code, "", 0);
+                }
+            }
+            return nb::str("{\"success\": true}");
+        } catch (const std::exception& e) {
+            return nb::str("{\"success\": false \"}");
+        } }, nb::arg("tab_id"), nb::arg("js_code"));
 }
 
- 
 CefMessageRouterConfig g_messageRouterConfig;
-
-extern "C" PyObject *PyInit_Imgui();
+extern "C" PyObject* PyInit_Imgui();
 
 namespace Corona::Systems {
 
+// 键码转换函数
+static int ConvertSDLKeyCodeToWindows(int sdl_key) {
+    switch (sdl_key) {
+        // 符号键映射
+        case SDLK_GRAVE:
+            return 0xC0;
+        case SDLK_MINUS:
+            return 0xBD;
+        case SDLK_EQUALS:
+            return 0xBB;
+        case SDLK_LEFTBRACKET:
+            return 0xDB;
+        case SDLK_RIGHTBRACKET:
+            return 0xDD;
+        case SDLK_BACKSLASH:
+            return 0xDC;
+        case SDLK_SEMICOLON:
+            return 0xBA;
+        case SDLK_APOSTROPHE:
+            return 0xDE;
+        case SDLK_COMMA:
+            return 0xBC;
+        case SDLK_PERIOD:
+            return 0xBE;
+        case SDLK_SLASH:
+            return 0xBF;
 
-    bool ImguiSystem::initialize(Kernel::ISystemContext *ctx) {
-        CFW_LOG_NOTICE("ImguiSystem: Initializing...");
+        // 导航键映射
+        case SDLK_LEFT:
+            return 0x25;  // VK_LEFT
+        case SDLK_UP:
+            return 0x26;  // VK_UP
+        case SDLK_RIGHT:
+            return 0x27;  // VK_RIGHT
+        case SDLK_DOWN:
+            return 0x28;  // VK_DOWN
+        case SDLK_HOME:
+            return 0x24;  // VK_HOME
+        case SDLK_END:
+            return 0x23;  // VK_END
+        case SDLK_PAGEUP:
+            return 0x21;  // VK_PRIOR
+        case SDLK_PAGEDOWN:
+            return 0x22;  // VK_NEXT
+        case SDLK_INSERT:
+            return 0x2D;  // VK_INSERT
+        case SDLK_DELETE:
+            return 0x2E;  // VK_DELETE
+        case SDLK_BACKSPACE:
+            return 0x08;  // VK_BACK
 
-        g_messageRouterConfig.js_query_function = "cefQuery"; // JS端调用的函数名
-        g_messageRouterConfig.js_cancel_function = "cefQueryCancel"; // JS端取消函数名
+        // 小键盘键
+        case SDLK_KP_0:
+            return 0x60;
+        case SDLK_KP_1:
+            return 0x61;
+        case SDLK_KP_2:
+            return 0x62;
+        case SDLK_KP_3:
+            return 0x63;
+        case SDLK_KP_4:
+            return 0x64;
+        case SDLK_KP_5:
+            return 0x65;
+        case SDLK_KP_6:
+            return 0x66;
+        case SDLK_KP_7:
+            return 0x67;
+        case SDLK_KP_8:
+            return 0x68;
+        case SDLK_KP_9:
+            return 0x69;
+        case SDLK_KP_MULTIPLY:
+            return 0x6A;
+        case SDLK_KP_PLUS:
+            return 0x6B;
+        case SDLK_KP_MINUS:
+            return 0x6D;
+        case SDLK_KP_DECIMAL:
+            return 0x6E;
+        case SDLK_KP_DIVIDE:
+            return 0x6F;
+        case SDLK_KP_ENTER:
+            return 0x0D;
 
-        // CEF 初始化 (main process check and CefInitialize)
-        CefMainArgs mainArgs(GetModuleHandle(nullptr));
+        // 功能键
+        case SDLK_F1:
+            return 0x70;
+        case SDLK_F2:
+            return 0x71;
+        case SDLK_F3:
+            return 0x72;
+        case SDLK_F4:
+            return 0x73;
+        case SDLK_F5:
+            return 0x74;
+        case SDLK_F6:
+            return 0x75;
+        case SDLK_F7:
+            return 0x76;
+        case SDLK_F8:
+            return 0x77;
+        case SDLK_F9:
+            return 0x78;
+        case SDLK_F10:
+            return 0x79;
+        case SDLK_F11:
+            return 0x7A;
+        case SDLK_F12:
+            return 0x7B;
 
-        // 创建App实例
-        CefRefPtr<SimpleApp> app(new SimpleApp());
-        int exitCode = CefExecuteProcess(mainArgs, app.get(), nullptr);
-        if (exitCode >= 0) {
-            return exitCode;
-        }
+        default:
+            return sdl_key;
+    }
+}
 
-        CefSettings settings;
-        settings.multi_threaded_message_loop = true;
-        settings.windowless_rendering_enabled = true; // 启用离屏渲染
-     
-        settings.no_sandbox = true; // 禁用沙箱
-        settings.remote_debugging_port = 9222; // 启用远程调试
+// 判断是否是修饰键
+static bool IsModifierKey(int key) {
+    return key == SDLK_LCTRL || key == SDLK_RCTRL ||
+           key == SDLK_LSHIFT || key == SDLK_RSHIFT ||
+           key == SDLK_LALT || key == SDLK_RALT ||
+           key == SDLK_LGUI || key == SDLK_RGUI;
+}
 
-        // 启用日志
-        settings.log_severity = LOGSEVERITY_INFO; // 或LOGSEVERITY_WARNING减少输出
-        settings.uncaught_exception_stack_size = 10; // 堆栈跟踪大小
-
-        CefString(&settings.locale).FromASCII("zh-CN");
-        std::filesystem::path cache_path = std::filesystem::current_path() / "cache";
-        if (!std::filesystem::exists(cache_path)) {
-            std::filesystem::create_directories(cache_path);
-            std::cout << "Created cache directory: " << cache_path.string() << std::endl;
-        }
-
-        CefString(&settings.cache_path).FromString(cache_path.string());
-        wchar_t exePath[MAX_PATH];
-        GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-        CefString(&settings.browser_subprocess_path).FromWString(exePath);
-        CefString(&settings.user_agent).FromASCII(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        settings.background_color = CefColorSetARGB(255, 255, 255, 255);
-        settings.persist_session_cookies = true;
-
-        CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
-        command_line->InitFromString(::GetCommandLineW());
-
-        // 2. 检查是否有 --type 参数（CEF 自动添加）
-        if (command_line->HasSwitch("type")) {
-            std::string process_type = command_line->GetSwitchValue("type");
-            std::cout << "进程类型: " << process_type;
-        } else {
-            std::cout << "这是主进程 (Browser 进程)";
-        }
-
-        if (!CefInitialize(mainArgs, settings, app.get(), nullptr)) {
-            std::cerr << "CefInitialize failed!" << std::endl;
-            return EXIT_FAILURE;
-        }
-
-        // Defer heavy graphics initialization to the system thread (thread_loop)
-        running = true;
-
-        return true;
+// 判断是否应该发送CHAR事件（导航键、功能键等不应该发送CHAR事件）
+static bool ShouldSendCharEvent(int key, int modifiers) {
+    // 修饰键不发送CHAR事件
+    if (IsModifierKey(key)) {
+        return false;
     }
 
-    void ImguiSystem::thread_loop() {
-        // Perform SDL/Vulkan/ImGui initialization on this thread so event handling
-        // and rendering occur on the same thread that calls update(). This avoids
-        // windows becoming unresponsive when SDL event polling is done from another thread.
+    // 功能键不发送CHAR事件
+    if ((key >= SDLK_F1 && key <= SDLK_F12)) {
+        return false;
+    }
 
-        // SDL 初始化
-        if (!SDL_Init(SDL_INIT_VIDEO)) {
-            std::cerr << "SDL_Init Error: " << SDL_GetError() << '\n';
-            CefShutdown();
-            running = false;
-            return;
+    // 导航键不发送CHAR事件
+    switch (key) {
+        case SDLK_ESCAPE:
+        case SDLK_TAB:
+        case SDLK_CAPSLOCK:
+        case SDLK_PRINTSCREEN:
+        case SDLK_SCROLLLOCK:
+        case SDLK_PAUSE:
+        case SDLK_INSERT:
+        case SDLK_HOME:
+        case SDLK_PAGEUP:
+        case SDLK_DELETE:
+        case SDLK_END:
+        case SDLK_PAGEDOWN:
+        case SDLK_RIGHT:
+        case SDLK_LEFT:
+        case SDLK_DOWN:
+        case SDLK_UP:
+        case SDLK_NUMLOCKCLEAR:
+        case SDLK_KP_CLEAR:
+        case SDLK_BACKSPACE:
+            return false;
+    }
+
+    // 如果Alt键按下，通常不发送CHAR事件（用于菜单快捷键）
+    if (modifiers & EVENTFLAG_ALT_DOWN) {
+        if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
+            return true;
+        }
+        return false;
+    }
+
+    return true;
+}
+
+// 处理SDL键盘事件
+void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
+    bool pressed = (event.type == SDL_EVENT_KEY_DOWN);
+    int key_code = event.key.key;
+    int scan_code = event.key.scancode;
+    int modifiers = 0;
+
+    // 转换SDL modifiers到CEF modifiers
+    Uint32 sdl_mod = event.key.mod;
+    if (sdl_mod & SDL_KMOD_CTRL) modifiers |= EVENTFLAG_CONTROL_DOWN;
+    if (sdl_mod & SDL_KMOD_SHIFT) modifiers |= EVENTFLAG_SHIFT_DOWN;
+    if (sdl_mod & SDL_KMOD_ALT) modifiers |= EVENTFLAG_ALT_DOWN;
+    if (sdl_mod & SDL_KMOD_GUI) modifiers |= EVENTFLAG_COMMAND_DOWN;
+    if (sdl_mod & SDL_KMOD_CAPS) modifiers |= EVENTFLAG_CAPS_LOCK_ON;
+    if (sdl_mod & SDL_KMOD_NUM) modifiers |= EVENTFLAG_NUM_LOCK_ON;
+
+    // 存储键盘事件
+    PendingKeyEvent key_event(PendingKeyEvent::MKEY_EVENT);
+    key_event.key_code = key_code;
+    key_event.scan_code = scan_code;
+    key_event.modifiers = modifiers;
+    key_event.pressed = pressed;
+
+    m_PendingKeyEvents.push_back(key_event);
+}
+
+// 处理SDL文本输入事件
+void ImguiSystem::ProcessSDLTextEvent(const SDL_Event& event) {
+    if (event.text.text && event.text.text[0]) {
+        PendingKeyEvent text_event(PendingKeyEvent::TEXT_EVENT);
+        text_event.text = event.text.text;
+        m_PendingKeyEvents.push_back(text_event);
+    }
+}
+
+// 处理SDL IME事件
+void ImguiSystem::ProcessSDLIMEEvent(const SDL_Event& event) {
+    if (event.edit.text && event.edit.text[0]) {
+        PendingKeyEvent ime_event(PendingKeyEvent::IME_COMPOSITION);
+        ime_event.text = event.edit.text;
+        ime_event.ime_start = event.edit.start;
+        ime_event.ime_length = event.edit.length;
+        m_PendingKeyEvents.push_back(ime_event);
+    }
+}
+
+// 发送键盘事件到浏览器
+void ImguiSystem::SendKeyEventsToBrowser(int tabId) {
+    if (g_tabs.find(tabId) == g_tabs.end() || !g_tabs[tabId]->client ||
+        !g_tabs[tabId]->client->GetBrowser()) {
+        return;
+    }
+
+    BrowserTab* tab = g_tabs[tabId];
+    CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
+
+    for (const auto& pending_event : m_PendingKeyEvents) {
+        if (pending_event.type == PendingKeyEvent::MKEY_EVENT) {
+            CefKeyEvent cef_key_event;
+
+            // 设置事件类型
+            cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
+
+            // 转换键码
+            cef_key_event.windows_key_code = ConvertSDLKeyCodeToWindows(pending_event.key_code);
+            cef_key_event.native_key_code = pending_event.scan_code;
+
+            // 设置修饰键
+            cef_key_event.modifiers = pending_event.modifiers;
+
+            // 对于组合键（如Ctrl+C），需要特殊处理
+            switch (pending_event.key_code) {
+                case SDLK_A:
+                case SDLK_C:
+                case SDLK_V:
+                case SDLK_X:
+                case SDLK_Z:
+                    // 如果Ctrl键按下，这些键是组合键，需要设置字符
+                    if (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) {
+                        cef_key_event.character = pending_event.key_code;
+                        cef_key_event.unmodified_character = pending_event.key_code;
+                    } else {
+                        cef_key_event.character = 0;
+                        cef_key_event.unmodified_character = 0;
+                    }
+                    break;
+                case SDLK_KP_0:
+                    cef_key_event.character = '0';
+                    break;
+                case SDLK_KP_1:
+                    cef_key_event.character = '1';
+                    break;
+                case SDLK_KP_2:
+                    cef_key_event.character = '2';
+                    break;
+                case SDLK_KP_3:
+                    cef_key_event.character = '3';
+                    break;
+                case SDLK_KP_4:
+                    cef_key_event.character = '4';
+                    break;
+                case SDLK_KP_5:
+                    cef_key_event.character = '5';
+                    break;
+                case SDLK_KP_6:
+                    cef_key_event.character = '6';
+                    break;
+                case SDLK_KP_7:
+                    cef_key_event.character = '7';
+                    break;
+                case SDLK_KP_8:
+                    cef_key_event.character = '8';
+                    break;
+                case SDLK_KP_9:
+                    cef_key_event.character = '9';
+                    break;
+                case SDLK_KP_DECIMAL:
+                    cef_key_event.character = '.';
+                    break;
+                case SDLK_KP_DIVIDE:
+                    cef_key_event.character = '/';
+                    break;
+                case SDLK_KP_MULTIPLY:
+                    cef_key_event.character = '*';
+                    break;
+                case SDLK_KP_MINUS:
+                    cef_key_event.character = '-';
+                    break;
+                case SDLK_KP_PLUS:
+                    cef_key_event.character = '+';
+                    break;
+                default:
+                    cef_key_event.character = pending_event.key_code;
+                    cef_key_event.unmodified_character = pending_event.key_code;
+                    break;
+            }
+
+            // 发送事件给CEF
+            browser->GetHost()->SendKeyEvent(cef_key_event);
+
+            // 对于某些键，需要发送CHAR事件
+            if (pending_event.pressed && ShouldSendCharEvent(pending_event.key_code, pending_event.modifiers)) {
+                // 检查是否为Ctrl+字母组合键
+                bool is_ctrl_combination = (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) &&
+                                           ((pending_event.key_code >= 'a' && pending_event.key_code <= 'z') ||
+                                            (pending_event.key_code >= 'A' && pending_event.key_code <= 'Z'));
+
+                // 对于Ctrl+字母组合键，发送CHAR事件（CEF需要这个来识别快捷键）
+                if (is_ctrl_combination ||
+                    (pending_event.key_code >= SDLK_KP_0 && pending_event.key_code <= SDLK_KP_9) ||
+                    pending_event.key_code == SDLK_RETURN ||
+                    pending_event.key_code == SDLK_TAB ||
+                    pending_event.key_code == SDLK_BACKSPACE) {
+                    cef_key_event.type = KEYEVENT_CHAR;
+                    browser->GetHost()->SendKeyEvent(cef_key_event);
+                }
+            }
+        } else if (pending_event.type == PendingKeyEvent::TEXT_EVENT) {
+            // 处理文本输入
+            const std::string& text = pending_event.text;
+            if (!text.empty()) {
+                bool is_ascii = true;
+                for (char c : text) {
+                    if (static_cast<unsigned char>(c) >= 128) {
+                        is_ascii = false;
+                        break;
+                    }
+                }
+
+                if (is_ascii) {
+                    // ASCII文本，直接发送
+                    for (char c : text) {
+                        if (c >= 32 && c < 127) {
+                            CefKeyEvent cef_text_event;
+                            cef_text_event.type = KEYEVENT_CHAR;
+                            cef_text_event.modifiers = 0;
+                            cef_text_event.windows_key_code = static_cast<uint16_t>(c);
+                            cef_text_event.native_key_code = static_cast<uint16_t>(c);
+                            cef_text_event.character = static_cast<uint16_t>(c);
+                            cef_text_event.unmodified_character = static_cast<uint16_t>(c);
+                            browser->GetHost()->SendKeyEvent(cef_text_event);
+                        }
+                    }
+                } else {
+                    // 非ASCII文本，使用UTF-16转换
+                    char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
+                    if (utf16_text) {
+                        uint16_t* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
+                        size_t utf16_len = 0;
+                        while (utf16_chars[utf16_len] != 0) {
+                            utf16_len++;
+                        }
+                        for (size_t i = 0; i < utf16_len; i++) {
+                            CefKeyEvent cef_text_event;
+                            cef_text_event.type = KEYEVENT_CHAR;
+                            cef_text_event.modifiers = 0;
+                            cef_text_event.windows_key_code = utf16_chars[i];
+                            cef_text_event.native_key_code = utf16_chars[i];
+                            cef_text_event.character = utf16_chars[i];
+                            cef_text_event.unmodified_character = utf16_chars[i];
+                            browser->GetHost()->SendKeyEvent(cef_text_event);
+                        }
+                        SDL_free(utf16_text);
+                    }
+                }
+            }
+        }
+        // IME事件处理
+        else if (pending_event.type == PendingKeyEvent::IME_COMPOSITION) {
+            // IME合成事件，CEF支持有限，暂时不处理
+        }
+    }
+}
+
+bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
+    CFW_LOG_NOTICE("ImguiSystem: Initializing...");
+
+    g_messageRouterConfig.js_query_function = "cefQuery";
+    g_messageRouterConfig.js_cancel_function = "cefQueryCancel";
+
+    CefMainArgs mainArgs(GetModuleHandle(nullptr));
+    CefRefPtr<SimpleApp> app(new SimpleApp());
+    int exitCode = CefExecuteProcess(mainArgs, app.get(), nullptr);
+    if (exitCode >= 0) {
+        return exitCode;
+    }
+
+    CefSettings settings;
+    settings.multi_threaded_message_loop = true;
+    settings.windowless_rendering_enabled = true;
+    settings.no_sandbox = true;
+    settings.remote_debugging_port = 9222;
+    settings.log_severity = LOGSEVERITY_INFO;
+    settings.uncaught_exception_stack_size = 10;
+
+    CefString(&settings.locale).FromASCII("zh-CN");
+    std::filesystem::path cache_path = std::filesystem::current_path() / "cache";
+    if (!std::filesystem::exists(cache_path)) {
+        std::filesystem::create_directories(cache_path);
+    }
+
+    CefString(&settings.cache_path).FromString(cache_path.string());
+    wchar_t exePath[MAX_PATH];
+    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
+    CefString(&settings.browser_subprocess_path).FromWString(exePath);
+    CefString(&settings.user_agent).FromASCII("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    settings.background_color = CefColorSetARGB(255, 255, 255, 255);
+    settings.persist_session_cookies = true;
+
+    CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
+    command_line->InitFromString(::GetCommandLineW());
+
+    if (!CefInitialize(mainArgs, settings, app.get(), nullptr)) {
+        std::cerr << "CefInitialize failed!" << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    running = true;
+    m_PendingKeyEvents.clear();
+    m_ActiveTabId = -1;
+
+    return true;
+}
+
+void ImguiSystem::thread_loop() {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::cerr << "SDL_Init Error: " << SDL_GetError() << '\n';
+        CefShutdown();
+        running = false;
+        return;
+    }
+
+    window = SDL_CreateWindow("Corona Engine (Vulkan)", 1400, 900,
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
+    if (window == nullptr) {
+        std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << '\n';
+        SDL_Quit();
+        CefShutdown();
+        running = false;
+        return;
+    }
+
+    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+    SDL_ShowWindow(window);
+
+    // 启用文本输入和IME支持
+    SDL_StartTextInput(window);
+    SDL_SetHint("SDL_HINT_IME_SHOW_UI", "1");
+    SDL_SetHint("SDL_HINT_IME_SUPPORT_EXTENDED_TEXT", "1");
+
+    if (volkInitialize() != VK_SUCCESS) {
+        std::cerr << "Failed to initialize Volk\n";
+        running = false;
+        return;
+    }
+
+    uint32_t extensions_count = 0;
+    char const* const* extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
+    std::vector<const char*> extensions;
+    if (extensions_names) {
+        for (uint32_t i = 0; i < extensions_count; i++) {
+            extensions.push_back(extensions_names[i]);
+        }
+    }
+
+    m_VulkanBackend = std::make_unique<VulkanBackend>(window);
+    m_VulkanBackend->Initialize(extensions);
+    g_vulkan_backend = m_VulkanBackend.get();
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    io = &ImGui::GetIO();
+    io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
+
+    ImGui::StyleColorsDark();
+
+    ImGuiStyle& style = ImGui::GetStyle();
+    if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        style.WindowRounding = 0.0f;
+        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+    }
+
+    ImGui_ImplSDL3_InitForVulkan(window);
+
+    ImGui_ImplVulkan_InitInfo init_info = {};
+    init_info.Instance = m_VulkanBackend->GetInstance();
+    init_info.PhysicalDevice = m_VulkanBackend->GetPhysicalDevice();
+    init_info.Device = m_VulkanBackend->GetDevice();
+    init_info.QueueFamily = m_VulkanBackend->GetQueueFamily();
+    init_info.Queue = m_VulkanBackend->GetQueue();
+    init_info.DescriptorPool = m_VulkanBackend->GetDescriptorPool();
+    init_info.PipelineInfoMain.RenderPass = m_VulkanBackend->GetRenderPass();
+    init_info.MinImageCount = m_VulkanBackend->GetMinImageCount();
+    init_info.ImageCount = m_VulkanBackend->GetImageCount();
+    init_info.PipelineInfoMain.MSAASamples = m_VulkanBackend->GetMSAASamples();
+
+    ImGui_ImplVulkan_Init(&init_info);
+
+    PyImport_AppendInittab("Imgui", &PyInit_Imgui);
+    CreateBrowserTab("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html");
+    showDemoWindow = false;
+
+    using Corona::Kernel::SystemState;
+    while (running && get_state() == SystemState::running) {
+        update();
+    }
+
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+
+    if (m_VulkanBackend) {
+        m_VulkanBackend->Shutdown();
+        m_VulkanBackend.reset();
+        g_vulkan_backend = nullptr;
+    }
+
+    if (window) {
+        SDL_DestroyWindow(window);
+        window = nullptr;
+    }
+
+    SDL_StopTextInput(window);
+    SDL_Quit();
+    CefShutdown();
+}
+
+void ImguiSystem::update() {
+    if (!running) {
+        return;
+    }
+
+    static int url_input_active_tab = -1;
+    static bool ime_composing = false;
+
+    m_PendingKeyEvents.clear();
+
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_TEXT_EDITING) {
+            ime_composing = true;
+        } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+            ime_composing = false;
         }
 
-        // 创建 SDL 窗口 (带 Vulkan 支持)
-        window = SDL_CreateWindow("Corona Engine (Vulkan)", 1400, 900,
-                                  SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
-        if (window == nullptr) {
-            std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << '\n';
-            SDL_Quit();
-            CefShutdown();
-            running = false;
-            return;
-        }
+        bool should_process_in_imgui = true;
+        bool is_input_method_switch = false;
 
-        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-        SDL_ShowWindow(window);
+        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+            int key = event.key.key;
+            bool ctrl = (event.key.mod & SDL_KMOD_CTRL) != 0;
+            bool shift = (event.key.mod & SDL_KMOD_SHIFT) != 0;
+            bool alt = (event.key.mod & SDL_KMOD_ALT) != 0;
 
-        if (volkInitialize() != VK_SUCCESS) {
-            std::cerr << "Failed to initialize Volk\n";
-            running = false;
-            return;
-        }
-
-        uint32_t extensions_count = 0;
-        char const *const *extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
-        std::vector<const char*> extensions;
-        if (extensions_names) {
-            for (uint32_t i = 0; i < extensions_count; i++) {
-                extensions.push_back(extensions_names[i]);
+            if ((ctrl && shift) || (alt && shift) ||
+                (ctrl && key == SDLK_SPACE) ||
+                (event.key.mod & SDL_KMOD_GUI && key == SDLK_SPACE)) {
+                is_input_method_switch = true;
             }
         }
 
-        m_VulkanBackend = std::make_unique<VulkanBackend>(window);
-        m_VulkanBackend->Initialize(extensions);
-        // expose backend for browser helpers
-        g_vulkan_backend = m_VulkanBackend.get();
-
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        io = &ImGui::GetIO();
-        io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        io->ConfigFlags |= ImGuiConfigFlags_DockingEnable; // 启用 Docking
-        io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // 启用多视口
-
-        ImGui::StyleColorsDark();
-
-        ImGuiStyle &style = ImGui::GetStyle();
-        if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            style.WindowRounding = 0.0f;
-            style.Colors[ImGuiCol_WindowBg].w = 1.0f;
+        if (is_input_method_switch) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            continue;
         }
 
-        ImGui_ImplSDL3_InitForVulkan(window);
+        if (event.type == SDL_EVENT_KEY_DOWN ||
+            event.type == SDL_EVENT_KEY_UP ||
+            event.type == SDL_EVENT_TEXT_INPUT ||
+            event.type == SDL_EVENT_TEXT_EDITING) {
+            switch (event.type) {
+                case SDL_EVENT_KEY_DOWN:
+                    ProcessSDLKeyEvent(event);
+                    break;
+                case SDL_EVENT_KEY_UP:
+                    ProcessSDLKeyEvent(event);
+                    break;
+                case SDL_EVENT_TEXT_INPUT:
+                    ProcessSDLTextEvent(event);
+                    break;
+                case SDL_EVENT_TEXT_EDITING:
+                    ProcessSDLIMEEvent(event);
+                    break;
+            }
 
-        ImGui_ImplVulkan_InitInfo init_info = {};
-        init_info.Instance = m_VulkanBackend->GetInstance();
-        init_info.PhysicalDevice = m_VulkanBackend->GetPhysicalDevice();
-        init_info.Device = m_VulkanBackend->GetDevice();
-        init_info.QueueFamily = m_VulkanBackend->GetQueueFamily();
-        init_info.Queue = m_VulkanBackend->GetQueue();
-        init_info.DescriptorPool = m_VulkanBackend->GetDescriptorPool();
-        init_info.PipelineInfoMain.RenderPass = m_VulkanBackend->GetRenderPass();
-        init_info.MinImageCount = m_VulkanBackend->GetMinImageCount();
-        init_info.ImageCount = m_VulkanBackend->GetImageCount();
-        init_info.PipelineInfoMain.MSAASamples = m_VulkanBackend->GetMSAASamples();
-
-        ImGui_ImplVulkan_Init(&init_info);
-
-        
-
-        //CreateBrowserTab(ResolveHtmlPathForCef("CabbageEditor/Frontend/dist/index.html"));
-
-                    // 注册 nanobind 导出的 CoronaEngine 模块
-        PyImport_AppendInittab("Imgui", &PyInit_Imgui);
-        CreateBrowserTab("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html");
-        //if (!Py_IsInitialized()) {
-        //    Py_Initialize();
-        //    PyEval_InitThreads();  // initialize and acquire the GIL
-        //    PyEval_SaveThread();   // release GIL
-        //}
-
-        //PyGILState_STATE gstate = PyGILState_Ensure();
-
-        //PyRun_SimpleString("import sys");
-        //PyRun_SimpleString("import os");
-        //PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
-        //PyObject *pName = PyUnicode_FromString("test");
-        //PyObject *pModule = PyImport_Import(pName);
-
-        //PyObject *pFunc = PyObject_GetAttrString(pModule, "open_browser");
-        //PyObject *pArgs = PyTuple_New(1);
-        //PyTuple_SetItem(pArgs, 0, PyUnicode_FromString("file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/test.html"));
-        //PyObject *pValue = PyObject_CallObject(pFunc, pArgs);
-
-        //PyGILState_Release(gstate);
-
-        showDemoWindow = false;
-
-        // Main loop: call update() until should_run_ becomes false
-        using Corona::Kernel::SystemState;
-        while (running && get_state() == SystemState::running) {
-            // call update which will poll events, render, etc.
-            update();
+            if (url_input_active_tab == -1) {
+                should_process_in_imgui = false;
+            }
         }
 
-        // Cleanup
-        ImGui_ImplVulkan_Shutdown();
-        ImGui_ImplSDL3_Shutdown();
-        ImGui::DestroyContext();
-
-        if (m_VulkanBackend) {
-            m_VulkanBackend->Shutdown();
-            m_VulkanBackend.reset();
-            g_vulkan_backend = nullptr;
+        if (should_process_in_imgui) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
         }
 
-        if (window) {
-            SDL_DestroyWindow(window);
-            window = nullptr;
+        switch (event.type) {
+            case SDL_EVENT_QUIT:
+                running = false;
+                if (should_process_in_imgui) {
+                    ImGui_ImplSDL3_ProcessEvent(&event);
+                }
+                break;
+            case SDL_EVENT_WINDOW_RESIZED:
+                if (event.window.windowID == SDL_GetWindowID(window)) {
+                    m_VulkanBackend->SetSwapChainRebuild(true);
+                    if (should_process_in_imgui) {
+                        ImGui_ImplSDL3_ProcessEvent(&event);
+                    }
+                }
+                break;
+            case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            case SDL_EVENT_WINDOW_FOCUS_LOST:
+                if (should_process_in_imgui) {
+                    ImGui_ImplSDL3_ProcessEvent(&event);
+                }
+                break;
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            case SDL_EVENT_MOUSE_BUTTON_UP:
+            case SDL_EVENT_MOUSE_MOTION:
+            case SDL_EVENT_MOUSE_WHEEL:
+                ImGui_ImplSDL3_ProcessEvent(&event);
+                break;
+            default:
+                if (should_process_in_imgui) {
+                    ImGui_ImplSDL3_ProcessEvent(&event);
+                }
+                break;
         }
-        SDL_Quit();
-
-        CefShutdown();
     }
 
-    void ImguiSystem::update() {
-        if (!running) {
-            return;
-        }
+    if (m_VulkanBackend->IsSwapChainRebuild()) {
+        int width, height;
+        SDL_GetWindowSize(window, &width, &height);
+        m_VulkanBackend->RebuildSwapChain(width, height);
+    }
 
-        while (SDL_PollEvent(&event)) {
-            ImGui_ImplSDL3_ProcessEvent(&event);
+    m_VulkanBackend->NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
 
-            if (event.type == SDL_EVENT_QUIT) {
+    ImGuiWindowFlags dockSpaceFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    dockSpaceFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    dockSpaceFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    ImGui::Begin("DockSpace", nullptr, dockSpaceFlags);
+    ImGui::PopStyleVar(3);
+
+    ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("New Tab")) {
+                CreateBrowserTab("https://www.baidu.com");
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Exit")) {
                 running = false;
             }
-            if (event.type == SDL_EVENT_WINDOW_RESIZED && event.window.windowID == SDL_GetWindowID(window)) {
-                // Resize swapchain
-                m_VulkanBackend->SetSwapChainRebuild(true);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("View")) {
+            ImGui::MenuItem("ImGui Demo", nullptr, &showDemoWindow);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Websites")) {
+            if (ImGui::MenuItem("Baidu")) {
+                CreateBrowserTab("https://www.baidu.com");
             }
+            if (ImGui::MenuItem("Bing")) {
+                CreateBrowserTab("https://www.bing.com");
+            }
+            if (ImGui::MenuItem("Google")) {
+                CreateBrowserTab("https://www.google.com");
+            }
+            if (ImGui::MenuItem("GitHub")) {
+                CreateBrowserTab("https://www.github.com");
+            }
+            ImGui::EndMenu();
+        }
+        ImGui::EndMenuBar();
+    }
+
+    ImGui::End();
+
+    if (showDemoWindow) {
+        ImGui::ShowDemoWindow(&showDemoWindow);
+    }
+
+    std::vector<int> tabsToClose;
+
+    for (auto& [tabId, tab] : g_tabs) {
+        if (!tab->open) {
+            tabsToClose.push_back(tabId);
+            continue;
         }
 
-        if (m_VulkanBackend->IsSwapChainRebuild()) {
-            int width, height;
-            SDL_GetWindowSize(window, &width, &height);
-            m_VulkanBackend->RebuildSwapChain(width, height);
-        }
+        UpdateBrowserTexture(tabId);
 
-        // Start the Dear ImGui frame
-        m_VulkanBackend->NewFrame();  // Must be called!
-        ImGui_ImplSDL3_NewFrame();
-        ImGui::NewFrame();
+        ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+        std::string window_id = tab->name + "##" + std::to_string(tabId);
 
-        // 创建 DockSpace
-        ImGuiWindowFlags dockSpaceFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->WorkPos);
-        ImGui::SetNextWindowSize(viewport->WorkSize);
-        ImGui::SetNextWindowViewport(viewport->ID);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        dockSpaceFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                            ImGuiWindowFlags_NoMove;
-        dockSpaceFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        if (ImGui::Begin(window_id.c_str(), &tab->open,
+                         ImGuiWindowFlags_NoScrollbar |
+                             ImGuiWindowFlags_NoNavInputs |
+                             ImGuiWindowFlags_NoNavFocus)) {
+            ImGui::PushItemWidth(-200);
+            std::string url_input_id = "##url_" + std::to_string(tabId);
 
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-        ImGui::Begin("DockSpace", nullptr, dockSpaceFlags);
-        ImGui::PopStyleVar(3);
-
-        ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
-        ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
-
-        // 菜单栏
-        if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("New Tab")) {
-                    CreateBrowserTab("https://www.baidu.com");
+            if (ImGui::InputText(url_input_id.c_str(), tab->urlBuffer, sizeof(tab->urlBuffer),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->urlBuffer);
                 }
-                ImGui::Separator();
-                if (ImGui::MenuItem("Exit")) {
-                    running = false;
-                }
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("View")) {
-                ImGui::MenuItem("ImGui Demo", nullptr, &showDemoWindow);
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Websites")) {
-                if (ImGui::MenuItem("Baidu")) {
-                    CreateBrowserTab("https://www.baidu.com");
-                }
-                if (ImGui::MenuItem("Bing")) {
-                    CreateBrowserTab("https://www.bing.com");
-                }
-                if (ImGui::MenuItem("Google")) {
-                    CreateBrowserTab("https://www.google.com");
-                }
-                if (ImGui::MenuItem("GitHub")) {
-                    CreateBrowserTab("https://www.github.com");
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndMenuBar();
-        }
-
-        ImGui::End();
-
-        // 显示 ImGui Demo 窗口
-        if (showDemoWindow) {
-            ImGui::ShowDemoWindow(&showDemoWindow);
-        }
-
-        // 渲染每个浏览器标签页窗口
-        std::vector<int> tabsToClose;
-        for (auto &[tabId, tab] : g_tabs) {
-            if (!tab->open) {
-                tabsToClose.push_back(tabId);
-                continue;
             }
 
-            // 更新纹理
-            UpdateBrowserTexture(tabId);
+            if (ImGui::IsItemActive()) {
+                url_input_active_tab = tabId;
+                m_ActiveTabId = -1;
+            }
 
-            ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
-
-            if (ImGui::Begin(tab->name.c_str(), &tab->open, ImGuiWindowFlags_NoScrollbar)) {
-                // URL 输入框和导航按钮
-                ImGui::PushItemWidth(-200);
-                if (ImGui::InputText("##url", tab->urlBuffer, sizeof(tab->urlBuffer),
-                                        ImGuiInputTextFlags_EnterReturnsTrue)) {
-                    if (tab->client && tab->client->GetBrowser()) {
-                        tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->urlBuffer);
-                    }
+            ImGui::PopItemWidth();
+            ImGui::SameLine();
+            if (ImGui::Button("Go")) {
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->urlBuffer);
                 }
-                ImGui::PopItemWidth();
-                ImGui::SameLine();
-                if (ImGui::Button("Go")) {
-                    if (tab->client && tab->client->GetBrowser()) {
-                        tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->urlBuffer);
-                    }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Back")) {
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->GoBack();
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("Back")) {
-                    if (tab->client && tab->client->GetBrowser()) {
-                        tab->client->GetBrowser()->GoBack();
-                    }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Forward")) {
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->GoForward();
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("Forward")) {
-                    if (tab->client && tab->client->GetBrowser()) {
-                        tab->client->GetBrowser()->GoForward();
-                    }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Refresh")) {
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->Reload();
                 }
-                ImGui::SameLine();
-                if (ImGui::Button("Refresh")) {
-                    if (tab->client && tab->client->GetBrowser()) {
-                        tab->client->GetBrowser()->Reload();
-                    }
-                }
+            }
 
-                // 获取可用空间
-                ImVec2 availSize = ImGui::GetContentRegionAvail();
-                int newWidth = (int)availSize.x;
-                int newHeight = (int)availSize.y;
+            ImVec2 availSize = ImGui::GetContentRegionAvail();
+            int newWidth = (int)availSize.x;
+            int newHeight = (int)availSize.y;
 
-                // 检查是否需要调整大小
-                if (newWidth > 0 && newHeight > 0 &&
-                    (newWidth != tab->width || newHeight != tab->height)) {
-                    tab->width = newWidth;
-                    tab->height = newHeight;
+            if (newWidth > 0 && newHeight > 0 &&
+                (newWidth != tab->width || newHeight != tab->height)) {
+                tab->width = newWidth;
+                tab->height = newHeight;
 
-                    // 重新创建 Vulkan 纹理
-                    if (tab->textureId != VK_NULL_HANDLE) {
-                        // TODO: ImGui_ImplVulkan_RemoveTexture(tab->textureId);
-                        tab->textureId = VK_NULL_HANDLE;
-                    }
-                    tab->textureId = CreateBrowserTexture(tab->width, tab->height);
-
-                    // 通知浏览器调整大小
-                    if (tab->client) {
-                        tab->client->Resize(tab->width, tab->height);
-                    }
-                }
-
-                // 显示浏览器内容
                 if (tab->textureId != VK_NULL_HANDLE) {
-                    ImGui::Image((ImTextureID)(intptr_t)tab->textureId, availSize);
+                    tab->textureId = VK_NULL_HANDLE;
+                }
+                tab->textureId = CreateBrowserTexture(tab->width, tab->height);
 
-                    // Input handling code...
-                    // (Simplified for brevity, assuming existing code handles input well)
-                    // 处理鼠标事件
-                    if (ImGui::IsItemHovered()) {
-                        CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr;
-                        if (browser) {
-                            ImVec2 mousePos = ImGui::GetMousePos();
-                            ImVec2 itemPos = ImGui::GetItemRectMin();
-                            int x = (int)(mousePos.x - itemPos.x);
-                            int y = (int)(mousePos.y - itemPos.y);
+                if (tab->client) {
+                    tab->client->Resize(tab->width, tab->height);
+                }
+            }
 
-                            CefMouseEvent mouseEvent;
-                            mouseEvent.x = x;
-                            mouseEvent.y = y;
-                            mouseEvent.modifiers = 0;
+            if (tab->textureId != VK_NULL_HANDLE) {
+                ImGui::Image((ImTextureID)(intptr_t)tab->textureId, availSize);
 
-                            browser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
+                bool browser_hovered = ImGui::IsItemHovered();
 
-                            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                                browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
-                            }
-                            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                                browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
-                            }
+                if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                    m_ActiveTabId = tabId;
+                    url_input_active_tab = -1;
+                }
 
-                            // 滚轮事件
-                            float wheel = io->MouseWheel;
-                            if (wheel != 0) {
-                                browser->GetHost()->SendMouseWheelEvent(mouseEvent, 0, (int)(wheel * 100));
-                            }
+                if (browser_hovered) {
+                    CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr;
+                    if (browser) {
+                        ImVec2 mousePos = ImGui::GetMousePos();
+                        ImVec2 itemPos = ImGui::GetItemRectMin();
+                        int x = (int)(mousePos.x - itemPos.x);
+                        int y = (int)(mousePos.y - itemPos.y);
+
+                        CefMouseEvent mouseEvent;
+                        mouseEvent.x = x;
+                        mouseEvent.y = y;
+                        mouseEvent.modifiers = 0;
+
+                        browser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
+
+                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                            browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
+                        }
+                        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                            browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
+                        }
+
+                        float wheel = io->MouseWheel;
+                        if (wheel != 0) {
+                            browser->GetHost()->SendMouseWheelEvent(mouseEvent, 0, (int)(wheel * 100));
                         }
                     }
                 }
             }
-            ImGui::End();
         }
-
-        // 关闭标记为关闭的标签页
-        for (auto tabId : tabsToClose) {
-            CloseBrowserTab(tabId);
-            g_tabs.erase(tabId);
-        }
-
-        ImGui::Render();
-        ImDrawData *draw_data = ImGui::GetDrawData();
-        const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
-        if (!is_minimized) {
-            m_VulkanBackend->RenderFrame(draw_data);
-            m_VulkanBackend->PresentFrame();
-        }
-
-        // Update and Render additional Platform Windows
-        if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-            ImGui::UpdatePlatformWindows();
-            ImGui::RenderPlatformWindowsDefault();
-        }
-
+        ImGui::End();
     }
 
-    void ImguiSystem::shutdown() {
-        CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
-
-        // Signal thread to stop if running
-        running = false;
-
-        // Vulkan backend and SDL cleanup are performed in thread_loop when the
-        // system thread exits. Here just close browser tabs and clear state.
-        for (auto &[tabId, tab] : g_tabs) {
-            CloseBrowserTab(tabId);
-        }
-        g_tabs.clear();
+    // 发送键盘事件给浏览器
+    if (m_ActiveTabId != -1 && url_input_active_tab == -1 && !m_PendingKeyEvents.empty()) {
+        SendKeyEventsToBrowser(m_ActiveTabId);
     }
 
+    for (auto tabId : tabsToClose) {
+        CloseBrowserTab(tabId);
+        g_tabs.erase(tabId);
+        if (tabId == m_ActiveTabId) {
+            m_ActiveTabId = -1;
+        }
+        if (tabId == url_input_active_tab) {
+            url_input_active_tab = -1;
+        }
+    }
+
+    ImGui::Render();
+    ImDrawData* draw_data = ImGui::GetDrawData();
+    const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
+    if (!is_minimized) {
+        m_VulkanBackend->RenderFrame(draw_data);
+        m_VulkanBackend->PresentFrame();
+    }
+
+    if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
+        ImGui::UpdatePlatformWindows();
+        ImGui::RenderPlatformWindowsDefault();
+    }
+}
+
+void ImguiSystem::shutdown() {
+    CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
+    running = false;
+
+    for (auto& [tabId, tab] : g_tabs) {
+        CloseBrowserTab(tabId);
+    }
+    g_tabs.clear();
+    m_PendingKeyEvents.clear();
+}
 
 }  // namespace Corona::Systems
-

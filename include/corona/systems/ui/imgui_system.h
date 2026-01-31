@@ -1,23 +1,21 @@
 ﻿#pragma once
 
+#include <SDL3/SDL.h>
 #include <corona/events/imgui_system_events.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
 #include <corona/systems/ui/vulkan_backend.h>
-
-#include <memory>
-#include <SDL3/SDL.h>
 #include <imgui.h>
-    
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
-
 #include <windows.h>
+
+#include <memory>
 
 namespace Corona::Systems {
 
-    class VulkanBackend;
+class VulkanBackend;
 
 /**
  * @brief UI系统
@@ -71,14 +69,48 @@ class ImguiSystem : public Kernel::SystemBase {
     void shutdown() override;
 
    private:
-        SDL_Event event;
-        bool showDemoWindow;
-        bool running;
-        SDL_Window* window;
-        ImGuiIO *io = nullptr;
+    SDL_Event event;
+    bool showDemoWindow;
+    bool running;
+    SDL_Window* window;
+    ImGuiIO* io = nullptr;
 
-        std::unique_ptr<VulkanBackend> m_VulkanBackend;
+    std::unique_ptr<VulkanBackend> m_VulkanBackend;
+
+    // 键盘输入处理相关成员
+    struct PendingKeyEvent {
+        enum EventType {
+            MKEY_EVENT,
+            TEXT_EVENT,
+            IME_COMPOSITION
+        };
+
+        EventType type;
+        int key_code = 0;
+        int scan_code = 0;
+        int modifiers = 0;
+        bool pressed = false;
+        std::string text;
+        int ime_start = 0;
+        int ime_length = 0;
+
+        PendingKeyEvent(EventType t) : type(t) {}
+    };
+
+    std::vector<PendingKeyEvent> m_PendingKeyEvents;
+    int m_ActiveTabId = -1;  // 当前活动的标签页ID
+
+    // 调试输出函数
+    void DebugLog(const char* format, ...);
+    void DebugLogKeyEvent(const SDL_Event& event, const char* action);
+    void DebugLogTextEvent(const SDL_Event& event);
+    void DebugLogIMEEvent(const SDL_Event& event);
+
+    // 输入处理函数
+    void ProcessSDLKeyEvent(const SDL_Event& event);
+    void ProcessSDLTextEvent(const SDL_Event& event);
+    void ProcessSDLIMEEvent(const SDL_Event& event);
+    void SendKeyEventsToBrowser(int tabId);
 };
 
 }  // namespace Corona::Systems
-
