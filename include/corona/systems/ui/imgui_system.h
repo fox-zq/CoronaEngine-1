@@ -93,6 +93,7 @@ class ImguiSystem : public Kernel::SystemBase {
         std::string text;
         int ime_start = 0;
         int ime_length = 0;
+        bool is_modifier_combo = false;
 
         PendingKeyEvent(EventType t) : type(t) {}
     };

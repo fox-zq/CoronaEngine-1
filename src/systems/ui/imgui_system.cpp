@@ -246,12 +246,19 @@ void ImguiSystem::ProcessSDLKeyEvent(const SDL_Event& event) {
     if (sdl_mod & SDL_KMOD_CAPS) modifiers |= EVENTFLAG_CAPS_LOCK_ON;
     if (sdl_mod & SDL_KMOD_NUM) modifiers |= EVENTFLAG_NUM_LOCK_ON;
 
+    // 对于Ctrl/Alt+字母等组合键，需要特殊处理
+    bool is_modifier_combo = (modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN)) && 
+                            ((key_code >= 'a' && key_code <= 'z') || 
+                             (key_code >= 'A' && key_code <= 'Z') ||
+                             (key_code >= '0' && key_code <= '9'));
+
     // 存储键盘事件
     PendingKeyEvent key_event(PendingKeyEvent::MKEY_EVENT);
     key_event.key_code = key_code;
     key_event.scan_code = scan_code;
     key_event.modifiers = modifiers;
     key_event.pressed = pressed;
+    key_event.is_modifier_combo = is_modifier_combo;  // 添加这个标志
 
     m_PendingKeyEvents.push_back(key_event);
 }
@@ -301,147 +308,100 @@ void ImguiSystem::SendKeyEventsToBrowser(int tabId) {
             cef_key_event.modifiers = pending_event.modifiers;
 
             // 对于组合键（如Ctrl+C），需要特殊处理
-            switch (pending_event.key_code) {
-                case SDLK_A:
-                case SDLK_C:
-                case SDLK_V:
-                case SDLK_X:
-                case SDLK_Z:
-                    // 如果Ctrl键按下，这些键是组合键，需要设置字符
-                    if (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) {
-                        cef_key_event.character = pending_event.key_code;
-                        cef_key_event.unmodified_character = pending_event.key_code;
-                    } else {
-                        cef_key_event.character = 0;
-                        cef_key_event.unmodified_character = 0;
-                    }
-                    break;
-                case SDLK_KP_0:
-                    cef_key_event.character = '0';
-                    break;
-                case SDLK_KP_1:
-                    cef_key_event.character = '1';
-                    break;
-                case SDLK_KP_2:
-                    cef_key_event.character = '2';
-                    break;
-                case SDLK_KP_3:
-                    cef_key_event.character = '3';
-                    break;
-                case SDLK_KP_4:
-                    cef_key_event.character = '4';
-                    break;
-                case SDLK_KP_5:
-                    cef_key_event.character = '5';
-                    break;
-                case SDLK_KP_6:
-                    cef_key_event.character = '6';
-                    break;
-                case SDLK_KP_7:
-                    cef_key_event.character = '7';
-                    break;
-                case SDLK_KP_8:
-                    cef_key_event.character = '8';
-                    break;
-                case SDLK_KP_9:
-                    cef_key_event.character = '9';
-                    break;
-                case SDLK_KP_DECIMAL:
-                    cef_key_event.character = '.';
-                    break;
-                case SDLK_KP_DIVIDE:
-                    cef_key_event.character = '/';
-                    break;
-                case SDLK_KP_MULTIPLY:
-                    cef_key_event.character = '*';
-                    break;
-                case SDLK_KP_MINUS:
-                    cef_key_event.character = '-';
-                    break;
-                case SDLK_KP_PLUS:
-                    cef_key_event.character = '+';
-                    break;
-                default:
-                    cef_key_event.character = pending_event.key_code;
-                    cef_key_event.unmodified_character = pending_event.key_code;
-                    break;
-            }
+            cef_key_event.character = pending_event.key_code;
+            cef_key_event.unmodified_character = pending_event.key_code;
 
-            // 发送事件给CEF
+            // 发送RAWKEYDOWN或KEYUP事件
             browser->GetHost()->SendKeyEvent(cef_key_event);
 
-            // 对于某些键，需要发送CHAR事件
-            if (pending_event.pressed && ShouldSendCharEvent(pending_event.key_code, pending_event.modifiers)) {
-                // 检查是否为Ctrl+字母组合键
-                bool is_ctrl_combination = (pending_event.modifiers & EVENTFLAG_CONTROL_DOWN) &&
-                                           ((pending_event.key_code >= 'a' && pending_event.key_code <= 'z') ||
-                                            (pending_event.key_code >= 'A' && pending_event.key_code <= 'Z'));
+            // 重要修改：不发送KEYEVENT_CHAR事件，让文本输入事件处理字符
+            // 只发送特殊功能键的CHAR事件
+            if (pending_event.pressed) {
+                // 只对需要特殊处理的键发送CHAR事件
+                switch (pending_event.key_code) {
+                    case SDLK_RETURN:
+                    case SDLK_KP_ENTER:
+                    case SDLK_TAB:
+                    case SDLK_BACKSPACE:
+                    case SDLK_DELETE:
+                    case SDLK_ESCAPE:
+                        // 这些特殊键需要发送CHAR事件
+                        cef_key_event.type = KEYEVENT_CHAR;
+                        browser->GetHost()->SendKeyEvent(cef_key_event);
+                        break;
 
-                // 对于Ctrl+字母组合键，发送CHAR事件（CEF需要这个来识别快捷键）
-                if (is_ctrl_combination ||
-                    (pending_event.key_code >= SDLK_KP_0 && pending_event.key_code <= SDLK_KP_9) ||
-                    pending_event.key_code == SDLK_RETURN ||
-                    pending_event.key_code == SDLK_TAB ||
-                    pending_event.key_code == SDLK_BACKSPACE) {
-                    cef_key_event.type = KEYEVENT_CHAR;
-                    browser->GetHost()->SendKeyEvent(cef_key_event);
+                    default:
+                        // 对于字母、数字、符号等常规字符，不发送CHAR事件
+                        // 这些字符将通过TEXT_EVENT处理
+                        break;
                 }
             }
         } else if (pending_event.type == PendingKeyEvent::TEXT_EVENT) {
-            // 处理文本输入
+            // 处理文本输入 - 所有字符输入都通过这里处理
             const std::string& text = pending_event.text;
             if (!text.empty()) {
-                bool is_ascii = true;
+                // 检查文本中是否包含控制字符
+                bool has_control_chars = false;
                 for (char c : text) {
-                    if (static_cast<unsigned char>(c) >= 128) {
-                        is_ascii = false;
+                    if (c == '\b' || c == '\t' || c == '\n' || c == '\r') {
+                        has_control_chars = true;
                         break;
                     }
                 }
 
-                if (is_ascii) {
-                    // ASCII文本，直接发送
+                if (!has_control_chars) {
+                    // 处理普通文本字符
+                    bool is_ascii = true;
                     for (char c : text) {
-                        if (c >= 32 && c < 127) {
-                            CefKeyEvent cef_text_event;
-                            cef_text_event.type = KEYEVENT_CHAR;
-                            cef_text_event.modifiers = 0;
-                            cef_text_event.windows_key_code = static_cast<uint16_t>(c);
-                            cef_text_event.native_key_code = static_cast<uint16_t>(c);
-                            cef_text_event.character = static_cast<uint16_t>(c);
-                            cef_text_event.unmodified_character = static_cast<uint16_t>(c);
-                            browser->GetHost()->SendKeyEvent(cef_text_event);
+                        if (static_cast<unsigned char>(c) >= 128) {
+                            is_ascii = false;
+                            break;
                         }
                     }
-                } else {
-                    // 非ASCII文本，使用UTF-16转换
-                    char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
-                    if (utf16_text) {
-                        uint16_t* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
-                        size_t utf16_len = 0;
-                        while (utf16_chars[utf16_len] != 0) {
-                            utf16_len++;
+
+                    if (is_ascii) {
+                        // ASCII文本，直接发送
+                        for (char c : text) {
+                            if (c >= 32 && c < 127) {  // 可打印字符
+                                CefKeyEvent cef_text_event;
+                                cef_text_event.type = KEYEVENT_CHAR;
+                                cef_text_event.modifiers = 0;
+                                cef_text_event.windows_key_code = static_cast<uint16_t>(c);
+                                cef_text_event.native_key_code = static_cast<uint16_t>(c);
+                                cef_text_event.character = static_cast<uint16_t>(c);
+                                cef_text_event.unmodified_character = static_cast<uint16_t>(c);
+                                browser->GetHost()->SendKeyEvent(cef_text_event);
+                            }
                         }
-                        for (size_t i = 0; i < utf16_len; i++) {
-                            CefKeyEvent cef_text_event;
-                            cef_text_event.type = KEYEVENT_CHAR;
-                            cef_text_event.modifiers = 0;
-                            cef_text_event.windows_key_code = utf16_chars[i];
-                            cef_text_event.native_key_code = utf16_chars[i];
-                            cef_text_event.character = utf16_chars[i];
-                            cef_text_event.unmodified_character = utf16_chars[i];
-                            browser->GetHost()->SendKeyEvent(cef_text_event);
+                    } else {
+                        // 非ASCII文本（中文），使用UTF-16转换
+                        char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
+                        if (utf16_text) {
+                            uint16_t* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
+                            size_t utf16_len = 0;
+                            while (utf16_chars[utf16_len] != 0) {
+                                utf16_len++;
+                            }
+                            for (size_t i = 0; i < utf16_len; i++) {
+                                CefKeyEvent cef_text_event;
+                                cef_text_event.type = KEYEVENT_CHAR;
+                                cef_text_event.modifiers = 0;
+                                cef_text_event.windows_key_code = utf16_chars[i];
+                                cef_text_event.native_key_code = utf16_chars[i];
+                                cef_text_event.character = utf16_chars[i];
+                                cef_text_event.unmodified_character = utf16_chars[i];
+                                browser->GetHost()->SendKeyEvent(cef_text_event);
+                            }
+                            SDL_free(utf16_text);
                         }
-                        SDL_free(utf16_text);
                     }
                 }
             }
         }
-        // IME事件处理
-        else if (pending_event.type == PendingKeyEvent::IME_COMPOSITION) {
-            // IME合成事件，CEF支持有限，暂时不处理
-        }
     }
+
+    // 清空待处理事件
+    m_PendingKeyEvents.clear();
 }
 
 bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
@@ -517,8 +477,7 @@ void ImguiSystem::thread_loop() {
 
     // 启用文本输入和IME支持
     SDL_StartTextInput(window);
-    SDL_SetHint("SDL_HINT_IME_SHOW_UI", "1");
-    SDL_SetHint("SDL_HINT_IME_SUPPORT_EXTENDED_TEXT", "1");
+    SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 
     if (volkInitialize() != VK_SUCCESS) {
         std::cerr << "Failed to initialize Volk\n";
