@@ -25,7 +25,7 @@ class VulkanBackend;
  */
 class ImguiSystem : public Kernel::SystemBase {
    public:
-    ImguiSystem() {
+    ImguiSystem() : m_MouseDragStart(0, 0), m_IsMouseDragging(false), m_IsLeftMouseDown(false), m_MouseDownStartTime(0), m_HasBrowserFocus(false) {
         set_target_fps(60);  // 几何系统运行在 60 FPS
     }
 
@@ -100,6 +100,12 @@ class ImguiSystem : public Kernel::SystemBase {
 
     std::vector<PendingKeyEvent> m_PendingKeyEvents;  // 待处理的键盘事件队列
     int m_ActiveTabId = -1;  // 当前活动的标签页ID
+
+    ImVec2 m_MouseDragStart;      // 鼠标拖动起始位置
+    bool m_IsMouseDragging;       // 是否正在拖动
+    bool m_IsLeftMouseDown;       // 左键是否按下
+    Uint32 m_MouseDownStartTime;  // 鼠标按下的开始时间
+    bool m_HasBrowserFocus;       // 浏览器是否已有焦点
 
     // 调试输出函数
     void DebugLog(const char* format, ...);

@@ -468,6 +468,12 @@ void ImguiSystem::update() {
             if (ImGui::IsItemActive()) {
                 url_input_active_tab = tabId;
                 m_ActiveTabId = -1;
+
+                // 当URL输入框激活时，移除浏览器焦点
+                if (tab->client && tab->client->GetBrowser()) {
+                    tab->client->GetBrowser()->GetHost()->SetFocus(false);
+                    m_HasBrowserFocus = false;
+                }
             }
             // 导航按钮
             ImGui::PopItemWidth();
@@ -515,6 +521,7 @@ void ImguiSystem::update() {
                 }
             }
 
+            // 修改浏览器内容区域的鼠标事件处理
             if (tab->textureId != VK_NULL_HANDLE) {
                 ImGui::Image((ImTextureID)(intptr_t)tab->textureId, availSize);
 
@@ -523,6 +530,55 @@ void ImguiSystem::update() {
                 if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     m_ActiveTabId = tabId;
                     url_input_active_tab = -1;
+
+                    // 聚焦浏览器
+                    if (tab->client && tab->client->GetBrowser()) {
+                        tab->client->GetBrowser()->GetHost()->SetFocus(true);
+                        m_HasBrowserFocus = true;
+                    }
+
+                    // 记录鼠标按下状态
+                    m_IsLeftMouseDown = true;
+                    m_MouseDownStartTime = SDL_GetTicks();
+                    m_MouseDragStart = ImGui::GetMousePos();
+                    m_IsMouseDragging = false;
+
+                    // 发送鼠标按下事件
+                    if (tab->client && tab->client->GetBrowser()) {
+                        ImVec2 mousePos = ImGui::GetMousePos();
+                        ImVec2 itemPos = ImGui::GetItemRectMin();
+                        int x = (int)(mousePos.x - itemPos.x);
+                        int y = (int)(mousePos.y - itemPos.y);
+
+                        CefMouseEvent mouseEvent;
+                        mouseEvent.x = x;
+                        mouseEvent.y = y;
+                        mouseEvent.modifiers = EVENTFLAG_LEFT_MOUSE_BUTTON;
+
+                        tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
+                    }
+                }
+
+                // 处理鼠标释放事件
+                if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    if (m_IsLeftMouseDown) {
+                        // 发送鼠标释放事件
+                        if (tab->client && tab->client->GetBrowser()) {
+                            ImVec2 mousePos = ImGui::GetMousePos();
+                            ImVec2 itemPos = ImGui::GetItemRectMin();
+                            int x = (int)(mousePos.x - itemPos.x);
+                            int y = (int)(mousePos.y - itemPos.y);
+
+                            CefMouseEvent mouseEvent;
+                            mouseEvent.x = x;
+                            mouseEvent.y = y;
+                            mouseEvent.modifiers = 0;
+
+                            tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
+                        }
+
+                        m_IsLeftMouseDown = false;
+                    }
                 }
 
                 if (browser_hovered) {
@@ -536,17 +592,38 @@ void ImguiSystem::update() {
                         CefMouseEvent mouseEvent;
                         mouseEvent.x = x;
                         mouseEvent.y = y;
-                        mouseEvent.modifiers = 0;
 
+                        // 设置修饰键状态
+                        mouseEvent.modifiers = 0;
+                        if (m_IsLeftMouseDown) {
+                            mouseEvent.modifiers |= EVENTFLAG_LEFT_MOUSE_BUTTON;
+                        }
+                        if (ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift)) {
+                            mouseEvent.modifiers |= EVENTFLAG_SHIFT_DOWN;
+                        }
+                        if (ImGui::IsKeyDown(ImGuiKey_LeftCtrl) || ImGui::IsKeyDown(ImGuiKey_RightCtrl)) {
+                            mouseEvent.modifiers |= EVENTFLAG_CONTROL_DOWN;
+                        }
+
+                        // 发送鼠标移动事件
+                        // 关键：总是发送鼠标移动事件，让CEF知道鼠标位置
                         browser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
 
-                        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                            browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
-                        }
-                        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-                            browser->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
+                        // 处理鼠标拖动选择文本
+                        if (m_IsLeftMouseDown) {
+                            // 检查是否开始拖动
+                            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+                            float dragDistance = dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y;
+
+                            if (dragDistance > 4.0f) {  // 拖动超过2像素
+                                m_IsMouseDragging = true;
+
+                                // 在拖动过程中，持续发送鼠标移动事件以支持文本选择
+                                browser->GetHost()->SendMouseMoveEvent(mouseEvent, false);
+                            }
                         }
 
+                        // 鼠标滚轮事件
                         float wheel = io->MouseWheel;
                         if (wheel != 0) {
                             browser->GetHost()->SendMouseWheelEvent(mouseEvent, 0, (int)(wheel * 100));
