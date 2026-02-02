@@ -186,37 +186,28 @@ namespace Corona::Systems {
     {
         g_Surface = surface;
 
-        // Check Surface Support
+        // 在 SetupVulkanWindow() 函数中修改表面格式选择
+        // 选择支持透明度的格式
         VkBool32 res;
         vkGetPhysicalDeviceSurfaceSupportKHR(g_PhysicalDevice, g_QueueFamily, g_Surface, &res);
-        if (res != VK_TRUE)
-        {
+        if (res != VK_TRUE) {
             fprintf(stderr, "Error no WSI support on physical device 0\n");
             exit(-1);
         }
 
-        // Select Surface Format
+        // 选择支持 Alpha 通道的表面格式
         uint32_t format_count;
         vkGetPhysicalDeviceSurfaceFormatsKHR(g_PhysicalDevice, g_Surface, &format_count, nullptr);
         std::vector<VkSurfaceFormatKHR> surface_formats(format_count);
         vkGetPhysicalDeviceSurfaceFormatsKHR(g_PhysicalDevice, g_Surface, &format_count, surface_formats.data());
 
-        // Prefer B8G8R8A8_UNORM
-        if (format_count == 1 && surface_formats[0].format == VK_FORMAT_UNDEFINED)
-        {
-             g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;
-        }
-        else
-        {
-             g_SurfaceFormat = surface_formats[0].format;
-             for (const auto& fmt : surface_formats)
-             {
-                  if (fmt.format == VK_FORMAT_B8G8R8A8_UNORM && fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-                  {
-                       g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;
-                       break;
-                  }
-             }
+        // 优先选择支持 Alpha 的格式
+        g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;  // 确保使用带 Alpha 的格式
+        for (const auto& fmt : surface_formats) {
+            if (fmt.format == VK_FORMAT_B8G8R8A8_UNORM && fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+                g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;
+                break;
+            }
         }
 
         // Select Present Mode
@@ -253,23 +244,26 @@ namespace Corona::Systems {
         info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR; // Should assume valid transform
-        info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        //info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         info.presentMode = g_PresentMode;
         info.clipped = VK_TRUE;
         info.oldSwapchain = old_swapchain;
 
-        VkSurfaceCapabilitiesKHR cap;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, surface, &cap);
-        if (info.minImageCount < cap.minImageCount)
-            info.minImageCount = cap.minImageCount;
-        else if (cap.maxImageCount != 0 && info.minImageCount > cap.maxImageCount)
-            info.minImageCount = cap.maxImageCount;
+        // 查询表面能力以选择正确的复合Alpha模式
+        VkSurfaceCapabilitiesKHR capabilities;
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, surface, &capabilities);
 
-        if (cap.currentExtent.width != 0xffffffff) {
-            info.imageExtent = cap.currentExtent;
-            width = info.imageExtent.width;
-            height = info.imageExtent.height;
+        // 优先选择支持预乘Alpha的模式
+        VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR) {
+            compositeAlpha = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
+        } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR) {
+            compositeAlpha = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
+        } else if (capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR) {
+            compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
         }
+
+        info.compositeAlpha = compositeAlpha;  // 使用支持Alpha的复合模式
 
         err = vkCreateSwapchainKHR(g_Device, &info, nullptr, &g_Swapchain);
         check_vk_result(err);
@@ -338,43 +332,46 @@ namespace Corona::Systems {
         // Create RenderPass
         if (g_RenderPass == VK_NULL_HANDLE)
         {
-             VkAttachmentDescription attachment = {};
-             attachment.format = g_SurfaceFormat;
-             attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-             attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-             attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-             attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-             attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-             attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-             attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            // 修改为支持透明度混合的渲染通道
+            VkAttachmentDescription attachment = {};
+            attachment.format = g_SurfaceFormat;
+            attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+            attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+            attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+            attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+            attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+            attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-             VkAttachmentReference color_attachment = {};
-             color_attachment.attachment = 0;
-             color_attachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            VkAttachmentReference color_attachment = {};
+            color_attachment.attachment = 0;
+            color_attachment.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-             VkSubpassDescription subpass = {};
-             subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-             subpass.colorAttachmentCount = 1;
-             subpass.pColorAttachments = &color_attachment;
+            VkSubpassDescription subpass = {};
+            subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+            subpass.colorAttachmentCount = 1;
+            subpass.pColorAttachments = &color_attachment;
 
-             VkSubpassDependency dependency = {};
-             dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-             dependency.dstSubpass = 0;
-             dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-             dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-             dependency.srcAccessMask = 0;
-             dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+            // 简单的Alpha混合（ImGui标准设置）
+            VkSubpassDependency dependency = {};
+            dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+            dependency.dstSubpass = 0;
+            dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+            dependency.srcAccessMask = 0;
+            dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-             VkRenderPassCreateInfo info = {};
-             info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-             info.attachmentCount = 1;
-             info.pAttachments = &attachment;
-             info.subpassCount = 1;
-             info.pSubpasses = &subpass;
-             info.dependencyCount = 1;
-             info.pDependencies = &dependency;
-             err = vkCreateRenderPass(g_Device, &info, nullptr, &g_RenderPass);
-             check_vk_result(err);
+            VkRenderPassCreateInfo info = {};
+            info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            info.attachmentCount = 1;
+            info.pAttachments = &attachment;
+            info.subpassCount = 1;
+            info.pSubpasses = &subpass;
+            info.dependencyCount = 1;
+            info.pDependencies = &dependency;
+
+            err = vkCreateRenderPass(g_Device, &info, nullptr, &g_RenderPass);
+            check_vk_result(err);
         }
 
         // Create Framebuffer
@@ -458,7 +455,7 @@ namespace Corona::Systems {
             info.renderArea.extent.width = (uint32_t)draw_data->DisplaySize.x;
             info.renderArea.extent.height = (uint32_t)draw_data->DisplaySize.y;
             info.renderArea.offset = { 0, 0 };
-            VkClearValue clearColor = { 0.176f, 0.176f, 0.188f, 1.0f };
+            VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
             info.clearValueCount = 1;
             info.pClearValues = &clearColor;
             vkCmdBeginRenderPass(frame->CommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);

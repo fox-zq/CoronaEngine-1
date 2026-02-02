@@ -6,6 +6,7 @@
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/systems/ui/imgui_system.h>
 #include <nanobind/nanobind.h>
+#include <imgui_internal.h>
 
 #include <cstdarg>
 #include <filesystem>
@@ -130,6 +131,7 @@ void ImguiSystem::thread_loop() {
         return;
     }
 
+    SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
     window = SDL_CreateWindow("Corona Engine (Vulkan)", 1400, 900,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (window == nullptr) {
@@ -142,7 +144,6 @@ void ImguiSystem::thread_loop() {
 
     SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window);
-
     // 启用文本输入和IME支持
     SDL_StartTextInput(window);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
@@ -177,13 +178,19 @@ void ImguiSystem::thread_loop() {
     io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
+    // 设置ImGui样式 - 使用深色主题但带透明窗口
     ImGui::StyleColorsDark();
-
     ImGuiStyle& style = ImGui::GetStyle();
-    if (io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable) {
-        style.WindowRounding = 0.0f;
-        style.Colors[ImGuiCol_WindowBg].w = 1.0f;
-    }
+
+    // 关键：只设置窗口相关颜色为透明
+    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);        // 窗口背景完全透明
+    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);  // Docking空区域透明
+    style.Colors[ImGuiCol_DockingPreview] = ImVec4(0.2f, 0.2f, 0.8f, 0.3f);  // Docking预览半透明
+
+    // 调整窗口圆角和边框
+    style.WindowRounding = 6.0f;
+    style.WindowBorderSize = 1.0f;
+    style.WindowPadding = ImVec2(8.0f, 8.0f);
 
     // 初始化 ImGui SDL3 和 Vulkan 后端
     ImGui_ImplSDL3_InitForVulkan(window);
@@ -199,7 +206,10 @@ void ImguiSystem::thread_loop() {
     init_info.PipelineInfoMain.RenderPass = m_VulkanBackend->GetRenderPass();
     init_info.MinImageCount = m_VulkanBackend->GetMinImageCount();
     init_info.ImageCount = m_VulkanBackend->GetImageCount();
-    init_info.PipelineInfoMain.MSAASamples = m_VulkanBackend->GetMSAASamples();
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+    // 关键：启用动态渲染（新版本ImGui需要）
+    init_info.UseDynamicRendering = false;
 
     ImGui_ImplVulkan_Init(&init_info);
 
@@ -351,24 +361,42 @@ void ImguiSystem::update() {
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
-    // 设置停靠空间
-    ImGuiWindowFlags dockSpaceFlags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    // 创建透明的DockSpace
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     ImGui::SetNextWindowViewport(viewport->ID);
+
+    // 设置DockSpace窗口标志
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar |
+                                    ImGuiWindowFlags_NoDocking |
+                                    ImGuiWindowFlags_NoTitleBar |
+                                    ImGuiWindowFlags_NoCollapse |
+                                    ImGuiWindowFlags_NoResize |
+                                    ImGuiWindowFlags_NoMove |
+                                    ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                    ImGuiWindowFlags_NoNavFocus |
+                                    ImGuiWindowFlags_NoBackground;  // 重要：无背景
+
+    // 开始DockSpace窗口
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    dockSpaceFlags |= ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
-                      ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
-    dockSpaceFlags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
-
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("DockSpace", nullptr, dockSpaceFlags);
-    ImGui::PopStyleVar(3);
 
+    // 关键：设置窗口背景完全透明
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+    ImGui::Begin("DockSpace", nullptr, window_flags);
+
+    // 弹出样式
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(3);
+
+    // 创建DockSpace
     ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
-    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_None);
+    ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
     // 创建主菜单栏
     if (ImGui::BeginMenuBar()) {
