@@ -107,12 +107,6 @@ class ImguiSystem : public Kernel::SystemBase {
     Uint32 m_MouseDownStartTime;  // 鼠标按下的开始时间
     bool m_HasBrowserFocus;       // 浏览器是否已有焦点
 
-    // 调试输出函数
-    void DebugLog(const char* format, ...);
-    void DebugLogKeyEvent(const SDL_Event& event, const char* action);
-    void DebugLogTextEvent(const SDL_Event& event);
-    void DebugLogIMEEvent(const SDL_Event& event);
-
     // 输入处理函数
     void ProcessSDLKeyEvent(const SDL_Event& event);
     void ProcessSDLTextEvent(const SDL_Event& event);
