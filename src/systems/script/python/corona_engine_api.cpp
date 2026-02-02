@@ -327,6 +327,35 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     std::vector<MeshDevice> mesh_devices;
     mesh_devices.reserve(scene->data.meshes.size());
 
+    // 用于批量纹理上传的数据结构
+    struct PendingTextureUpload {
+        std::uint32_t mesh_idx;
+        HardwareImage* texture;
+        std::vector<unsigned char> rgba_data;  // 保持数据存活直到上传完成
+        unsigned char* data_ptr;
+    };
+    std::vector<PendingTextureUpload> pending_uploads;
+    pending_uploads.reserve(scene->data.meshes.size());
+
+    // 获取或创建共享的占位纹理（只创建一次）
+    static HardwareImage shared_placeholder_texture = []() {
+        HardwareImageCreateInfo placeholder_info{};
+        placeholder_info.width = 1;
+        placeholder_info.height = 1;
+        placeholder_info.format = ImageFormat::RGBA8_SRGB;
+        placeholder_info.usage = ImageUsage::SampledImage;
+        placeholder_info.arrayLayers = 1;
+        placeholder_info.mipLevels = 1;
+
+        static const unsigned char white_pixel[4] = {255, 255, 255, 255};
+        HardwareImage texture(placeholder_info);
+        HardwareExecutor temp_executor;
+        temp_executor << texture.copyFrom(white_pixel) << temp_executor.commit();
+        CFW_LOG_INFO("[Geometry] Created shared default white placeholder texture (1x1)");
+        return texture;
+    }();
+
+    // 第一阶段：创建所有mesh设备和纹理对象（不提交GPU命令）
     for (std::uint32_t mesh_idx = 0; mesh_idx < scene->data.meshes.size(); ++mesh_idx) {
         const auto& mesh = scene->data.meshes[mesh_idx];
         MeshDevice dev{};
@@ -348,6 +377,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                           dev.materialColor[2], dev.materialColor[3]);
         }
 
+        bool texture_created = false;
         HardwareImageCreateInfo create_info{};
 
         if (mesh.material_index != Resource::InvalidIndex &&
@@ -368,19 +398,38 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                     if (tex_width > 0 && tex_height > 0 && tex_channels > 0) {
                         constexpr bool use_compressed = false;  // TODO: 测试模型兼容性  先不走压缩纹理
 
-                        if (use_compressed) {
-                            // 使用压缩纹理格式
+                        if (texture_data->is_compressed()) {
+                            // 获取压缩数据和格式信息
+                            const auto& compressed = texture_data->get_compressed_data();
+
+                            // 根据实际压缩格式选择正确的 ImageFormat
                             create_info.width = tex_width;
                             create_info.height = tex_height;
-                            create_info.format = ImageFormat::BC1_RGB_UNORM;
                             create_info.usage = ImageUsage::SampledImage;
                             create_info.arrayLayers = 1;
                             create_info.mipLevels = 1;
-                            auto* data_ptr = const_cast<unsigned char*>(texture_data->get_compressed_data().data.data());
+
+                            // 根据压缩格式类型选择对应的 GPU 格式
+                            if (compressed.format == Resource::CompressedData::Format::BC1) {
+                                create_info.format = ImageFormat::BC1_RGB_SRGB;
+                            } else if (compressed.format == Resource::CompressedData::Format::BC3) {
+                                create_info.format = ImageFormat::BC3_RGBA_SRGB;
+                            } else if (compressed.format == Resource::CompressedData::Format::ASTC_4x4) {
+                                create_info.format = ImageFormat::ASTC_4x4_SRGB;
+                            } else {
+                                CFW_LOG_WARNING("[Geometry] Unsupported compressed format, falling back to RGBA8");
+                                // 如果遇到未知格式，应该使用非压缩路径而非猜测
+                            }
+
+                            // 复制压缩数据以避免悬空指针（texture_data 可能在上传前失效）
+                            PendingTextureUpload upload{mesh_idx, nullptr, {}, nullptr};
+                            upload.rgba_data.assign(compressed.data.begin(), compressed.data.end());
+                            upload.data_ptr = upload.rgba_data.data();
 
                             dev.textureBuffer = HardwareImage(create_info);
-                            HardwareExecutor temp_executor;
-                            temp_executor << dev.textureBuffer.copyFrom(data_ptr) << temp_executor.commit();
+                            upload.texture = &dev.textureBuffer;
+                            pending_uploads.push_back(std::move(upload));
+                            texture_created = true;
                         } else {
                             // 使用非压缩 RGBA8 格式，需要确保数据通道匹配
                             create_info.width = tex_width;
@@ -391,40 +440,41 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                             create_info.mipLevels = 1;
 
                             unsigned char* src_data = texture_data->get_data();
-                            std::vector<unsigned char> rgba_data;
-                            unsigned char* data_to_copy = nullptr;
+                            PendingTextureUpload upload{mesh_idx, nullptr, {}, nullptr};
 
                             if (tex_channels == 4) {
-                                // 已经是 RGBA，直接使用
-                                data_to_copy = src_data;
+                                // 已经是 RGBA，需要复制数据（因为texture_data可能在之后失效）
+                                upload.rgba_data.assign(src_data, src_data + static_cast<size_t>(tex_width) * tex_height * 4);
+                                upload.data_ptr = upload.rgba_data.data();
                             } else if (tex_channels == 3) {
                                 // RGB -> RGBA 转换
-                                rgba_data.resize(static_cast<size_t>(tex_width) * tex_height * 4);
+                                upload.rgba_data.resize(static_cast<size_t>(tex_width) * tex_height * 4);
                                 for (int i = 0; i < tex_width * tex_height; ++i) {
-                                    rgba_data[i * 4 + 0] = src_data[i * 3 + 0];  // R
-                                    rgba_data[i * 4 + 1] = src_data[i * 3 + 1];  // G
-                                    rgba_data[i * 4 + 2] = src_data[i * 3 + 2];  // B
-                                    rgba_data[i * 4 + 3] = 255;                  // A
+                                    upload.rgba_data[i * 4 + 0] = src_data[i * 3 + 0];  // R
+                                    upload.rgba_data[i * 4 + 1] = src_data[i * 3 + 1];  // G
+                                    upload.rgba_data[i * 4 + 2] = src_data[i * 3 + 2];  // B
+                                    upload.rgba_data[i * 4 + 3] = 255;                  // A
                                 }
-                                data_to_copy = rgba_data.data();
+                                upload.data_ptr = upload.rgba_data.data();
                             } else if (tex_channels == 1) {
                                 // Grayscale -> RGBA 转换
-                                rgba_data.resize(static_cast<size_t>(tex_width) * tex_height * 4);
+                                upload.rgba_data.resize(static_cast<size_t>(tex_width) * tex_height * 4);
                                 for (int i = 0; i < tex_width * tex_height; ++i) {
-                                    rgba_data[i * 4 + 0] = src_data[i];  // R
-                                    rgba_data[i * 4 + 1] = src_data[i];  // G
-                                    rgba_data[i * 4 + 2] = src_data[i];  // B
-                                    rgba_data[i * 4 + 3] = 255;          // A
+                                    upload.rgba_data[i * 4 + 0] = src_data[i];  // R
+                                    upload.rgba_data[i * 4 + 1] = src_data[i];  // G
+                                    upload.rgba_data[i * 4 + 2] = src_data[i];  // B
+                                    upload.rgba_data[i * 4 + 3] = 255;          // A
                                 }
-                                data_to_copy = rgba_data.data();
+                                upload.data_ptr = upload.rgba_data.data();
                             } else {
                                 CFW_LOG_WARNING("[Geometry] Unsupported texture channel count: {}", tex_channels);
                             }
 
-                            if (data_to_copy != nullptr) {
+                            if (upload.data_ptr != nullptr) {
                                 dev.textureBuffer = HardwareImage(create_info);
-                                HardwareExecutor temp_executor;
-                                temp_executor << dev.textureBuffer.copyFrom(data_to_copy) << temp_executor.commit();
+                                upload.texture = &dev.textureBuffer;
+                                pending_uploads.push_back(std::move(upload));
+                                texture_created = true;
                             }
                         }
                     }
@@ -432,7 +482,40 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             }
         }
 
+        // 为没有纹理的网格使用全局共享的默认 1x1 白色占位纹理
+        if (!texture_created) {
+            dev.textureBuffer = shared_placeholder_texture;
+        }
+
         mesh_devices.emplace_back(std::move(dev));
+    }
+
+    // 第二阶段：批量上传所有纹理（减少GPU命令提交次数）
+    if (!pending_uploads.empty()) {
+        CFW_LOG_INFO("[Geometry] Batch uploading {} textures...", pending_uploads.size());
+
+        // 分批提交，每批最多处理一定数量的纹理，避免单次命令过大
+        constexpr size_t kBatchSize = 32;
+        for (size_t batch_start = 0; batch_start < pending_uploads.size(); batch_start += kBatchSize) {
+            size_t batch_end = std::min(batch_start + kBatchSize, pending_uploads.size());
+
+            HardwareExecutor batch_executor;
+            for (size_t i = batch_start; i < batch_end; ++i) {
+                auto& upload = pending_uploads[i];
+                // 更新texture指针（因为mesh_devices可能已经移动）
+                HardwareImage& tex = mesh_devices[upload.mesh_idx].textureBuffer;
+                batch_executor << tex.copyFrom(upload.data_ptr);
+            }
+            batch_executor << batch_executor.commit();
+
+            // 强制等待每一批上传完成，防止短时间内提交过多 CommandBuffer 导致 Device Lost (TDR) 或内存问题
+            batch_executor.waitForDeferredResources();
+
+            CFW_LOG_DEBUG("[Geometry] Uploaded texture batch {}-{}/{}",
+                          batch_start, batch_end - 1, pending_uploads.size());
+        }
+
+        CFW_LOG_INFO("[Geometry] Texture batch upload complete");
     }
 
     handle_ = SharedDataHub::instance().geometry_storage().allocate();

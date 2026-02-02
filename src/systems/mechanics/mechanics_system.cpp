@@ -1,7 +1,3 @@
-#include <algorithm>
-#include <cmath>
-#include <vector>
-
 #include <corona/events/engine_events.h>
 #include <corona/events/mechanics_system_events.h>
 #include <corona/kernel/core/i_logger.h>
@@ -9,93 +5,170 @@
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/systems/mechanics/mechanics_system.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include "corona/shared_data_hub.h"
 #include "ktm/ktm.h"
 
 namespace {
-// 说明：旧的顶点级检测暂时保留（当前实现使用更稳定的世界空间 AABB overlap），后续可清理。
-std::vector<ktm::fvec3> calculateVertices(const ktm::fvec3& startMin, const ktm::fvec3& startMax) {
-    std::vector<ktm::fvec3> vertices;
-    vertices.reserve(8);
 
-    vertices.push_back(startMin);
+// 八叉树潜在碰撞对；窄相位仍用 AABB 重叠 + 分离
+struct OctreeEntry {
+    std::uintptr_t handle;
+    ktm::fvec3 min_bounds;
+    ktm::fvec3 max_bounds;
+};
 
-    ktm::fvec3 v1;
-    v1.x = startMax.x;
-    v1.y = startMin.y;
-    v1.z = startMin.z;
-    vertices.push_back(v1);
+struct OctreeNode {
+    ktm::fvec3 min_bounds;
+    ktm::fvec3 max_bounds;
+    std::vector<OctreeEntry> entries;
+    std::unique_ptr<std::array<OctreeNode, 8>> children;
+};
 
-    ktm::fvec3 v2;
-    v2.x = startMin.x;
-    v2.y = startMax.y;
-    v2.z = startMin.z;
-    vertices.push_back(v2);
+constexpr int kOctreeMaxDepth = 6;           // 八叉树最大深度为6
+constexpr int kOctreeMaxObjectsPerLeaf = 4;  // 八叉树每个叶子节点最大物体数为4
 
-    ktm::fvec3 v3;
-    v3.x = startMax.x;
-    v3.y = startMax.y;
-    v3.z = startMin.z;
-    vertices.push_back(v3);
-
-    ktm::fvec3 v4;
-    v4.x = startMin.x;
-    v4.y = startMin.y;
-    v4.z = startMax.z;
-    vertices.push_back(v4);
-
-    ktm::fvec3 v5;
-    v5.x = startMax.x;
-    v5.y = startMin.y;
-    v5.z = startMax.z;
-    vertices.push_back(v5);
-
-    ktm::fvec3 v6;
-    v6.x = startMin.x;
-    v6.y = startMax.y;
-    v6.z = startMax.z;
-    vertices.push_back(v6);
-
-    vertices.push_back(startMax);
-
-    return vertices;
+inline bool aabb_overlap(const ktm::fvec3& a_min, const ktm::fvec3& a_max,  // 两个AABB的包围盒
+                         const ktm::fvec3& b_min, const ktm::fvec3& b_max) {
+    return (a_min.x <= b_max.x && a_max.x >= b_min.x) &&
+           (a_min.y <= b_max.y && a_max.y >= b_min.y) &&
+           (a_min.z <= b_max.z && a_max.z >= b_min.z);
 }
 
-bool checkCollision(const std::vector<ktm::fvec3>& vertices1, const std::vector<ktm::fvec3>& vertices2) {
-    // 计算vertices2的AABB
-    ktm::fvec3 min2 = vertices2[0], max2 = vertices2[0];
-    for (const auto& v : vertices2) {
-        min2 = ktm::min(min2, v);
-        max2 = ktm::max(max2, v);
-    }
+void octree_init_children(OctreeNode& node) {  // 初始化八叉树的子节点
+    node.children = std::make_unique<std::array<OctreeNode, 8>>();
+    const float cx = (node.min_bounds.x + node.max_bounds.x) * 0.5f;  // 计算中心点
+    const float cy = (node.min_bounds.y + node.max_bounds.y) * 0.5f;
+    const float cz = (node.min_bounds.z + node.max_bounds.z) * 0.5f;
+    const ktm::fvec3 mid{cx, cy, cz};
+    const ktm::fvec3& mn = node.min_bounds;  // 计算最小点
+    const ktm::fvec3& mx = node.max_bounds;  // 计算最大点
 
-    // 检查vertices1的顶点是否在vertices2的AABB内
-    for (const auto& point : vertices1) {
-        if (point.x >= min2.x && point.x <= max2.x &&
-            point.y >= min2.y && point.y <= max2.y &&
-            point.z >= min2.z && point.z <= max2.z) {
-            return true;
-        }
-    }
+    (*node.children)[0].min_bounds = mn;   // 设置第一个子节点的最小点
+    (*node.children)[0].max_bounds = mid;  // 设置第一个子节点的最大点
 
-    // 计算vertices1的AABB
-    ktm::fvec3 min1 = vertices1[0], max1 = vertices1[0];
-    for (const auto& v : vertices1) {
-        min1 = ktm::min(min1, v);
-        max1 = ktm::max(max1, v);
-    }
+    (*node.children)[1].min_bounds = {cx, mn.y, mn.z};  // 设置第二个子节点的最小点
+    (*node.children)[1].max_bounds = {mx.x, cy, cz};    // 设置第二个子节点的最大点
 
-    // 检查vertices2的顶点是否在vertices1的AABB内
-    for (const auto& point : vertices2) {
-        if (point.x >= min1.x && point.x <= max1.x &&
-            point.y >= min1.y && point.y <= max1.y &&
-            point.z >= min1.z && point.z <= max1.z) {
-            return true;
-        }
-    }
+    (*node.children)[2].min_bounds = {mn.x, cy, mn.z};  // 设置第三个子节点的最小点
+    (*node.children)[2].max_bounds = {cx, mx.y, cz};    // 设置第三个子节点的最大点
 
-    return false;
+    (*node.children)[3].min_bounds = {cx, cy, mn.z};    // 设置第四个子节点的最小点
+    (*node.children)[3].max_bounds = {mx.x, mx.y, cz};  // 设置第四个子节点的最大点
+
+    (*node.children)[4].min_bounds = {mn.x, mn.y, cz};  // 设置第五个子节点的最小点
+    (*node.children)[4].max_bounds = {cx, cy, mx.z};    // 设置第五个子节点的最大点
+
+    (*node.children)[5].min_bounds = {cx, mn.y, cz};    // 设置第六个子节点的最小点
+    (*node.children)[5].max_bounds = {mx.x, cy, mx.z};  // 设置第六个子节点的最大点
+
+    (*node.children)[6].min_bounds = {mn.x, cy, cz};    // 设置第七个子节点的最小点
+    (*node.children)[6].max_bounds = {cx, mx.y, mx.z};  // 设置第七个子节点的最大点
+
+    (*node.children)[7].min_bounds = mid;  // 设置第八个子节点的最小点
+    (*node.children)[7].max_bounds = mx;   // 设置第八个子节点的最大点
 }
+
+void octree_insert(OctreeNode& node, std::uintptr_t handle,  // 插入物体到八叉树
+                   const ktm::fvec3& obj_min, const ktm::fvec3& obj_max, int depth) {
+    if (!aabb_overlap(obj_min, obj_max, node.min_bounds, node.max_bounds)) {  // 如果物体与八叉树的包围盒不相交，则返回
+        return;
+    }
+
+    const bool is_leaf = (node.children == nullptr);  // 如果节点没有子节点，则表示是叶子节点（为空）
+
+    if (is_leaf) {
+        const bool should_split =                                               // 如果深度小于最大深度，并且叶子节点中的物体数大于等于最大物体数，则需要分割
+            depth < kOctreeMaxDepth &&                                          // 深度小于最大深度
+            static_cast<int>(node.entries.size()) >= kOctreeMaxObjectsPerLeaf;  // 叶子节点中的物体数大于等于最大物体数
+
+        if (!should_split) {                                     // 不分割
+            node.entries.push_back({handle, obj_min, obj_max});  // 直接插入
+            return;
+        }
+
+        octree_init_children(node);  // 初始化子节点
+
+        for (const OctreeEntry& e : node.entries) {  // 遍历叶子节点中的物体
+            for (int i = 0; i < 8; ++i) {
+                octree_insert((*node.children)[i], e.handle, e.min_bounds, e.max_bounds, depth + 1);
+            }  // 插入子节点
+        }
+        node.entries.clear();
+
+        for (int i = 0; i < 8; ++i) {
+            octree_insert((*node.children)[i], handle, obj_min, obj_max, depth + 1);
+        }
+        return;
+    }
+
+    const float cx = (node.min_bounds.x + node.max_bounds.x) * 0.5f;
+    const float cy = (node.min_bounds.y + node.max_bounds.y) * 0.5f;
+    const float cz = (node.min_bounds.z + node.max_bounds.z) * 0.5f;
+    const ktm::fvec3 mid{cx, cy, cz};
+    const ktm::fvec3& mn = node.min_bounds;
+    const ktm::fvec3& mx = node.max_bounds;
+
+    const bool overlap[8] = {
+        aabb_overlap(obj_min, obj_max, mn, mid),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{cx, mn.y, mn.z}, ktm::fvec3{mx.x, cy, cz}),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{mn.x, cy, mn.z}, ktm::fvec3{cx, mx.y, cz}),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{cx, cy, mn.z}, ktm::fvec3{mx.x, mx.y, cz}),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{mn.x, mn.y, cz}, ktm::fvec3{cx, cy, mx.z}),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{cx, mn.y, cz}, ktm::fvec3{mx.x, cy, mx.z}),
+        aabb_overlap(obj_min, obj_max, ktm::fvec3{mn.x, cy, cz}, ktm::fvec3{cx, mx.y, mx.z}),
+        aabb_overlap(obj_min, obj_max, mid, mx),
+    };
+
+    for (int i = 0; i < 8; ++i) {
+        if (overlap[i]) {
+            octree_insert((*node.children)[i], handle, obj_min, obj_max, depth + 1);
+        }
+    }
+}
+
+void octree_collect_pairs(const OctreeNode& node,
+                          std::vector<std::pair<std::uintptr_t, std::uintptr_t>>& out) {
+    if (node.children) {
+        for (int i = 0; i < 8; ++i) {
+            octree_collect_pairs((*node.children)[i], out);
+        }
+        return;
+    }
+
+    for (std::size_t i = 0; i < node.entries.size(); ++i) {
+        for (std::size_t j = i + 1; j < node.entries.size(); ++j) {
+            std::uintptr_t a = node.entries[i].handle;
+            std::uintptr_t b = node.entries[j].handle;
+            if (a > b) std::swap(a, b);
+            out.emplace_back(a, b);
+        }
+    }
+}
+
+void octree_dedupe_pairs(std::vector<std::pair<std::uintptr_t, std::uintptr_t>>& pairs) {
+    if (pairs.empty()) return;
+    std::sort(pairs.begin(), pairs.end());
+    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+}
+
+struct MechanicsWorldAABB {
+    std::uintptr_t handle;
+    std::uintptr_t transform_handle;
+    ktm::fvec3 min_world;
+    ktm::fvec3 max_world;
+    ktm::fvec3 center_world;
+};
+
 }  // namespace
 
 namespace Corona::Systems {
@@ -116,7 +189,7 @@ void MechanicsSystem::update_physics() {
     auto& actor_storage = SharedDataHub::instance().actor_storage();
     auto& profile_storage = SharedDataHub::instance().profile_storage();
 
-    // 通过 Scene -> Actor -> Profile 链路获取所有 MechanicsDevice 句柄
+    // 1. 通过 Scene -> Actor -> Profile 收集 Mechanics 句柄并去重
     std::vector<std::uintptr_t> mechanics_handles;
     mechanics_handles.reserve(64);
 
@@ -133,186 +206,136 @@ void MechanicsSystem::update_physics() {
             }
         }
     }
-
-    if (mechanics_handles.size() < 2) {
-        return;
-    }
-
-    // 去重，避免同一个 handle 被多次引用
     std::sort(mechanics_handles.begin(), mechanics_handles.end());
     mechanics_handles.erase(std::unique(mechanics_handles.begin(), mechanics_handles.end()), mechanics_handles.end());
-
     if (mechanics_handles.size() < 2) {
         return;
     }
 
-    // 成对检测：i < j，避免 A-B / B-A 重复
-    for (std::size_t i = 0; i < mechanics_handles.size(); ++i) {
-        const std::uintptr_t handle1 = mechanics_handles[i];
-        auto m1_accessor = mechanics_storage.acquire_read(handle1);
-        if (!m1_accessor) {
+    // 2. 单遍计算所有物体的世界 AABB，并缓存 transform_handle 供分离写回使用
+    std::vector<MechanicsWorldAABB> mechanics_data;
+    mechanics_data.reserve(mechanics_handles.size());
+    std::unordered_map<std::uintptr_t, std::size_t> handle_to_index;
+
+    for (std::uintptr_t h : mechanics_handles) {
+        auto m_acc = mechanics_storage.acquire_read(h);
+        if (!m_acc) continue;
+        const auto& m = *m_acc;
+        auto geom_acc = geometry_storage.acquire_read(m.geometry_handle);
+        if (!geom_acc) continue;
+        auto tx_acc = transform_storage.acquire_read(geom_acc->transform_handle);
+        if (!tx_acc) continue;
+
+        const auto& t = *tx_acc;
+        ktm::fvec3 c_local;
+        c_local.x = (m.min_xyz.x + m.max_xyz.x) * 0.5f;
+        c_local.y = (m.min_xyz.y + m.max_xyz.y) * 0.5f;
+        c_local.z = (m.min_xyz.z + m.max_xyz.z) * 0.5f;
+        ktm::fvec3 e_local;
+        e_local.x = (m.max_xyz.x - m.min_xyz.x) * 0.5f;
+        e_local.y = (m.max_xyz.y - m.min_xyz.y) * 0.5f;
+        e_local.z = (m.max_xyz.z - m.min_xyz.z) * 0.5f;
+
+        MechanicsWorldAABB entry;
+        entry.handle = h;
+        entry.transform_handle = geom_acc->transform_handle;
+        entry.center_world.x = c_local.x + t.position.x;
+        entry.center_world.y = c_local.y + t.position.y;
+        entry.center_world.z = c_local.z + t.position.z;
+        ktm::fvec3 e_world;
+        e_world.x = std::abs(e_local.x * t.scale.x);
+        e_world.y = std::abs(e_local.y * t.scale.y);
+        e_world.z = std::abs(e_local.z * t.scale.z);
+        entry.min_world.x = entry.center_world.x - e_world.x;
+        entry.min_world.y = entry.center_world.y - e_world.y;
+        entry.min_world.z = entry.center_world.z - e_world.z;
+        entry.max_world.x = entry.center_world.x + e_world.x;
+        entry.max_world.y = entry.center_world.y + e_world.y;
+        entry.max_world.z = entry.center_world.z + e_world.z;
+
+        handle_to_index[h] = mechanics_data.size();
+        mechanics_data.push_back(entry);
+    }
+    if (mechanics_data.size() < 2) {
+        return;
+    }
+
+    // 3. 构建八叉树：根节点 AABB = 全体物体的包围盒（加 padding）
+    ktm::fvec3 root_min = mechanics_data[0].min_world;
+    ktm::fvec3 root_max = mechanics_data[0].max_world;
+    for (const auto& e : mechanics_data) {
+        root_min.x = std::min(root_min.x, e.min_world.x);
+        root_min.y = std::min(root_min.y, e.min_world.y);
+        root_min.z = std::min(root_min.z, e.min_world.z);
+        root_max.x = std::max(root_max.x, e.max_world.x);
+        root_max.y = std::max(root_max.y, e.max_world.y);
+        root_max.z = std::max(root_max.z, e.max_world.z);
+    }
+    constexpr float pad = 0.01f;
+    root_min.x -= pad;
+    root_min.y -= pad;
+    root_min.z -= pad;
+    root_max.x += pad;
+    root_max.y += pad;
+    root_max.z += pad;
+
+    OctreeNode octree_root;
+    octree_root.min_bounds = root_min;
+    octree_root.max_bounds = root_max;
+    for (const auto& e : mechanics_data) {
+        octree_insert(octree_root, e.handle, e.min_world, e.max_world, 0);
+    }
+
+    // 4. 八叉树 broad-phase：收集潜在碰撞对并去重
+    std::vector<std::pair<std::uintptr_t, std::uintptr_t>> pairs;
+    pairs.reserve(mechanics_data.size() * 4);
+    octree_collect_pairs(octree_root, pairs);
+    octree_dedupe_pairs(pairs);
+
+    // 5. 窄相位：仅对候选对做 AABB 重叠检测 + 分离
+    constexpr float eps = 1e-6f;
+    constexpr float separation = 0.02f;
+    constexpr float bounce_strength = 0.1f;
+
+    for (const auto& pr : pairs) {
+        const std::uintptr_t ha = pr.first;
+        const std::uintptr_t hb = pr.second;
+        auto it_a = handle_to_index.find(ha);
+        auto it_b = handle_to_index.find(hb);
+        if (it_a == handle_to_index.end() || it_b == handle_to_index.end()) continue;
+
+        const MechanicsWorldAABB& a = mechanics_data[it_a->second];
+        const MechanicsWorldAABB& b = mechanics_data[it_b->second];
+
+        if (!aabb_overlap(a.min_world, a.max_world, b.min_world, b.max_world)) {
             continue;
         }
-        const auto& m1 = *m1_accessor;
 
-        for (std::size_t j = i + 1; j < mechanics_handles.size(); ++j) {
-            const std::uintptr_t handle2 = mechanics_handles[j];
-            auto m2_accessor = mechanics_storage.acquire_read(handle2);
-            if (!m2_accessor) {
-                continue;
-            }
-            const auto& m2 = *m2_accessor;
+        ktm::fvec3 diff;
+        diff.x = b.center_world.x - a.center_world.x;
+        diff.y = b.center_world.y - a.center_world.y;
+        diff.z = b.center_world.z - a.center_world.z;
+        if (ktm::length(diff) < eps) {
+            diff.x = 1.0f;
+            diff.y = 0.0f;
+            diff.z = 0.0f;
+        }
+        ktm::fvec3 normal = ktm::normalize(diff);
 
-            // 世界空间 AABB（最小可用版本：只考虑平移/缩放，不考虑旋转）
-            bool found1 = false;
-            bool found2 = false;
+        ktm::fvec3 total_offset;
+        total_offset.x = normal.x * (separation + bounce_strength);
+        total_offset.y = normal.y * (separation + bounce_strength);
+        total_offset.z = normal.z * (separation + bounce_strength);
 
-            ktm::fvec3 min1_world;
-            ktm::fvec3 max1_world;
-            ktm::fvec3 min2_world;
-            ktm::fvec3 max2_world;
-
-            ktm::fvec3 center1_world;
-            center1_world.x = 0.0f;
-            center1_world.y = 0.0f;
-            center1_world.z = 0.0f;
-
-            ktm::fvec3 center2_world;
-            center2_world.x = 0.0f;
-            center2_world.y = 0.0f;
-            center2_world.z = 0.0f;
-
-            // m1
-            if (auto geom1_accessor = geometry_storage.acquire_read(m1.geometry_handle)) {
-                const auto& geom1 = *geom1_accessor;
-                if (auto transform1_accessor = transform_storage.acquire_read(geom1.transform_handle)) {
-                    const auto& t1 = *transform1_accessor;
-
-                    ktm::fvec3 c1_local;
-                    c1_local.x = (m1.min_xyz.x + m1.max_xyz.x) * 0.5f;
-                    c1_local.y = (m1.min_xyz.y + m1.max_xyz.y) * 0.5f;
-                    c1_local.z = (m1.min_xyz.z + m1.max_xyz.z) * 0.5f;
-
-                    ktm::fvec3 e1_local;
-                    e1_local.x = (m1.max_xyz.x - m1.min_xyz.x) * 0.5f;
-                    e1_local.y = (m1.max_xyz.y - m1.min_xyz.y) * 0.5f;
-                    e1_local.z = (m1.max_xyz.z - m1.min_xyz.z) * 0.5f;
-
-                    center1_world.x = c1_local.x + t1.position.x;
-                    center1_world.y = c1_local.y + t1.position.y;
-                    center1_world.z = c1_local.z + t1.position.z;
-
-                    ktm::fvec3 e1_world;
-                    e1_world.x = std::abs(e1_local.x * t1.scale.x);
-                    e1_world.y = std::abs(e1_local.y * t1.scale.y);
-                    e1_world.z = std::abs(e1_local.z * t1.scale.z);
-
-                    min1_world.x = center1_world.x - e1_world.x;
-                    min1_world.y = center1_world.y - e1_world.y;
-                    min1_world.z = center1_world.z - e1_world.z;
-                    max1_world.x = center1_world.x + e1_world.x;
-                    max1_world.y = center1_world.y + e1_world.y;
-                    max1_world.z = center1_world.z + e1_world.z;
-
-                    found1 = true;
-                }
-            }
-
-            if (!found1) {
-                continue;
-            }
-
-            // m2
-            if (auto geom2_accessor = geometry_storage.acquire_read(m2.geometry_handle)) {
-                const auto& geom2 = *geom2_accessor;
-                if (auto transform2_accessor = transform_storage.acquire_read(geom2.transform_handle)) {
-                    const auto& t2 = *transform2_accessor;
-
-                    ktm::fvec3 c2_local;
-                    c2_local.x = (m2.min_xyz.x + m2.max_xyz.x) * 0.5f;
-                    c2_local.y = (m2.min_xyz.y + m2.max_xyz.y) * 0.5f;
-                    c2_local.z = (m2.min_xyz.z + m2.max_xyz.z) * 0.5f;
-
-                    ktm::fvec3 e2_local;
-                    e2_local.x = (m2.max_xyz.x - m2.min_xyz.x) * 0.5f;
-                    e2_local.y = (m2.max_xyz.y - m2.min_xyz.y) * 0.5f;
-                    e2_local.z = (m2.max_xyz.z - m2.min_xyz.z) * 0.5f;
-
-                    center2_world.x = c2_local.x + t2.position.x;
-                    center2_world.y = c2_local.y + t2.position.y;
-                    center2_world.z = c2_local.z + t2.position.z;
-
-                    ktm::fvec3 e2_world;
-                    e2_world.x = std::abs(e2_local.x * t2.scale.x);
-                    e2_world.y = std::abs(e2_local.y * t2.scale.y);
-                    e2_world.z = std::abs(e2_local.z * t2.scale.z);
-
-                    min2_world.x = center2_world.x - e2_world.x;
-                    min2_world.y = center2_world.y - e2_world.y;
-                    min2_world.z = center2_world.z - e2_world.z;
-                    max2_world.x = center2_world.x + e2_world.x;
-                    max2_world.y = center2_world.y + e2_world.y;
-                    max2_world.z = center2_world.z + e2_world.z;
-
-                    found2 = true;
-                }
-            }
-
-            if (!found2) {
-                continue;
-            }
-
-            const bool overlap = (min1_world.x <= max2_world.x && max1_world.x >= min2_world.x) &&
-                                 (min1_world.y <= max2_world.y && max1_world.y >= min2_world.y) &&
-                                 (min1_world.z <= max2_world.z && max1_world.z >= min2_world.z);
-
-            if (!overlap) {
-                continue;
-            }
-
-            // 计算分离方向（用世界中心，避免局部中心导致方向不对）
-            ktm::fvec3 diff;
-            diff.x = center2_world.x - center1_world.x;
-            diff.y = center2_world.y - center1_world.y;
-            diff.z = center2_world.z - center1_world.z;
-
-            constexpr float eps = 1e-6f;
-            if (ktm::length(diff) < eps) {
-                diff.x = 1.0f;
-                diff.y = 0.0f;
-                diff.z = 0.0f;
-            }
-
-            ktm::fvec3 normal = ktm::normalize(diff);
-
-            constexpr float separation = 0.02f;
-            constexpr float bounce_strength = 0.1f;
-
-            ktm::fvec3 total_offset;
-            total_offset.x = normal.x * (separation + bounce_strength);
-            total_offset.y = normal.y * (separation + bounce_strength);
-            total_offset.z = normal.z * (separation + bounce_strength);
-
-            // 写回 transform
-            if (auto geom1_accessor = geometry_storage.acquire_read(m1.geometry_handle)) {
-                const auto& geom1 = *geom1_accessor;
-                if (auto transform1_accessor = transform_storage.acquire_write(geom1.transform_handle)) {
-                    auto& transform1 = *transform1_accessor;
-                    transform1.position.x -= total_offset.x;
-                    transform1.position.y -= total_offset.y;
-                    transform1.position.z -= total_offset.z;
-                }
-            }
-
-            if (auto geom2_accessor = geometry_storage.acquire_read(m2.geometry_handle)) {
-                const auto& geom2 = *geom2_accessor;
-                if (auto transform2_accessor = transform_storage.acquire_write(geom2.transform_handle)) {
-                    auto& transform2 = *transform2_accessor;
-                    transform2.position.x += total_offset.x;
-                    transform2.position.y += total_offset.y;
-                    transform2.position.z += total_offset.z;
-                }
-            }
+        if (auto txa = transform_storage.acquire_write(a.transform_handle)) {
+            txa->position.x -= total_offset.x;
+            txa->position.y -= total_offset.y;
+            txa->position.z -= total_offset.z;
+        }
+        if (auto txb = transform_storage.acquire_write(b.transform_handle)) {
+            txb->position.x += total_offset.x;
+            txb->position.y += total_offset.y;
+            txb->position.z += total_offset.z;
         }
     }
 }
@@ -321,4 +344,3 @@ void MechanicsSystem::shutdown() {
     CFW_LOG_NOTICE("MechanicsSystem: Shutting down...");
 }
 }  // namespace Corona::Systems
-
