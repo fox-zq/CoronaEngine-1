@@ -1,4 +1,4 @@
-#include <corona/events/script_system_events.h>
+﻿#include <corona/events/script_system_events.h>
 #include <corona/events/engine_events.h>
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
@@ -24,7 +24,7 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
 void ScriptSystem::update() {
 
 #ifdef CORONA_ENABLE_PYTHON_API
-    // python_api_.runPythonScript();
+     python_api_.runPythonScript();
 #endif
 
 }
