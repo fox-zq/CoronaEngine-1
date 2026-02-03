@@ -107,6 +107,14 @@ class ImguiSystem : public Kernel::SystemBase {
     Uint32 m_MouseDownStartTime;  // 鼠标按下的开始时间
     bool m_HasBrowserFocus;       // 浏览器是否已有焦点
 
+    Uint32 m_LastClickTime = 0;      // 上次点击的时间戳
+    ImVec2 m_LastClickPos = {0, 0};  // 上次点击的坐标
+    int m_ManualClickCount = 0;      // 手动维护的连击计数
+
+    // 连击判定的常量
+    const Uint32 DOUBLE_CLICK_TIME = 500;  // 500毫秒内视为连击
+    const float DOUBLE_CLICK_DIST = 5.0f;  // 点击距离偏移在5像素内视为连击
+
     // 输入处理函数
     void ProcessSDLKeyEvent(const SDL_Event& event);
     void ProcessSDLTextEvent(const SDL_Event& event);

@@ -473,53 +473,64 @@ void ImguiSystem::update() {
                     m_ActiveTabId = tabId;
                     url_input_active_tab = -1;
 
-                    // 聚焦浏览器
+                    // 1. 获取当前状态
+                    Uint32 currentTime = SDL_GetTicks();
+                    ImVec2 currentPos = ImGui::GetMousePos();
+                    ImVec2 itemPos = ImGui::GetItemRectMin();
+
+                    // 2. 内部逻辑：计算连击次数
+                    float distance = sqrtf(powf(currentPos.x - m_LastClickPos.x, 2) +
+                                           powf(currentPos.y - m_LastClickPos.y, 2));
+
+                    if ((currentTime - m_LastClickTime) < DOUBLE_CLICK_TIME && distance < DOUBLE_CLICK_DIST) {
+                        m_ManualClickCount++;
+                    } else {
+                        m_ManualClickCount = 1;  // 重置为单击
+                    }
+
+                    // 更新上一次的状态
+                    m_LastClickTime = currentTime;
+                    m_LastClickPos = currentPos;
+
+                    // 3. 准备 CEF 事件
                     if (tab->client && tab->client->GetBrowser()) {
                         tab->client->GetBrowser()->GetHost()->SetFocus(true);
                         m_HasBrowserFocus = true;
-                    }
-
-                    // 记录鼠标按下状态
-                    m_IsLeftMouseDown = true;
-                    m_MouseDownStartTime = SDL_GetTicks();
-                    m_MouseDragStart = ImGui::GetMousePos();
-                    m_IsMouseDragging = false;
-
-                    // 发送鼠标按下事件
-                    if (tab->client && tab->client->GetBrowser()) {
-                        ImVec2 mousePos = ImGui::GetMousePos();
-                        ImVec2 itemPos = ImGui::GetItemRectMin();
-                        int x = (int)(mousePos.x - itemPos.x);
-                        int y = (int)(mousePos.y - itemPos.y);
 
                         CefMouseEvent mouseEvent;
-                        mouseEvent.x = x;
-                        mouseEvent.y = y;
-                        mouseEvent.modifiers = EVENTFLAG_LEFT_MOUSE_BUTTON;
+                        mouseEvent.x = (int)(currentPos.x - itemPos.x);
+                        mouseEvent.y = (int)(currentPos.y - itemPos.y);
 
-                        tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, 1);
+                        // 设置修饰键状态
+                        mouseEvent.modifiers = EVENTFLAG_LEFT_MOUSE_BUTTON;
+                        if (ImGui::GetIO().KeyCtrl) mouseEvent.modifiers |= EVENTFLAG_CONTROL_DOWN;
+                        if (ImGui::GetIO().KeyShift) mouseEvent.modifiers |= EVENTFLAG_SHIFT_DOWN;
+
+                        // 发送鼠标按下事件 (带上我们计算的计数)
+                        tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, false, m_ManualClickCount);
+
+                        m_IsLeftMouseDown = true;
                     }
                 }
 
-                // 处理鼠标释放事件
+                // 处理鼠标抬起 (Mouse Up)
                 if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                     if (m_IsLeftMouseDown) {
-                        // 发送鼠标释放事件
                         if (tab->client && tab->client->GetBrowser()) {
                             ImVec2 mousePos = ImGui::GetMousePos();
                             ImVec2 itemPos = ImGui::GetItemRectMin();
-                            int x = (int)(mousePos.x - itemPos.x);
-                            int y = (int)(mousePos.y - itemPos.y);
 
                             CefMouseEvent mouseEvent;
-                            mouseEvent.x = x;
-                            mouseEvent.y = y;
-                            mouseEvent.modifiers = 0;
+                            mouseEvent.x = (int)(mousePos.x - itemPos.x);
+                            mouseEvent.y = (int)(mousePos.y - itemPos.y);
 
-                            tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, 1);
+                            // 抬起时必须与按下时的 clickCount 保持一致，否则双击无效
+                            tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, m_ManualClickCount);
                         }
-
                         m_IsLeftMouseDown = false;
+
+                        // 如果连击次数过大，可以在此处选择是否重置 (通常由时间差逻辑自然处理)
+                        if (m_ManualClickCount >= 3) m_ManualClickCount = 0;
                     }
                 }
 
