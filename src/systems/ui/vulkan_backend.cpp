@@ -23,8 +23,27 @@ namespace Corona::Systems {
         }
     }
 
-    void VulkanBackend::Initialize(std::vector<const char*> instance_extensions) {
-        SetupVulkan(instance_extensions);
+    void VulkanBackend::Initialize() {
+
+          // 初始化 Volk
+        if (volkInitialize() != VK_SUCCESS) {
+            std::cerr << "Failed to initialize Volk\n";
+            return;
+        }
+
+        // 获取 Vulkan 实例扩展
+        uint32_t extensions_count = 0;
+        char const* const* extensions_names = SDL_Vulkan_GetInstanceExtensions(&extensions_count);
+        std::vector<const char*> extensions;
+        if (extensions_names) {
+            for (uint32_t i = 0; i < extensions_count; i++) {
+                extensions.push_back(extensions_names[i]);
+            }
+        }
+
+
+
+        SetupVulkan(extensions);
 
         // Create Surface
         VkSurfaceKHR surface;

@@ -4,13 +4,16 @@ import time
 
 # 检查 Imgui
 try:
-    import Imgui
+    import CoronaEngine
     HAS_IMGUI = True
 except ImportError:
     HAS_IMGUI = False
 
 
 tab_list = []
+
+
+num = 0
 
 def handle_request(json_str):
     """
@@ -52,8 +55,10 @@ def handle_request(json_str):
                 window.test("{func_name}({args_str})");
             """
             for i in tab_list:
-                Imgui.execute_javascript(i,js_code)
+                CoronaEngine.execute_javascript(i,js_code)
             result = f"Called js function '{func_name}' with args: {args_str}"
+        elif func_name == "get_num":
+            result = get_num()
         else:
             # 尝试动态调用函数
             if hasattr(sys.modules[__name__], func_name):
@@ -137,13 +142,19 @@ def get_version():
 def open_browser(url="https://www.baidu.com", path=""):
     if HAS_IMGUI:
         try:
-            tab_id = Imgui.create_browser_tab(url, path)
+            tab_id = CoronaEngine.create_browser_tab(url, path)
             tab_list.append(tab_id)
             return f"Opened: {url}"
         except Exception as e:
             return f"Failed to open browser: {str(e)}"
     else:
         return f"Imgui not available. Would open: {url}"
+
+def get_num():
+    global num
+    num += 1
+    return num
+
 
 if __name__ == "__main__":
     # 测试代码

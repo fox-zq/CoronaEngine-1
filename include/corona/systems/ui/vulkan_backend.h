@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <vector>
 #include <vulkan/vulkan.h>
@@ -12,7 +12,7 @@ namespace Corona::Systems {
         VulkanBackend(SDL_Window* window);
         ~VulkanBackend();
 
-        void Initialize(std::vector<const char*> instance_extensions);
+        void Initialize();
         void Shutdown();
 
         // Check if swapchain needs rebuild

@@ -41,6 +41,7 @@ extern std::unordered_map<int, BrowserTab*> g_tabs;
 extern int g_tabCounter;
 extern Corona::Systems::VulkanBackend* g_vulkan_backend;
 
+extern "C" int CreateBrowserTab(const std::string& url, const std::string& path = "");
 
 // 键码转换函数
 static int ConvertSDLKeyCodeToWindows(int sdl_key) {

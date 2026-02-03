@@ -250,8 +250,8 @@ bool Engine::register_systems() {
     sys_mgr->register_system(std::make_shared<Systems::AcousticsSystem>());
     CFW_LOG_INFO("  - AcousticsSystem registered (priority 70)");
 
-    //sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
-    //CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
+    sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
+    CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
 
     sys_mgr->register_system(std::make_shared<Systems::ImguiSystem>());
     CFW_LOG_INFO("  - ImguiSystem registered (priority 50)");

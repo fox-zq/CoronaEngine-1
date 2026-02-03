@@ -19,6 +19,7 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     res/BrowserWindow.cpp
     res/cef_client.cpp
     res/cef_handler.cpp
+    res/cef_py_bind.cpp
 )
 
 
