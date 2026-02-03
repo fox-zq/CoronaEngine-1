@@ -42,16 +42,10 @@
 
     <div>
         <h3>Test Functions:</h3>
-        <button onclick="callPython('greet', ['World'])">Greet</button>
-        <button onclick="callPython('add', [5, 3])">Add Numbers</button>
-        <button onclick="callPython('multiply', [4, 7])">Multiply</button>
-        <button onclick="callPython('get_info')">Get Info</button>
-        <button onclick="callPython('calculate', [{ 'a': 10, 'b': 20 }])">Calculate</button>
-        <button onclick="callPython('open_browser', ['file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/CabbageEditor/Frontend/dist/index.html'])">open_browser</button>
-        <button onclick="callPython('open_browser', ['file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/CabbageEditor/Frontend/dist/index.html','/SceneBar'])">open_browser2</button>
-        <button onclick="callPython('open_browser', ['file:///E:/workspace/CoronaEngine/build/examples/engine/RelWithDebInfo/CabbageEditor/Frontend/dist/index.html','/Object'])">open_browser3</button>
+        <button onclick="callPython('open_browser', [])">open_browser</button>
+        <button onclick="callPython('open_browser', ['/SceneBar'])">open_browser2</button>
+        <button onclick="callPython('open_browser', ['/Object'])">open_browser3</button>
         <button onclick="callPython('js_call_func', [{ 'a': 10, 'b': 20 },3,4,5])">js_call_func</button>
-        <button onclick="callPython('get_num', [])">get_num</button>
     </div>
 
     <div style="margin-top: 20px;">
@@ -83,6 +77,7 @@
         function callPython(funcName, args = null) {
         const request = {
         function: funcName,
+        module:"CoronaEditor",
         args: args || []
         };
 

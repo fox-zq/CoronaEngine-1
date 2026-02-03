@@ -1,4 +1,4 @@
-#define PY_SSIZE_T_CLEAN
+﻿#define PY_SSIZE_T_CLEAN
 #include <corona/systems/script/python_api.h>
 #include <corona/kernel/core/i_logger.h>
 #include <nanobind/stl/string.h>
@@ -116,6 +116,11 @@ bool PythonAPI::ensureInitialized() {
             pFunc = std::move(run_attr);
             messageFunc = std::move(putq_attr);
             
+
+            nanobind::module_ entrance = nanobind::module_::import_("main");
+            nanobind::object editor = nanobind::getattr(entrance, "editor");
+
+
             CFW_LOG_INFO("PythonAPI: Python interpreter initialized successfully");
         } catch (const nanobind::python_error& e) {
             log_python_error(e);

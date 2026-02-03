@@ -9,20 +9,55 @@ void BrowserSideJSHandler::initialize_python() {
     }
 
     PyGILState_STATE gstate = PyGILState_Ensure();
+    PyObject* pModule = nullptr;  // 在开头声明，确保作用域
 
-    // 每个处理器独立加载模块
-    PyRun_SimpleString("import sys");
-    PyRun_SimpleString("import os");
-    PyRun_SimpleString("sys.path.insert(0, os.getcwd())");
+    try {
+        // 设置 Python 路径
+        PyRun_SimpleString("import sys");
+        PyRun_SimpleString("import os");
+        PyRun_SimpleString("sys.path.insert(0, os.path.join(os.getcwd(), 'CabbageEditor'))");  // 修正括号
 
-    PyObject* pName = PyUnicode_FromString("test");
-    PyObject* pModule = PyImport_Import(pName);
-    Py_DECREF(pName);
+        // 加载模块
+        PyObject* pName = PyUnicode_FromString("main");
+        if (!pName) {
+            throw std::runtime_error("Failed to create module name");
+        }
 
-    // 获取函数引用
-    if (pModule) {
-        pFunc = PyObject_GetAttrString(pModule, "handle_request");
+        pModule = PyImport_Import(pName);
+        Py_DECREF(pName);
+
+        if (!pModule) {
+            // 获取错误信息
+            PyErr_Print();
+            PyGILState_Release(gstate);
+            throw std::runtime_error("Failed to import Python module 'main'");
+        }
+
+        // 获取 CoronaEditor 类
+        PyObject* pClass = PyObject_GetAttrString(pModule, "editor");
+        if (!pClass) {
+            Py_DECREF(pModule);
+            PyErr_Print();
+            PyGILState_Release(gstate);
+            throw std::runtime_error("Failed to get 'editor' attribute from module");
+        }
+
+        if (PyCallable_Check(pClass)) {
+            // 获取类方法引用
+            pFunc = PyObject_GetAttrString(pClass, "deal_func_from_js");
+        }
+
+        Py_DECREF(pClass);
         Py_DECREF(pModule);
+
+    } catch (const std::exception& e) {
+        // 清理资源
+        if (pModule) {
+            Py_DECREF(pModule);
+        }
+        PyErr_Print();
+        PyGILState_Release(gstate);
+        throw;  // 重新抛出异常或处理错误
     }
 
     PyGILState_Release(gstate);

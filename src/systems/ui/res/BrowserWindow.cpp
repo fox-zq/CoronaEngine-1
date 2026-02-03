@@ -164,7 +164,7 @@ std::string ConvertLocalPathToUrl(const std::string& localPath) {
     // 检查是否是绝对路径
     if (fs::path(localPath).is_absolute()) {
         // 转换为file:/// URL
-        std::string url = "localfile:///";
+        std::string url = "file://";
         for (char c : localPath) {
             if (c == '\\') {
                 url += '/';
