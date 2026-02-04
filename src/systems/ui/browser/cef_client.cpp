@@ -17,18 +17,11 @@ void OffscreenCefClient::SetTab(BrowserTab* tab) {
 void OffscreenCefClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     CEF_REQUIRE_UI_THREAD();
 
-    // 浏览器创建完成
     if (!browser_) {
         browser_ = browser;
 
-        // CefRefPtr<CefProcessMessage> msg =
-        //     CefProcessMessage::Create("Ping");
-        // browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
-
-        // std::cout << "send Render msg: " << msg << std::endl;
         browser_side_router_ = CefMessageRouterBrowserSide::Create(message_router_config);
 
-        // 注册自定义的 JS 处理器
         js_handler_ = new BrowserSideJSHandler();
         if (browser_side_router_.get()) {
             browser_side_router_->AddHandler(js_handler_, true);

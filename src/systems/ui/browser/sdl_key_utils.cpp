@@ -188,4 +188,4 @@ bool should_send_char_event(int key, int modifiers) {
 
     return true;
 }
-}  // namespace Corona::System::UI::KeyUtils
+}  // namespace Corona::Systems::UI::KeyUtils
