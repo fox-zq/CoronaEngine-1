@@ -23,7 +23,7 @@ class OffscreenCefClient;
 struct BrowserTab {
     std::string name;
     std::string url;
-    class OffscreenCefClient* client;  // 使用前向声明的类
+    class OffscreenCefClient* client;
     VkDescriptorSet texture_id = VK_NULL_HANDLE;
     int width = 800;
     int height = 600;
@@ -36,20 +36,17 @@ struct BrowserTab {
     bool has_focus = false;
 };
 
-// 全局变量声明（在实际的cpp文件中定义）
-extern std::unordered_map<int, BrowserTab*> g_tabs;
-extern int g_tab_counter;
+extern std::unordered_map<int, BrowserTab*> tabs;
+extern int tab_counter;
 extern Corona::Systems::VulkanBackend* g_vulkan_backend;
 
 extern "C" int create_browser_tab(const std::string& url, const std::string& path = "");
 
-// 键码转换函数
 static int convert_sdl_key_code_to_windows(int sdl_key) {
     if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
         return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
     }
 
-    // 数字键映射
     if (sdl_key >= SDLK_0 && sdl_key <= SDLK_9) {
         return 0x30 + (sdl_key - SDLK_0);  // 0-9: 0x30-0x39
     }

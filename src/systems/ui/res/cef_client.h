@@ -77,7 +77,7 @@ class OffscreenCefClient : public CefClient,
     CefRefPtr<CefBrowser> browser_;
     CefRefPtr<OffscreenRenderHandler> renderHandler_;
     CefRefPtr<CefMessageRouterBrowserSide> browser_side_router_;
-    BrowserSideJSHandler* m_jsHandler;
+    BrowserSideJSHandler* js_handler_;
 
     IMPLEMENT_REFCOUNTING(OffscreenCefClient);
 };

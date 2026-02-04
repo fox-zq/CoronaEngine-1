@@ -29,12 +29,12 @@ void BindCef(nanobind::module_& m) {
     // 向python注册执行JavaScript代码函数绑定
     m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {
             try {
-                if (g_tabs.find(tab_id) == g_tabs.end()) {
+                if (tabs.find(tab_id) == tabs.end()) {
                     return nb::str("{\"success\": false, \"error\": \"Tab not found\"}");
                 }
                 nb::str py_str = nb::str(py_js_code);
                 std::string js_code = py_str.c_str();
-                BrowserTab* tab = g_tabs[tab_id];
+                BrowserTab* tab = tabs[tab_id];
                 if (tab->client && tab->client->GetBrowser()) {
                     CefRefPtr<CefFrame> frame = tab->client->GetBrowser()->GetMainFrame();
                     if (frame) {

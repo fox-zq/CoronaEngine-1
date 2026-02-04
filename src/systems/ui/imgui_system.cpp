@@ -14,7 +14,7 @@
 #include "res/browser_window.h"
 #include "res/cef_client.h"
 
-CefMessageRouterConfig g_messageRouterConfig;
+CefMessageRouterConfig message_router_config;
 
 namespace Corona::Systems {
 
@@ -22,8 +22,8 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
     // 设置 CEF 消息路由函数名称
-    g_messageRouterConfig.js_query_function = "cefQuery";
-    g_messageRouterConfig.js_cancel_function = "cefQueryCancel";
+    message_router_config.js_query_function = "cefQuery";
+    message_router_config.js_cancel_function = "cefQueryCancel";
 
     // 初始化 CEF
     CefMainArgs mainArgs(GetModuleHandle(nullptr));
@@ -53,9 +53,9 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CefString(&settings.cache_path).FromString(cache_path.string());
 
     // 设置子进程可执行文件路径和用户代理
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    CefString(&settings.browser_subprocess_path).FromWString(exePath);
+    wchar_t exe_path[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+    CefString(&settings.browser_subprocess_path).FromWString(exe_path);
     CefString(&settings.user_agent).FromASCII("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     settings.background_color = CefColorSetARGB(255, 255, 255, 255);
     settings.persist_session_cookies = true;
@@ -355,7 +355,7 @@ void ImguiSystem::update() {
 
     // 渲染浏览器标签页
     std::vector<int> tabsToClose;
-    for (auto& [tabId, tab] : g_tabs) {
+    for (auto& [tabId, tab] : tabs) {
         if (!tab->open) {
             tabsToClose.push_back(tabId);
             continue;
@@ -568,7 +568,7 @@ void ImguiSystem::update() {
 
     for (auto tabId : tabsToClose) {
         close_browser_tab(tabId);
-        g_tabs.erase(tabId);
+        tabs.erase(tabId);
         if (tabId == active_tab_id_) {
             active_tab_id_ = -1;
         }
@@ -596,21 +596,21 @@ void ImguiSystem::shutdown() {
     CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
     running_ = false;
 
-    for (auto& [tabId, tab] : g_tabs) {
+    for (auto& [tabId, tab] : tabs) {
         close_browser_tab(tabId);
     }
-    g_tabs.clear();
+    tabs.clear();
     pending_key_events_.clear();
 }
 
 // 发送键盘事件到浏览器
 void ImguiSystem::send_key_events_to_browser(int tab_id) {
-    if (g_tabs.find(tab_id) == g_tabs.end() || !g_tabs[tab_id]->client ||
-        !g_tabs[tab_id]->client->GetBrowser()) {
+    if (tabs.find(tab_id) == tabs.end() || !tabs[tab_id]->client ||
+        !tabs[tab_id]->client->GetBrowser()) {
         return;
     }
 
-    BrowserTab* tab = g_tabs[tab_id];
+    BrowserTab* tab = tabs[tab_id];
     CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
 
     for (const auto& pending_event : pending_key_events_) {
