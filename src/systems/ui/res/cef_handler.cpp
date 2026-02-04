@@ -107,8 +107,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
                 callback->Success(result);
             } else {
                 // 尝试转换为字符串
-                PyObject* str_obj = PyObject_Str(object);
-                if (str_obj) {
+                if (PyObject* str_obj = PyObject_Str(object)) {
                     const char* result = PyUnicode_AsUTF8(str_obj);
                     callback->Success(result);
                     Py_DECREF(str_obj);

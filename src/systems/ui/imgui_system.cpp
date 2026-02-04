@@ -9,6 +9,7 @@
 #include <cstdarg>
 #include <filesystem>
 #include <iostream>
+#include <ranges>
 
 #include "res/browser_types.h"
 #include "res/browser_window.h"
@@ -324,7 +325,7 @@ void ImguiSystem::update() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Tab")) {
-                create_browser_tab("https://www.baidu.com");
+                UI::create_browser_tab("https://www.baidu.com");
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit")) {
@@ -334,16 +335,16 @@ void ImguiSystem::update() {
         }
         if (ImGui::BeginMenu("Websites")) {
             if (ImGui::MenuItem("Baidu")) {
-                create_browser_tab("https://www.baidu.com");
+                UI::create_browser_tab("https://www.baidu.com");
             }
             if (ImGui::MenuItem("Bing")) {
-                create_browser_tab("https://www.bing.com");
+                UI::create_browser_tab("https://www.bing.com");
             }
             if (ImGui::MenuItem("Google")) {
-                create_browser_tab("https://www.google.com");
+                UI::create_browser_tab("https://www.google.com");
             }
             if (ImGui::MenuItem("GitHub")) {
-                create_browser_tab("https://www.github.com");
+                UI::create_browser_tab("https://www.github.com");
             }
             ImGui::EndMenu();
         }
@@ -437,7 +438,7 @@ void ImguiSystem::update() {
 
             // 修改浏览器内容区域的鼠标事件处理
             if (tab->texture_id != VK_NULL_HANDLE) {
-                ImGui::Image((ImTextureID)(intptr_t)tab->texture_id, availSize);
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(tab->texture_id)), availSize);
 
                 bool browser_hovered = ImGui::IsItemHovered();
 
@@ -507,8 +508,7 @@ void ImguiSystem::update() {
                 }
 
                 if (browser_hovered) {
-                    CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr;
-                    if (browser) {
+                    if (CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr) {
                         ImVec2 mousePos = ImGui::GetMousePos();
                         ImVec2 itemPos = ImGui::GetItemRectMin();
                         int x = static_cast<int>(mousePos.x - itemPos.x);
@@ -595,7 +595,7 @@ void ImguiSystem::shutdown() {
     CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
     running_ = false;
 
-    for (auto& [tabId, tab] : tabs) {
+    for (const auto& tabId : tabs | std::views::keys) {
         close_browser_tab(tabId);
     }
     tabs.clear();
@@ -604,12 +604,12 @@ void ImguiSystem::shutdown() {
 
 // 发送键盘事件到浏览器
 void ImguiSystem::send_key_events_to_browser(int tab_id) {
-    if (tabs.find(tab_id) == tabs.end() || !tabs[tab_id]->client ||
+    if (!tabs.contains(tab_id) || !tabs[tab_id]->client ||
         !tabs[tab_id]->client->GetBrowser()) {
         return;
     }
 
-    BrowserTab* tab = tabs[tab_id];
+    BrowserTab* tab = tabs[tab_id].get();
     CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
 
     for (const auto& pending_event : pending_key_events_) {
@@ -620,7 +620,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
             cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
 
             // 转换键码
-            cef_key_event.windows_key_code = convert_sdl_key_code_to_windows(pending_event.key_code);
+            cef_key_event.windows_key_code = UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
             cef_key_event.native_key_code = pending_event.scan_code;
 
             // 设置修饰键
@@ -726,8 +726,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
                         }
                     } else {
                         // 非ASCII文本（中文），使用UTF-16转换
-                        char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
-                        if (utf16_text) {
+                        if (char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1)) {
                             auto* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
                             size_t utf16_len = 0;
                             while (utf16_chars[utf16_len] != 0) {
