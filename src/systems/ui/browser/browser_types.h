@@ -4,7 +4,7 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#include <cef_client.h>
+#include <include/internal/cef_types.h>
 #include <vulkan/vulkan.h>
 
 #include <string>
@@ -15,49 +15,50 @@
 namespace Corona::Systems {
 class VulkanBackend;
 }
-namespace Corona::CefSpace {
-class OffscreenCefClient;
-}
 
-// 浏览器窗口数据结构
+class OffscreenCefClient;
+
 struct BrowserTab {
     std::string name;
     std::string url;
-    class OffscreenCefClient* client;  // 使用前向声明的类
+
+    OffscreenCefClient* client = nullptr;
     VkDescriptorSet texture_id = VK_NULL_HANDLE;
+
     int width = 800;
     int height = 600;
+
     bool open = true;
     bool needs_resize = false;
+    bool buffer_dirty = false;
+    bool has_focus = false;
+
     char url_buffer[1024] = "";
     std::vector<uint8_t> pixel_buffer;
-    bool buffer_dirty = false;
-
-    bool has_focus = false;
 };
 
-// 全局变量声明（在实际的cpp文件中定义）
-extern std::unordered_map<int, BrowserTab*> g_tabs;
-extern int g_tab_counter;
+extern std::unordered_map<int, std::unique_ptr<BrowserTab>> tabs;
+extern int tab_counter;
 extern Corona::Systems::VulkanBackend* g_vulkan_backend;
 
-extern "C" int create_browser_tab(const std::string& url, const std::string& path = "");
+namespace Corona::Systems::UI {
 
-// 键码转换函数
-static int convert_sdl_key_code_to_windows(int sdl_key) {
+int create_browser_tab(const std::string& url, const std::string& path = "");
+
+namespace KeyUtils {
+
+inline int convert_sdl_key_code_to_windows(int sdl_key) {
     if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
         return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
     }
 
-    // 数字键映射
     if (sdl_key >= SDLK_0 && sdl_key <= SDLK_9) {
         return 0x30 + (sdl_key - SDLK_0);  // 0-9: 0x30-0x39
     }
 
     switch (sdl_key) {
-        // 符号键映射
         case SDLK_RETURN:
-            return 0x0D;  // VK_RETURN
+            return 0x0D;
         case SDLK_GRAVE:
             return 0xC0;
         case SDLK_MINUS:
@@ -81,7 +82,6 @@ static int convert_sdl_key_code_to_windows(int sdl_key) {
         case SDLK_SLASH:
             return 0xBF;
 
-        // 导航键映射
         case SDLK_LEFT:
             return 0x25;  // VK_LEFT
         case SDLK_UP:
@@ -105,7 +105,6 @@ static int convert_sdl_key_code_to_windows(int sdl_key) {
         case SDLK_BACKSPACE:
             return 0x08;  // VK_BACK
 
-        // 小键盘键
         case SDLK_KP_0:
             return 0x60;
         case SDLK_KP_1:
@@ -171,7 +170,7 @@ static int convert_sdl_key_code_to_windows(int sdl_key) {
 }
 
 // 判断是否是修饰键
-static bool is_modifier_key(int key) {
+inline bool is_modifier_key(int key) {
     return key == SDLK_LCTRL || key == SDLK_RCTRL ||
            key == SDLK_LSHIFT || key == SDLK_RSHIFT ||
            key == SDLK_LALT || key == SDLK_RALT ||
@@ -179,22 +178,19 @@ static bool is_modifier_key(int key) {
 }
 
 // 判断是否应该发送CHAR事件
-static bool should_send_char_event(int key, int modifiers) {
+inline bool should_send_char_event(int key, int modifiers) {
     // 修饰键不发送CHAR事件
     if (is_modifier_key(key)) {
         return false;
     }
-
     // 功能键不发送CHAR事件
     if ((key >= SDLK_F1 && key <= SDLK_F12)) {
         return false;
     }
-
     // 回车键需要发送CHAR事件以便浏览器处理换行
     if (key == SDLK_RETURN || key == SDLK_KP_ENTER) {
         return true;
     }
-
     // Ctrl+字母组合键（用于快捷键）应发送CHAR事件
     if (modifiers & EVENTFLAG_CONTROL_DOWN) {
         if ((key >= SDLK_A && key <= SDLK_Z) ||
@@ -202,7 +198,6 @@ static bool should_send_char_event(int key, int modifiers) {
             return true;
         }
     }
-
     // 导航键不发送CHAR事件
     switch (key) {
         case SDLK_ESCAPE:
@@ -229,9 +224,8 @@ static bool should_send_char_event(int key, int modifiers) {
             break;
     }
 
-    // 如果Alt键按下，通常不发送CHAR事件（用于菜单快捷键）
     if (modifiers & EVENTFLAG_ALT_DOWN) {
-        if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
+        if (key >= SDLK_KP_1 && key <= SDLK_KP_0) {
             return true;
         }
         return false;
@@ -239,3 +233,6 @@ static bool should_send_char_event(int key, int modifiers) {
 
     return true;
 }
+}  // namespace KeyUtils
+
+}  // namespace Corona::Systems::IMGUI

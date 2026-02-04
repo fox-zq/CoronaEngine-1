@@ -57,7 +57,7 @@ void BrowserSideJSHandler::initialize_python() {
         }
         PyErr_Print();
         PyGILState_Release(gstate);
-        throw;  // 重新抛出异常或处理错误
+        throw;
     }
 
     PyGILState_Release(gstate);
@@ -73,7 +73,6 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
     std::string req = request.ToString();
     std::cout << "[Browser] Received query: " << req << std::endl;
 
-    // 初始化 Python 环境
     if (!Py_IsInitialized()) {
         Py_Initialize();
         PyEval_SaveThread();  // release GIL
@@ -91,31 +90,30 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
         }
 
         // 创建参数（原始 JSON 字符串）
-        PyObject* pArgs = PyTuple_Pack(1, PyUnicode_FromString(req.c_str()));
+        PyObject* args = PyTuple_Pack(1, PyUnicode_FromString(req.c_str()));
 
         // 调用 Python 函数
-        PyObject* pValue = PyObject_CallObject(pFunc, pArgs);
-        Py_DECREF(pArgs);
+        PyObject* object = PyObject_CallObject(pFunc, args);
+        Py_DECREF(args);
 
-        if (!pValue) {
+        if (!object) {
             PyErr_Print();
             std::cerr << "Python function call failed" << std::endl;
             callback->Failure(0, "Python function call failed");
         } else {
             // 直接返回字符串结果
-            if (PyUnicode_Check(pValue)) {
-                const char* result = PyUnicode_AsUTF8(pValue);
+            if (PyUnicode_Check(object)) {
+                const char* result = PyUnicode_AsUTF8(object);
                 callback->Success(result);
             } else {
                 // 尝试转换为字符串
-                PyObject* strObj = PyObject_Str(pValue);
-                if (strObj) {
-                    const char* result = PyUnicode_AsUTF8(strObj);
+                if (PyObject* str_obj = PyObject_Str(object)) {
+                    const char* result = PyUnicode_AsUTF8(str_obj);
                     callback->Success(result);
-                    Py_DECREF(strObj);
+                    Py_DECREF(str_obj);
                 }
             }
-            Py_DECREF(pValue);
+            Py_DECREF(object);
         }
 
     } catch (const std::exception& e) {
@@ -138,7 +136,7 @@ void OffscreenRenderHandler::GetViewRect(CefRefPtr<CefBrowser> browser, CefRect&
 }
 
 void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
-                                     const RectList& dirtyRects, const void* buffer,
+                                     const RectList& dirty_rects, const void* buffer,
                                      int width, int height) {
     if (tab && type == PET_VIEW) {
         // 复制像素数据

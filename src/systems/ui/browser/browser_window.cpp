@@ -9,12 +9,12 @@
 #include <iostream>
 #include <map>
 
-#include "browser_types.h"
 #include "cef_client.h"
+#include "browser_types.h"
 
 // 全局变量定义
-std::unordered_map<int, BrowserTab*> g_tabs;
-int g_tab_counter = 0;
+std::unordered_map<int, std::unique_ptr<BrowserTab>> tabs;
+int tab_counter = 0;
 Corona::Systems::VulkanBackend* g_vulkan_backend = nullptr;
 class OffscreenCefClient;
 // Track owned Vulkan resources for each ImGui descriptor set
@@ -26,7 +26,7 @@ struct OwnedImage {
     uint32_t width;
     uint32_t height;
 };
-static std::map<VkDescriptorSet, OwnedImage> ownedImages;
+static std::map<VkDescriptorSet, OwnedImage> owned_images;
 
 using namespace Corona::Systems;
 
@@ -137,7 +137,7 @@ VkDescriptorSet create_browser_texture(int width, int height) {
     VkDescriptorSet descriptor = ImGui_ImplVulkan_AddTexture(sampler, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Store owned resources for later cleanup
-    ownedImages[descriptor] = {image, image_memory, image_view, sampler, (uint32_t)width, (uint32_t)height};
+    owned_images[descriptor] = {image, image_memory, image_view, sampler, static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
 
     return descriptor;
 }
@@ -185,7 +185,7 @@ std::string resolve_html_path_for_cef(const std::string& maybe_relative_path) {
 
     // If CEF is given a real file URL, keep it as-is.
     const auto lower = [](std::string s) {
-        for (auto& ch : s) ch = (char)tolower((unsigned char)ch);
+        for (auto& ch : s) ch = static_cast<char>(tolower(static_cast<unsigned char>(ch)));
         return s;
     };
     std::string lp = lower(maybe_relative_path);
@@ -208,11 +208,12 @@ std::string resolve_html_path_for_cef(const std::string& maybe_relative_path) {
     return std::string("file:///") + abs_path.generic_string();
 }
 
-// 创建新的浏览器标签页
-int create_browser_tab(const std::string& url, const std::string& path) {
-    BrowserTab* tab = new BrowserTab();
+namespace Corona::Systems::UI {
 
-    int tab_id = ++g_tab_counter;
+int create_browser_tab(const std::string& url, const std::string& path) {
+    auto tab = std::make_unique<BrowserTab>();
+
+    int tab_id = ++tab_counter;
 
     tab->name = "Browser " + std::to_string(tab_id);
 
@@ -242,7 +243,7 @@ int create_browser_tab(const std::string& url, const std::string& path) {
     strncpy(tab->url_buffer, full_url.c_str(), sizeof(tab->url_buffer) - 1);
 
     tab->client = new OffscreenCefClient();
-    tab->client->SetTab(tab);
+    tab->client->SetTab(tab.get());
 
     // 创建 OpenGL 纹理
     tab->texture_id = create_browser_texture(tab->width, tab->height);
@@ -261,16 +262,21 @@ int create_browser_tab(const std::string& url, const std::string& path) {
     browser_settings.webgl = STATE_ENABLED;
 
     CefBrowserHost::CreateBrowser(window_info, tab->client, full_url, browser_settings, nullptr, nullptr);
-    g_tabs[tab_id] = tab;
+    tabs[tab_id] = std::move(tab);
     return tab_id;
 }
+}  // namespace Corona::Systems::UI
 
 // 更新浏览器纹理
 // TODO Vulkan
 void update_browser_texture(int tab_id) {
-    using namespace Corona::Systems;
-    BrowserTab* tab = g_tabs[tab_id];
     if (!g_vulkan_backend) return;
+
+    auto it = tabs.find(tab_id);
+    if (it == tabs.end()) return;
+
+    BrowserTab* tab = it->second.get();
+
     if (!(tab->buffer_dirty && !tab->pixel_buffer.empty() && tab->texture_id != VK_NULL_HANDLE)) return;
 
     VkDevice device = g_vulkan_backend->get_device();
@@ -281,9 +287,9 @@ void update_browser_texture(int tab_id) {
     // Find owned image by matching descriptor
     OwnedImage* found = nullptr;
     VkDescriptorSet desc = tab->texture_id;
-    auto it = ownedImages.find(desc);
-    if (it != ownedImages.end()) {
-        found = &it->second;
+    auto image_it = owned_images.find(desc);
+    if (image_it != owned_images.end()) {
+        found = &image_it->second;
     }
     if (!found) {
         tab->buffer_dirty = false;
@@ -382,7 +388,7 @@ void update_browser_texture(int tab_id) {
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 1;
     region.imageOffset = {0, 0, 0};
-    region.imageExtent = {(uint32_t)tab->width, (uint32_t)tab->height, 1};
+    region.imageExtent = {static_cast<uint32_t>(tab->width), static_cast<uint32_t>(tab->height), 1};
 
     vkCmdCopyBufferToImage(cmdBuf, stagingBuffer, found->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
@@ -422,25 +428,25 @@ void update_browser_texture(int tab_id) {
 // 关闭浏览器标签页
 // TODO Vulkan
 void close_browser_tab(int tab_id) {
-    if (g_tabs.find(tab_id) == g_tabs.end()) {
+    if (!tabs.contains(tab_id)) {
         return;
     }
 
-    BrowserTab* tab = g_tabs[tab_id];
+    BrowserTab* tab = tabs[tab_id].get();
     if (tab->client && tab->client->GetBrowser()) {
         tab->client->GetBrowser()->GetHost()->CloseBrowser(true);
     }
     if (tab->texture_id != VK_NULL_HANDLE) {
         // Remove ImGui binding and destroy Vulkan resources
         ImGui_ImplVulkan_RemoveTexture(tab->texture_id);
-        auto it = ownedImages.find(tab->texture_id);
-        if (it != ownedImages.end()) {
+        auto it = owned_images.find(tab->texture_id);
+        if (it != owned_images.end()) {
             VkDevice device = g_vulkan_backend->get_device();
             vkDestroySampler(device, it->second.sampler, nullptr);
             vkDestroyImageView(device, it->second.view, nullptr);
             vkFreeMemory(device, it->second.memory, nullptr);
             vkDestroyImage(device, it->second.image, nullptr);
-            ownedImages.erase(it);
+            owned_images.erase(it);
         }
         tab->texture_id = VK_NULL_HANDLE;
     }

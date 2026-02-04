@@ -9,12 +9,13 @@
 #include <cstdarg>
 #include <filesystem>
 #include <iostream>
+#include <ranges>
 
-#include "res/browser_types.h"
-#include "res/browser_window.h"
-#include "res/cef_client.h"
+#include "browser/browser_types.h"
+#include "browser/browser_window.h"
+#include "browser/cef_client.h"
 
-CefMessageRouterConfig g_messageRouterConfig;
+CefMessageRouterConfig message_router_config;
 
 namespace Corona::Systems {
 
@@ -22,8 +23,8 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
     // 设置 CEF 消息路由函数名称
-    g_messageRouterConfig.js_query_function = "cefQuery";
-    g_messageRouterConfig.js_cancel_function = "cefQueryCancel";
+    message_router_config.js_query_function = "cefQuery";
+    message_router_config.js_cancel_function = "cefQueryCancel";
 
     // 初始化 CEF
     CefMainArgs mainArgs(GetModuleHandle(nullptr));
@@ -53,9 +54,9 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CefString(&settings.cache_path).FromString(cache_path.string());
 
     // 设置子进程可执行文件路径和用户代理
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    CefString(&settings.browser_subprocess_path).FromWString(exePath);
+    wchar_t exe_path[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+    CefString(&settings.browser_subprocess_path).FromWString(exe_path);
     CefString(&settings.user_agent).FromASCII("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     settings.background_color = CefColorSetARGB(255, 255, 255, 255);
     settings.persist_session_cookies = true;
@@ -99,7 +100,6 @@ void ImguiSystem::thread_loop() {
 
     SDL_SetWindowPosition(window_, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window_);
-    // 启用文本输入和IME支持
     SDL_StartTextInput(window_);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 
@@ -326,7 +326,7 @@ void ImguiSystem::update() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Tab")) {
-                create_browser_tab("https://www.baidu.com");
+                UI::create_browser_tab("https://www.baidu.com");
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit")) {
@@ -336,16 +336,16 @@ void ImguiSystem::update() {
         }
         if (ImGui::BeginMenu("Websites")) {
             if (ImGui::MenuItem("Baidu")) {
-                create_browser_tab("https://www.baidu.com");
+                UI::create_browser_tab("https://www.baidu.com");
             }
             if (ImGui::MenuItem("Bing")) {
-                create_browser_tab("https://www.bing.com");
+                UI::create_browser_tab("https://www.bing.com");
             }
             if (ImGui::MenuItem("Google")) {
-                create_browser_tab("https://www.google.com");
+                UI::create_browser_tab("https://www.google.com");
             }
             if (ImGui::MenuItem("GitHub")) {
-                create_browser_tab("https://www.github.com");
+                UI::create_browser_tab("https://www.github.com");
             }
             ImGui::EndMenu();
         }
@@ -356,7 +356,7 @@ void ImguiSystem::update() {
 
     // 渲染浏览器标签页
     std::vector<int> tabsToClose;
-    for (auto& [tabId, tab] : g_tabs) {
+    for (auto& [tabId, tab] : tabs) {
         if (!tab->open) {
             tabsToClose.push_back(tabId);
             continue;
@@ -439,7 +439,7 @@ void ImguiSystem::update() {
 
             // 修改浏览器内容区域的鼠标事件处理
             if (tab->texture_id != VK_NULL_HANDLE) {
-                ImGui::Image((ImTextureID)(intptr_t)tab->texture_id, availSize);
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(tab->texture_id)), availSize);
 
                 bool browser_hovered = ImGui::IsItemHovered();
 
@@ -509,8 +509,7 @@ void ImguiSystem::update() {
                 }
 
                 if (browser_hovered) {
-                    CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr;
-                    if (browser) {
+                    if (CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr) {
                         ImVec2 mousePos = ImGui::GetMousePos();
                         ImVec2 itemPos = ImGui::GetItemRectMin();
                         int x = static_cast<int>(mousePos.x - itemPos.x);
@@ -569,7 +568,7 @@ void ImguiSystem::update() {
 
     for (auto tabId : tabsToClose) {
         close_browser_tab(tabId);
-        g_tabs.erase(tabId);
+        tabs.erase(tabId);
         if (tabId == active_tab_id_) {
             active_tab_id_ = -1;
         }
@@ -597,21 +596,21 @@ void ImguiSystem::shutdown() {
     CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
     running_ = false;
 
-    for (auto& [tabId, tab] : g_tabs) {
+    for (const auto& tabId : tabs | std::views::keys) {
         close_browser_tab(tabId);
     }
-    g_tabs.clear();
+    tabs.clear();
     pending_key_events_.clear();
 }
 
 // 发送键盘事件到浏览器
 void ImguiSystem::send_key_events_to_browser(int tab_id) {
-    if (g_tabs.find(tab_id) == g_tabs.end() || !g_tabs[tab_id]->client ||
-        !g_tabs[tab_id]->client->GetBrowser()) {
+    if (!tabs.contains(tab_id) || !tabs[tab_id]->client ||
+        !tabs[tab_id]->client->GetBrowser()) {
         return;
     }
 
-    BrowserTab* tab = g_tabs[tab_id];
+    BrowserTab* tab = tabs[tab_id].get();
     CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
 
     for (const auto& pending_event : pending_key_events_) {
@@ -622,7 +621,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
             cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
 
             // 转换键码
-            cef_key_event.windows_key_code = convert_sdl_key_code_to_windows(pending_event.key_code);
+            cef_key_event.windows_key_code = UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
             cef_key_event.native_key_code = pending_event.scan_code;
 
             // 设置修饰键
@@ -728,8 +727,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
                         }
                     } else {
                         // 非ASCII文本（中文），使用UTF-16转换
-                        char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1);
-                        if (utf16_text) {
+                        if (char* utf16_text = SDL_iconv_string("UTF-16LE", "UTF-8", text.c_str(), text.length() + 1)) {
                             auto* utf16_chars = reinterpret_cast<uint16_t*>(utf16_text);
                             size_t utf16_len = 0;
                             while (utf16_chars[utf16_len] != 0) {

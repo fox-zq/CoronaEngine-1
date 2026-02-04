@@ -17,7 +17,7 @@
 
 #include "browser_types.h"
 
-extern CefMessageRouterConfig g_messageRouterConfig;
+extern CefMessageRouterConfig message_router_config;
 // 离屏渲染的 CefRenderHandler
 class OffscreenRenderHandler : public CefRenderHandler {
    public:
@@ -25,7 +25,7 @@ class OffscreenRenderHandler : public CefRenderHandler {
 
     void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
     void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
-                 const RectList& dirtyRects, const void* buffer,
+                 const RectList& dirty_rects, const void* buffer,
                  int width, int height) override;
 
     IMPLEMENT_REFCOUNTING(OffscreenRenderHandler);
@@ -76,7 +76,7 @@ class SimpleRenderProcessHandler : public CefRenderProcessHandler {
         CEF_REQUIRE_RENDERER_THREAD();
 
         if (!renderer_side_router_) {
-            renderer_side_router_ = CefMessageRouterRendererSide::Create(g_messageRouterConfig);
+            renderer_side_router_ = CefMessageRouterRendererSide::Create(message_router_config);
         }
 
         // 这会将cefQuery和cefQueryCancel函数注入到window对象中
