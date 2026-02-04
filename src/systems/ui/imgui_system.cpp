@@ -103,6 +103,7 @@ void ImguiSystem::thread_loop() {
     SDL_StartTextInput(window_);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 
+    // TODO Vulkan
     vulkan_backend_ = std::make_unique<VulkanBackend>(window_);
     vulkan_backend_->initialize();
     g_vulkan_backend = vulkan_backend_.get();

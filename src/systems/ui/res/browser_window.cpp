@@ -33,6 +33,7 @@ using namespace Corona::Systems;
 namespace fs = std::filesystem;
 
 // 创建 Vulkan 纹理（占位符）
+// TODO Vulkan
 VkDescriptorSet create_browser_texture(int width, int height) {
     using namespace Corona::Systems;
     if (!g_vulkan_backend) return VK_NULL_HANDLE;
@@ -265,6 +266,7 @@ int create_browser_tab(const std::string& url, const std::string& path) {
 }
 
 // 更新浏览器纹理
+// TODO Vulkan
 void update_browser_texture(int tab_id) {
     using namespace Corona::Systems;
     BrowserTab* tab = g_tabs[tab_id];
@@ -418,6 +420,7 @@ void update_browser_texture(int tab_id) {
 }
 
 // 关闭浏览器标签页
+// TODO Vulkan
 void close_browser_tab(int tab_id) {
     if (g_tabs.find(tab_id) == g_tabs.end()) {
         return;
