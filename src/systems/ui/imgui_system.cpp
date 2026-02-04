@@ -11,9 +11,9 @@
 #include <iostream>
 #include <ranges>
 
-#include "res/browser_types.h"
-#include "res/browser_window.h"
-#include "res/cef_client.h"
+#include "browser/browser_types.h"
+#include "browser/browser_window.h"
+#include "browser/cef_client.h"
 
 CefMessageRouterConfig message_router_config;
 

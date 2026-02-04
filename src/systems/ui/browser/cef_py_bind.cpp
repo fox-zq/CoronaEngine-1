@@ -4,8 +4,8 @@
 #include <corona/systems/script/engine_scripts.h>
 #include <nanobind/nanobind.h>
 
-#include "./browser_types.h"
-#include "./cef_client.h"
+#include "browser_types.h"
+#include "cef_client.h"
 namespace nb = nanobind;
 
 namespace EngineScripts {
