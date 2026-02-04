@@ -4,6 +4,7 @@
 #pragma once
 
 #include <SDL3/SDL.h>
+#include <cef_client.h>
 #include <vulkan/vulkan.h>
 
 #include <string>
