@@ -4,7 +4,7 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#include <cef_client.h>
+#include <include/internal/cef_types.h>
 #include <vulkan/vulkan.h>
 
 #include <string>
@@ -42,7 +42,7 @@ extern Corona::Systems::VulkanBackend* g_vulkan_backend;
 
 extern "C" int create_browser_tab(const std::string& url, const std::string& path = "");
 
-static int convert_sdl_key_code_to_windows(int sdl_key) {
+inline int convert_sdl_key_code_to_windows(int sdl_key) {
     if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
         return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
     }
@@ -168,7 +168,7 @@ static int convert_sdl_key_code_to_windows(int sdl_key) {
 }
 
 // 判断是否是修饰键
-static bool is_modifier_key(int key) {
+inline bool is_modifier_key(int key) {
     return key == SDLK_LCTRL || key == SDLK_RCTRL ||
            key == SDLK_LSHIFT || key == SDLK_RSHIFT ||
            key == SDLK_LALT || key == SDLK_RALT ||
@@ -176,7 +176,7 @@ static bool is_modifier_key(int key) {
 }
 
 // 判断是否应该发送CHAR事件
-static bool should_send_char_event(int key, int modifiers) {
+inline bool should_send_char_event(int key, int modifiers) {
     // 修饰键不发送CHAR事件
     if (is_modifier_key(key)) {
         return false;
