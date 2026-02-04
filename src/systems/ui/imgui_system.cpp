@@ -99,7 +99,6 @@ void ImguiSystem::thread_loop() {
 
     SDL_SetWindowPosition(window_, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
     SDL_ShowWindow(window_);
-    // 启用文本输入和IME支持
     SDL_StartTextInput(window_);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 

@@ -7,11 +7,11 @@
 // ----------------------------------------------------------------------------
 
 OffscreenCefClient::OffscreenCefClient() {
-    renderHandler_ = new OffscreenRenderHandler();
+    render_handler_ = new OffscreenRenderHandler();
 }
 
 void OffscreenCefClient::SetTab(BrowserTab* tab) {
-    renderHandler_->tab = tab;
+    render_handler_->tab = tab;
 }
 
 void OffscreenCefClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
@@ -65,13 +65,13 @@ bool OffscreenCefClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
 }
 
 void OffscreenCefClient::GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) {
-    renderHandler_->GetViewRect(browser, rect);
+    render_handler_->GetViewRect(browser, rect);
 }
 
 void OffscreenCefClient::OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
                                  const RectList& dirtyRects, const void* buffer,
                                  int width, int height) {
-    renderHandler_->OnPaint(browser, type, dirtyRects, buffer, width, height);
+    render_handler_->OnPaint(browser, type, dirtyRects, buffer, width, height);
 }
 
 bool OffscreenCefClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
@@ -118,7 +118,7 @@ bool OffscreenCefClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
 
 SimpleApp::SimpleApp() {
     std::cout << "SimpleApp constructor called" << std::endl;
-    renderProcessHandler_ = new SimpleRenderProcessHandler();
+    render_process_handler_ = new SimpleRenderProcessHandler();
 
     renderer_side_router_ = CefMessageRouterRendererSide::Create(message_router_config);
 }

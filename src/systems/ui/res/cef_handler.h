@@ -25,7 +25,7 @@ class OffscreenRenderHandler : public CefRenderHandler {
 
     void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
     void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
-                 const RectList& dirtyRects, const void* buffer,
+                 const RectList& dirty_rects, const void* buffer,
                  int width, int height) override;
 
     IMPLEMENT_REFCOUNTING(OffscreenRenderHandler);

@@ -20,7 +20,7 @@ class OffscreenCefClient : public CefClient,
     void SetTab(BrowserTab* tab);
 
     CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
-    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return renderHandler_; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return render_handler_; }
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
@@ -75,7 +75,7 @@ class OffscreenCefClient : public CefClient,
 
    private:
     CefRefPtr<CefBrowser> browser_;
-    CefRefPtr<OffscreenRenderHandler> renderHandler_;
+    CefRefPtr<OffscreenRenderHandler> render_handler_;
     CefRefPtr<CefMessageRouterBrowserSide> browser_side_router_;
     BrowserSideJSHandler* js_handler_;
 
@@ -87,14 +87,14 @@ class SimpleApp : public CefApp, public CefRenderProcessHandler {
     SimpleApp();
 
     CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
-        return renderProcessHandler_;
+        return render_process_handler_;
     }
 
     virtual void OnBeforeCommandLineProcessing(const CefString& process_type,
                                                CefRefPtr<CefCommandLine> command_line) override;
 
    private:
-    CefRefPtr<CefRenderProcessHandler> renderProcessHandler_;
+    CefRefPtr<CefRenderProcessHandler> render_process_handler_;
     CefRefPtr<CefMessageRouterRendererSide> renderer_side_router_;
 
     IMPLEMENT_REFCOUNTING(SimpleApp);
