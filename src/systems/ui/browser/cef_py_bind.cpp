@@ -9,7 +9,7 @@
 #include "cef_client.h"
 namespace nb = nanobind;
 
-namespace Corona::Systems::UI::EngineScripts {
+namespace EngineScripts {
 
 void BindCef(nanobind::module_& m) {
     // 向python注册创建浏览器标签页函数绑定
@@ -50,4 +50,4 @@ void BindCef(nanobind::module_& m) {
             } }, nb::arg("tab_id"), nb::arg("js_code"));
 }
 
-}  // namespace Corona::Systems::UI::EngineScripts
+}  // namespace EngineScripts

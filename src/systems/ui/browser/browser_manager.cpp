@@ -376,6 +376,12 @@ void BrowserManager::resize_tab(int tab_id, int width, int height) {
     tab->width = width;
     tab->height = height;
 
+    // Recreate texture with new size
+    // Note: Old texture cleanup is handled by creating new one?
+    // Wait, create_browser_texture returns a new descriptor.
+    // We should probably clean up the old one if we can, or just overwrite the ID in tab.
+    // ImGui_ImplVulkan_RemoveTexture should be called on the old one.
+
     if (tab->texture_id != VK_NULL_HANDLE) {
         ImGui_ImplVulkan_RemoveTexture(tab->texture_id);
 
