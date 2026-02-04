@@ -4,6 +4,7 @@
 #include <corona/systems/script/engine_scripts.h>
 #include <nanobind/nanobind.h>
 
+#include "browser_manager.h"
 #include "browser_types.h"
 #include "cef_client.h"
 namespace nb = nanobind;
@@ -21,7 +22,8 @@ void BindCef(nanobind::module_& m) {
                 std::string url = py_url_str.c_str();
                 nb::str py_path_str = nb::str(py_path);
                 std::string path = py_path_str.c_str();
-                return Corona::Systems::UI::create_browser_tab(url, path);
+                // Use BrowserManager
+                return Corona::Systems::UI::BrowserManager::instance().create_tab(url, path);
             } catch (const std::exception&) {
                 return -1;
             } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
@@ -29,12 +31,14 @@ void BindCef(nanobind::module_& m) {
     // 向python注册执行JavaScript代码函数绑定
     m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {
             try {
-                if (!tabs.contains(tab_id)) {
+                // Use BrowserManager
+                auto* tab = Corona::Systems::UI::BrowserManager::instance().get_tab(tab_id);
+                if (!tab) {
                     return nb::str("{\"success\": false, \"error\": \"Tab not found\"}");
                 }
                 nb::str py_str = nb::str(py_js_code);
                 std::string js_code = py_str.c_str();
-                BrowserTab* tab = tabs[tab_id].get();
+
                 if (tab->client && tab->client->GetBrowser()) {
                     if (CefRefPtr<CefFrame> frame = tab->client->GetBrowser()->GetMainFrame()) {
                         frame->ExecuteJavaScript(js_code, "", 0);

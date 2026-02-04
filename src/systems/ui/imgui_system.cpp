@@ -12,8 +12,9 @@
 #include <ranges>
 
 #include "browser/browser_types.h"
-#include "browser/browser_window.h"
 #include "browser/cef_client.h"
+#include "browser/browser_manager.h"
+#include "browser/sdl_key_utils.h"
 
 CefMessageRouterConfig message_router_config;
 
@@ -103,10 +104,10 @@ void ImguiSystem::thread_loop() {
     SDL_StartTextInput(window_);
     SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
 
-    // TODO Vulkan
     vulkan_backend_ = std::make_unique<VulkanBackend>(window_);
     vulkan_backend_->initialize();
-    g_vulkan_backend = vulkan_backend_.get();
+
+    UI::BrowserManager::instance().set_vulkan_backend(vulkan_backend_.get());
 
     // 初始化 ImGui 上下文
     IMGUI_CHECKVERSION();
@@ -163,7 +164,7 @@ void ImguiSystem::thread_loop() {
     if (vulkan_backend_) {
         vulkan_backend_->shutdown();
         vulkan_backend_.reset();
-        g_vulkan_backend = nullptr;
+        UI::BrowserManager::instance().set_vulkan_backend(nullptr);
     }
 
     if (window_) {
@@ -326,7 +327,7 @@ void ImguiSystem::update() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Tab")) {
-                UI::create_browser_tab("https://www.baidu.com");
+                UI::BrowserManager::instance().create_tab("https://www.baidu.com");
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit")) {
@@ -336,16 +337,16 @@ void ImguiSystem::update() {
         }
         if (ImGui::BeginMenu("Websites")) {
             if (ImGui::MenuItem("Baidu")) {
-                UI::create_browser_tab("https://www.baidu.com");
+                UI::BrowserManager::instance().create_tab("https://www.baidu.com");
             }
             if (ImGui::MenuItem("Bing")) {
-                UI::create_browser_tab("https://www.bing.com");
+                UI::BrowserManager::instance().create_tab("https://www.bing.com");
             }
             if (ImGui::MenuItem("Google")) {
-                UI::create_browser_tab("https://www.google.com");
+                UI::BrowserManager::instance().create_tab("https://www.google.com");
             }
             if (ImGui::MenuItem("GitHub")) {
-                UI::create_browser_tab("https://www.github.com");
+                UI::BrowserManager::instance().create_tab("https://www.github.com");
             }
             ImGui::EndMenu();
         }
@@ -356,13 +357,14 @@ void ImguiSystem::update() {
 
     // 渲染浏览器标签页
     std::vector<int> tabsToClose;
+    auto& tabs = UI::BrowserManager::instance().get_tabs();
     for (auto& [tabId, tab] : tabs) {
         if (!tab->open) {
             tabsToClose.push_back(tabId);
             continue;
         }
 
-        update_browser_texture(tabId);  // 更新浏览器纹理
+        UI::BrowserManager::instance().update_texture(tabId);  // 更新浏览器纹理
 
         ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
         std::string window_id = tab->name + "##" + std::to_string(tabId);
@@ -424,17 +426,7 @@ void ImguiSystem::update() {
 
             if (newWidth > 0 && newHeight > 0 &&
                 (newWidth != tab->width || newHeight != tab->height)) {
-                tab->width = newWidth;
-                tab->height = newHeight;
-
-                if (tab->texture_id != VK_NULL_HANDLE) {
-                    tab->texture_id = VK_NULL_HANDLE;
-                }
-                tab->texture_id = create_browser_texture(tab->width, tab->height);
-
-                if (tab->client) {
-                    tab->client->Resize(tab->width, tab->height);
-                }
+                UI::BrowserManager::instance().resize_tab(tabId, newWidth, newHeight);
             }
 
             // 修改浏览器内容区域的鼠标事件处理
@@ -567,8 +559,7 @@ void ImguiSystem::update() {
     }
 
     for (auto tabId : tabsToClose) {
-        close_browser_tab(tabId);
-        tabs.erase(tabId);
+        UI::BrowserManager::instance().remove_tab(tabId);
         if (tabId == active_tab_id_) {
             active_tab_id_ = -1;
         }
@@ -596,21 +587,26 @@ void ImguiSystem::shutdown() {
     CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
     running_ = false;
 
-    for (const auto& tabId : tabs | std::views::keys) {
-        close_browser_tab(tabId);
+    auto& tabs = UI::BrowserManager::instance().get_tabs();
+    std::vector<int> ids;
+    for (const auto& [id, tab] : tabs) {
+        ids.push_back(id);
     }
-    tabs.clear();
+
+    for (int id : ids) {
+        UI::BrowserManager::instance().remove_tab(id);
+    }
+
     pending_key_events_.clear();
 }
 
 // 发送键盘事件到浏览器
 void ImguiSystem::send_key_events_to_browser(int tab_id) {
-    if (!tabs.contains(tab_id) || !tabs[tab_id]->client ||
-        !tabs[tab_id]->client->GetBrowser()) {
+    auto* tab = UI::BrowserManager::instance().get_tab(tab_id);
+    if (!tab || !tab->client || !tab->client->GetBrowser()) {
         return;
     }
 
-    BrowserTab* tab = tabs[tab_id].get();
     CefRefPtr<CefBrowser> browser = tab->client->GetBrowser();
 
     for (const auto& pending_event : pending_key_events_) {
@@ -621,7 +617,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
             cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
 
             // 转换键码
-            cef_key_event.windows_key_code = UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
+            cef_key_event.windows_key_code = Corona::Systems::UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
             cef_key_event.native_key_code = pending_event.scan_code;
 
             // 设置修饰键

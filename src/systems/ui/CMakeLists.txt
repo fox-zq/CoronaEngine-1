@@ -1,5 +1,4 @@
-﻿# ImGui with SDL3 + Vulkan backend (支持多视口/Viewports)
-# Create a library target for ImGui backend files
+﻿# Create a library target for ImGui backend files
 add_library(imgui_backends STATIC
         "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp"
         "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp"
@@ -16,10 +15,11 @@ target_link_libraries(imgui_backends PUBLIC imgui SDL3::SDL3-static volk)
 file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
     vulkan_backend.cpp
-    browser/browser_window.cpp
+    browser/browser_manager.cpp
     browser/cef_client.cpp
     browser/cef_handler.cpp
     browser/cef_py_bind.cpp
+    browser/sdl_key_utils.cpp
 )
 
 
