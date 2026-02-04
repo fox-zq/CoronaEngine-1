@@ -1,7 +1,6 @@
 ﻿#include <corona/systems/ui/vulkan_backend.h>
 #include <iostream>
 #include <vector>
-#include <cstring>
 #include <volk.h>
 #include <SDL3/SDL_vulkan.h>
 #include <imgui_impl_vulkan.h>
@@ -15,15 +14,15 @@ namespace Corona::Systems {
         if (err < 0) abort();
     }
 
-    VulkanBackend::VulkanBackend(SDL_Window* window) : m_Window(window) {}
+    VulkanBackend::VulkanBackend(SDL_Window* window) : window_(window) {}
 
     VulkanBackend::~VulkanBackend() {
-        if (g_Device != VK_NULL_HANDLE) {
-            Shutdown();
+        if (device_ != VK_NULL_HANDLE) {
+            shutdown();
         }
     }
 
-    void VulkanBackend::Initialize() {
+    void VulkanBackend::initialize() {
 
           // 初始化 Volk
         if (volkInitialize() != VK_SUCCESS) {
@@ -43,47 +42,47 @@ namespace Corona::Systems {
 
 
 
-        SetupVulkan(extensions);
+        setup_vulkan(extensions);
 
         // Create Surface
         VkSurfaceKHR surface;
-        if (SDL_Vulkan_CreateSurface(m_Window, g_Instance, nullptr, &surface) == 0)
+        if (SDL_Vulkan_CreateSurface(window_, instance_, nullptr, &surface) == 0)
         {
              std::cerr << "Failed to create Vulkan Surface\n";
              abort();
         }
 
         int w, h;
-        SDL_GetWindowSize(m_Window, &w, &h);
-        SetupVulkanWindow(surface, w, h);
+        SDL_GetWindowSize(window_, &w, &h);
+        setup_vulkan_window(surface, w, h);
     }
 
-    void VulkanBackend::Shutdown() {
-        VkResult err = vkDeviceWaitIdle(g_Device);
+    void VulkanBackend::shutdown() {
+        VkResult err = vkDeviceWaitIdle(device_);
         check_vk_result(err);
 
-        CleanupVulkanWindow();
-        CleanupVulkan();
+        cleanup_vulkan_window();
+        cleanup_vulkan();
 
-        g_Device = VK_NULL_HANDLE; // Mark as destroyed
+        device_ = VK_NULL_HANDLE; // Mark as destroyed
     }
 
-    void VulkanBackend::RebuildSwapChain(int width, int height) {
+    void VulkanBackend::rebuild_swap_chain(int width, int height) {
         if (width > 0 && height > 0)
         {
-            ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
-            CreateVulkanWindowSurface(g_Surface, width, height);
+            ImGui_ImplVulkan_SetMinImageCount(min_image_count_);
+            create_vulkan_window_surface(surface_, width, height);
             // Reset frame index to sync with new framebuffers/semaphores
-            g_CurrentFrameIndex = 0;
-            m_SwapChainRebuild = false;
+            current_frame_index_ = 0;
+            swap_chain_rebuild_ = false;
         }
     }
 
-    void VulkanBackend::NewFrame() {
+    void VulkanBackend::new_frame() {
         ImGui_ImplVulkan_NewFrame();
     }
 
-    void VulkanBackend::SetupVulkan(std::vector<const char*> instance_extensions)
+    void VulkanBackend::setup_vulkan(std::vector<const char*> instance_extensions)
     {
         VkResult err;
 
@@ -107,9 +106,9 @@ namespace Corona::Systems {
             create_info.ppEnabledExtensionNames = extensions_ext;
 #endif
 
-            err = vkCreateInstance(&create_info, nullptr, &g_Instance);
+            err = vkCreateInstance(&create_info, nullptr, &instance_);
             check_vk_result(err);
-            volkLoadInstance(g_Instance);
+            volkLoadInstance(instance_);
 
 #ifdef IMGUI_VULKAN_DEBUG_REPORT
             free((void*)extensions_ext);
@@ -119,7 +118,7 @@ namespace Corona::Systems {
         // Select Physical Device
         {
             uint32_t gpu_count;
-            err = vkEnumeratePhysicalDevices(g_Instance, &gpu_count, nullptr);
+            err = vkEnumeratePhysicalDevices(instance_, &gpu_count, nullptr);
             check_vk_result(err);
 
             if (gpu_count == 0) {
@@ -128,25 +127,25 @@ namespace Corona::Systems {
             }
 
             std::vector<VkPhysicalDevice> gpus(gpu_count);
-            err = vkEnumeratePhysicalDevices(g_Instance, &gpu_count, gpus.data());
+            err = vkEnumeratePhysicalDevices(instance_, &gpu_count, gpus.data());
             check_vk_result(err);
 
-            g_PhysicalDevice = gpus[0];
+            physical_device_ = gpus[0];
         }
 
         // Select Graphics Queue Family
         {
             uint32_t count;
-            vkGetPhysicalDeviceQueueFamilyProperties(g_PhysicalDevice, &count, nullptr);
+            vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &count, nullptr);
             std::vector<VkQueueFamilyProperties> queues(count);
-            vkGetPhysicalDeviceQueueFamilyProperties(g_PhysicalDevice, &count, queues.data());
+            vkGetPhysicalDeviceQueueFamilyProperties(physical_device_, &count, queues.data());
             for (uint32_t i = 0; i < count; i++)
                 if (queues[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
                 {
-                    g_QueueFamily = i;
+                    queue_family_ = i;
                     break;
                 }
-            if (g_QueueFamily == (uint32_t)-1) {
+            if (queue_family_ == (uint32_t)-1) {
                 std::cerr << "No Graphics Queue Family found.\n";
                 abort();
             }
@@ -159,7 +158,7 @@ namespace Corona::Systems {
             const float queue_priority[] = { 1.0f };
             VkDeviceQueueCreateInfo queue_info[1] = {};
             queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-            queue_info[0].queueFamilyIndex = g_QueueFamily;
+            queue_info[0].queueFamilyIndex = queue_family_;
             queue_info[0].queueCount = 1;
             queue_info[0].pQueuePriorities = queue_priority;
             VkDeviceCreateInfo create_info = {};
@@ -168,10 +167,10 @@ namespace Corona::Systems {
             create_info.pQueueCreateInfos = queue_info;
             create_info.enabledExtensionCount = device_extension_count;
             create_info.ppEnabledExtensionNames = device_extensions;
-            err = vkCreateDevice(g_PhysicalDevice, &create_info, nullptr, &g_Device);
+            err = vkCreateDevice(physical_device_, &create_info, nullptr, &device_);
             check_vk_result(err);
-            volkLoadDevice(g_Device);
-            vkGetDeviceQueue(g_Device, g_QueueFamily, 0, &g_Queue);
+            volkLoadDevice(device_);
+            vkGetDeviceQueue(device_, queue_family_, 0, &queue_);
         }
 
         // Create Descriptor Pool
@@ -196,19 +195,20 @@ namespace Corona::Systems {
             pool_info.maxSets = 1000 * IM_ARRAYSIZE(pool_sizes);
             pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(pool_sizes);
             pool_info.pPoolSizes = pool_sizes;
-            err = vkCreateDescriptorPool(g_Device, &pool_info, nullptr, &g_DescriptorPool);
+            err = vkCreateDescriptorPool(device_, &pool_info, nullptr, &descriptor_pool_);
             check_vk_result(err);
+
         }
     }
 
-    void VulkanBackend::SetupVulkanWindow(VkSurfaceKHR surface, int width, int height)
+    void VulkanBackend::setup_vulkan_window(VkSurfaceKHR surface, int width, int height)
     {
-        g_Surface = surface;
+        surface_ = surface;
 
-        // 在 SetupVulkanWindow() 函数中修改表面格式选择
+        // 在 setup_vulkan_window() 函数中修改表面格式选择
         // 选择支持透明度的格式
         VkBool32 res;
-        vkGetPhysicalDeviceSurfaceSupportKHR(g_PhysicalDevice, g_QueueFamily, g_Surface, &res);
+        vkGetPhysicalDeviceSurfaceSupportKHR(physical_device_, queue_family_, surface_, &res);
         if (res != VK_TRUE) {
             fprintf(stderr, "Error no WSI support on physical device 0\n");
             exit(-1);
@@ -216,46 +216,46 @@ namespace Corona::Systems {
 
         // 选择支持 Alpha 通道的表面格式
         uint32_t format_count;
-        vkGetPhysicalDeviceSurfaceFormatsKHR(g_PhysicalDevice, g_Surface, &format_count, nullptr);
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &format_count, nullptr);
         std::vector<VkSurfaceFormatKHR> surface_formats(format_count);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(g_PhysicalDevice, g_Surface, &format_count, surface_formats.data());
+        vkGetPhysicalDeviceSurfaceFormatsKHR(physical_device_, surface_, &format_count, surface_formats.data());
 
         // 优先选择支持 Alpha 的格式
-        g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;  // 确保使用带 Alpha 的格式
+        surface_format_ = VK_FORMAT_B8G8R8A8_UNORM;  // 确保使用带 Alpha 的格式
         for (const auto& fmt : surface_formats) {
             if (fmt.format == VK_FORMAT_B8G8R8A8_UNORM && fmt.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                g_SurfaceFormat = VK_FORMAT_B8G8R8A8_UNORM;
+                surface_format_ = VK_FORMAT_B8G8R8A8_UNORM;
                 break;
             }
         }
 
         // Select Present Mode
         // Default FIFO
-        g_PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        present_mode_ = VK_PRESENT_MODE_FIFO_KHR;
         // Check for Mailbox
         uint32_t present_mode_count;
-        vkGetPhysicalDeviceSurfacePresentModesKHR(g_PhysicalDevice, g_Surface, &present_mode_count, nullptr);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_, &present_mode_count, nullptr);
         std::vector<VkPresentModeKHR> present_modes(present_mode_count);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(g_PhysicalDevice, g_Surface, &present_mode_count, present_modes.data());
+        vkGetPhysicalDeviceSurfacePresentModesKHR(physical_device_, surface_, &present_mode_count, present_modes.data());
         for (const auto& pm : present_modes) {
             if (pm == VK_PRESENT_MODE_MAILBOX_KHR) {
-                g_PresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+                present_mode_ = VK_PRESENT_MODE_MAILBOX_KHR;
                 break;
             }
         }
 
-        CreateVulkanWindowSurface(g_Surface, width, height);
+        create_vulkan_window_surface(surface_, width, height);
     }
 
-    void VulkanBackend::CreateVulkanWindowSurface(VkSurfaceKHR surface, int width, int height)
+    void VulkanBackend::create_vulkan_window_surface(VkSurfaceKHR surface, int width, int height)
     {
         VkResult err;
-        VkSwapchainKHR old_swapchain = g_Swapchain;
+        VkSwapchainKHR old_swapchain = swapchain_;
         VkSwapchainCreateInfoKHR info = {};
         info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
         info.surface = surface;
-        info.minImageCount = g_MinImageCount;
-        info.imageFormat = g_SurfaceFormat;
+        info.minImageCount = min_image_count_;
+        info.imageFormat = surface_format_;
         info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
         info.imageExtent.width = width;
         info.imageExtent.height = height;
@@ -264,13 +264,13 @@ namespace Corona::Systems {
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR; // Should assume valid transform
         //info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        info.presentMode = g_PresentMode;
+        info.presentMode = present_mode_;
         info.clipped = VK_TRUE;
         info.oldSwapchain = old_swapchain;
 
         // 查询表面能力以选择正确的复合Alpha模式
         VkSurfaceCapabilitiesKHR capabilities;
-        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(g_PhysicalDevice, surface, &capabilities);
+        vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device_, surface, &capabilities);
 
         // 优先选择支持预乘Alpha的模式
         VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -284,76 +284,76 @@ namespace Corona::Systems {
 
         info.compositeAlpha = compositeAlpha;  // 使用支持Alpha的复合模式
 
-        err = vkCreateSwapchainKHR(g_Device, &info, nullptr, &g_Swapchain);
+        err = vkCreateSwapchainKHR(device_, &info, nullptr, &swapchain_);
         check_vk_result(err);
 
         if (old_swapchain)
-              vkDestroySwapchainKHR(g_Device, old_swapchain, nullptr);
+              vkDestroySwapchainKHR(device_, old_swapchain, nullptr);
 
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_ImageCount, nullptr);
-        std::vector<VkImage> backbuffers(g_ImageCount);
-        vkGetSwapchainImagesKHR(g_Device, g_Swapchain, &g_ImageCount, backbuffers.data());
+        vkGetSwapchainImagesKHR(device_, swapchain_, &image_count_, nullptr);
+        std::vector<VkImage> backbuffers(image_count_);
+        vkGetSwapchainImagesKHR(device_, swapchain_, &image_count_, backbuffers.data());
 
-        g_Frames.resize(g_ImageCount);
-        g_FrameSemaphores.resize(g_ImageCount);
+        frames_.resize(image_count_);
+        frame_semaphores_.resize(image_count_);
 
-        for (uint32_t i = 0; i < g_ImageCount; i++)
+        for (uint32_t i = 0; i < image_count_; i++)
         {
              // Create Command Buffer / Pool if not exists
-             if (g_Frames[i].CommandPool == VK_NULL_HANDLE)
+             if (frames_[i].CommandPool == VK_NULL_HANDLE)
              {
                   VkCommandPoolCreateInfo cmd_pool_info = {};
                   cmd_pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
                   cmd_pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-                  cmd_pool_info.queueFamilyIndex = g_QueueFamily;
-                  err = vkCreateCommandPool(g_Device, &cmd_pool_info, nullptr, &g_Frames[i].CommandPool);
+                  cmd_pool_info.queueFamilyIndex = queue_family_;
+                  err = vkCreateCommandPool(device_, &cmd_pool_info, nullptr, &frames_[i].CommandPool);
                   check_vk_result(err);
 
                   VkCommandBufferAllocateInfo alloc_info = {};
                   alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-                  alloc_info.commandPool = g_Frames[i].CommandPool;
+                  alloc_info.commandPool = frames_[i].CommandPool;
                   alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
                   alloc_info.commandBufferCount = 1;
-                  err = vkAllocateCommandBuffers(g_Device, &alloc_info, &g_Frames[i].CommandBuffer);
+                  err = vkAllocateCommandBuffers(device_, &alloc_info, &frames_[i].CommandBuffer);
                   check_vk_result(err);
 
                   VkFenceCreateInfo fence_info = {};
                   fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
                   fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-                  err = vkCreateFence(g_Device, &fence_info, nullptr, &g_Frames[i].Fence);
+                  err = vkCreateFence(device_, &fence_info, nullptr, &frames_[i].Fence);
                   check_vk_result(err);
 
                   VkSemaphoreCreateInfo sem_info = {};
                   sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-                  err = vkCreateSemaphore(g_Device, &sem_info, nullptr, &g_FrameSemaphores[i].ImageAcquiredSemaphore);
+                  err = vkCreateSemaphore(device_, &sem_info, nullptr, &frame_semaphores_[i].ImageAcquiredSemaphore);
                   check_vk_result(err);
-                  err = vkCreateSemaphore(g_Device, &sem_info, nullptr, &g_FrameSemaphores[i].RenderCompleteSemaphore);
+                  err = vkCreateSemaphore(device_, &sem_info, nullptr, &frame_semaphores_[i].RenderCompleteSemaphore);
                   check_vk_result(err);
              }
 
              // Create ImageView
-             g_Frames[i].Backbuffer = backbuffers[i];
+             frames_[i].Backbuffer = backbuffers[i];
              VkImageViewCreateInfo view_info = {};
              view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
              view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-             view_info.format = g_SurfaceFormat;
+             view_info.format = surface_format_;
              view_info.components.r = VK_COMPONENT_SWIZZLE_R;
              view_info.components.g = VK_COMPONENT_SWIZZLE_G;
              view_info.components.b = VK_COMPONENT_SWIZZLE_B;
              view_info.components.a = VK_COMPONENT_SWIZZLE_A;
              VkImageSubresourceRange m_ImageRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
              view_info.subresourceRange = m_ImageRange;
-             view_info.image = g_Frames[i].Backbuffer;
-             err = vkCreateImageView(g_Device, &view_info, nullptr, &g_Frames[i].BackbufferView);
+             view_info.image = frames_[i].Backbuffer;
+             err = vkCreateImageView(device_, &view_info, nullptr, &frames_[i].BackbufferView);
              check_vk_result(err);
         }
 
         // Create RenderPass
-        if (g_RenderPass == VK_NULL_HANDLE)
+        if (render_pass_ == VK_NULL_HANDLE)
         {
             // 修改为支持透明度混合的渲染通道
             VkAttachmentDescription attachment = {};
-            attachment.format = g_SurfaceFormat;
+            attachment.format = surface_format_;
             attachment.samples = VK_SAMPLE_COUNT_1_BIT;
             attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
             attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -380,79 +380,79 @@ namespace Corona::Systems {
             dependency.srcAccessMask = 0;
             dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-            VkRenderPassCreateInfo info = {};
-            info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-            info.attachmentCount = 1;
-            info.pAttachments = &attachment;
-            info.subpassCount = 1;
-            info.pSubpasses = &subpass;
-            info.dependencyCount = 1;
-            info.pDependencies = &dependency;
+            VkRenderPassCreateInfo render_pass_info = {};
+            render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            render_pass_info.attachmentCount = 1;
+            render_pass_info.pAttachments = &attachment;
+            render_pass_info.subpassCount = 1;
+            render_pass_info.pSubpasses = &subpass;
+            render_pass_info.dependencyCount = 1;
+            render_pass_info.pDependencies = &dependency;
 
-            err = vkCreateRenderPass(g_Device, &info, nullptr, &g_RenderPass);
+            err = vkCreateRenderPass(device_, &render_pass_info, nullptr, &render_pass_);
             check_vk_result(err);
         }
 
         // Create Framebuffer
-        for (uint32_t i = 0; i < g_ImageCount; i++)
+        for (uint32_t i = 0; i < image_count_; i++)
         {
              VkImageView attachment[1];
-             attachment[0] = g_Frames[i].BackbufferView;
-             VkFramebufferCreateInfo info = {};
-             info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-             info.renderPass = g_RenderPass;
-             info.attachmentCount = 1;
-             info.pAttachments = attachment;
-             info.width = width;
-             info.height = height;
-             info.layers = 1;
-             err = vkCreateFramebuffer(g_Device, &info, nullptr, &g_Frames[i].Framebuffer);
+             attachment[0] = frames_[i].BackbufferView;
+             VkFramebufferCreateInfo framebuffer_info = {};
+             framebuffer_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+             framebuffer_info.renderPass = render_pass_;
+             framebuffer_info.attachmentCount = 1;
+             framebuffer_info.pAttachments = attachment;
+             framebuffer_info.width = width;
+             framebuffer_info.height = height;
+             framebuffer_info.layers = 1;
+             err = vkCreateFramebuffer(device_, &framebuffer_info, nullptr, &frames_[i].Framebuffer);
              check_vk_result(err);
         }
     }
 
-    void VulkanBackend::CleanupVulkan()
+    void VulkanBackend::cleanup_vulkan()
     {
-        vkDestroyDescriptorPool(g_Device, g_DescriptorPool, nullptr);
-        vkDestroyDevice(g_Device, nullptr);
-        vkDestroyInstance(g_Instance, nullptr);
+        vkDestroyDescriptorPool(device_, descriptor_pool_, nullptr);
+        vkDestroyDevice(device_, nullptr);
+        vkDestroyInstance(instance_, nullptr);
     }
 
-    void VulkanBackend::CleanupVulkanWindow()
+    void VulkanBackend::cleanup_vulkan_window()
     {
-         vkDeviceWaitIdle(g_Device);
-         for (uint32_t i = 0; i < g_ImageCount; i++)
+         vkDeviceWaitIdle(device_);
+         for (uint32_t i = 0; i < image_count_; i++)
          {
-              vkDestroyImageView(g_Device, g_Frames[i].BackbufferView, nullptr);
-              vkDestroyFramebuffer(g_Device, g_Frames[i].Framebuffer, nullptr);
+              vkDestroyImageView(device_, frames_[i].BackbufferView, nullptr);
+              vkDestroyFramebuffer(device_, frames_[i].Framebuffer, nullptr);
          }
-         vkDestroySwapchainKHR(g_Device, g_Swapchain, nullptr);
+         vkDestroySwapchainKHR(device_, swapchain_, nullptr);
     }
 
-    void VulkanBackend::RenderFrame(ImDrawData* draw_data)
+    void VulkanBackend::render_frame(ImDrawData* draw_data)
     {
         VkResult err;
-        VkSemaphore image_acquired_semaphore  = g_FrameSemaphores[g_CurrentFrameIndex].ImageAcquiredSemaphore;
-        VkSemaphore render_complete_semaphore = g_FrameSemaphores[g_CurrentFrameIndex].RenderCompleteSemaphore;
+        VkSemaphore image_acquired_semaphore  = frame_semaphores_[current_frame_index_].ImageAcquiredSemaphore;
+        VkSemaphore render_complete_semaphore = frame_semaphores_[current_frame_index_].RenderCompleteSemaphore;
 
         uint32_t image_index;
-        err = vkAcquireNextImageKHR(g_Device, g_Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
+        err = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &image_index);
 
         if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR) {
-             m_SwapChainRebuild = true;
+             swap_chain_rebuild_ = true;
              return;
         }
         check_vk_result(err);
 
-        g_CurrentFrameIndex = image_index;
+        current_frame_index_ = image_index;
 
-        FrameData* frame = &g_Frames[g_CurrentFrameIndex];
-        err = vkWaitForFences(g_Device, 1, &frame->Fence, VK_TRUE, UINT64_MAX);
+        FrameData* frame = &frames_[current_frame_index_];
+        err = vkWaitForFences(device_, 1, &frame->Fence, VK_TRUE, UINT64_MAX);
         check_vk_result(err);
-        err = vkResetFences(g_Device, 1, &frame->Fence);
+        err = vkResetFences(device_, 1, &frame->Fence);
         check_vk_result(err);
 
-        err = vkResetCommandPool(g_Device, frame->CommandPool, 0);
+        err = vkResetCommandPool(device_, frame->CommandPool, 0);
         check_vk_result(err);
         VkCommandBufferBeginInfo info = {};
         info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -461,23 +461,22 @@ namespace Corona::Systems {
         check_vk_result(err);
 
         {
-            VkRenderPassBeginInfo info = {};
-            info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            info.renderPass = g_RenderPass;
-            info.framebuffer = frame->Framebuffer;
-            VkExtent2D swapChainExtent = { (uint32_t)g_Frames[g_CurrentFrameIndex].BackbufferView, 0 }; // wait, BackbufferView is view.
+            VkRenderPassBeginInfo render_pass_begin_info = {};
+            render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            render_pass_begin_info.renderPass = render_pass_;
+            render_pass_begin_info.framebuffer = frame->Framebuffer;
 
             // Get size from Image? Or we should store RenderArea?
             // Re-using ImGui DisplaySize is convenient but might be slightly off?
             // In SetupVulkanWindow we passed width/height.
             // Let's use ImDrawData display size.
-            info.renderArea.extent.width = (uint32_t)draw_data->DisplaySize.x;
-            info.renderArea.extent.height = (uint32_t)draw_data->DisplaySize.y;
-            info.renderArea.offset = { 0, 0 };
+            render_pass_begin_info.renderArea.extent.width = (uint32_t)draw_data->DisplaySize.x;
+            render_pass_begin_info.renderArea.extent.height = (uint32_t)draw_data->DisplaySize.y;
+            render_pass_begin_info.renderArea.offset = { 0, 0 };
             VkClearValue clearColor = {0.0f, 0.0f, 0.0f, 0.0f};
-            info.clearValueCount = 1;
-            info.pClearValues = &clearColor;
-            vkCmdBeginRenderPass(frame->CommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
+            render_pass_begin_info.clearValueCount = 1;
+            render_pass_begin_info.pClearValues = &clearColor;
+            vkCmdBeginRenderPass(frame->CommandBuffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         }
 
         // Record ImGui Draw Data
@@ -500,24 +499,24 @@ namespace Corona::Systems {
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &render_complete_semaphore;
 
-        err = vkQueueSubmit(g_Queue, 1, &submit_info, frame->Fence);
+        err = vkQueueSubmit(queue_, 1, &submit_info, frame->Fence);
         check_vk_result(err);
     }
 
-    void VulkanBackend::PresentFrame()
+    void VulkanBackend::present_frame()
     {
-         if (m_SwapChainRebuild) return;
-         VkSemaphore render_complete_semaphore = g_FrameSemaphores[g_CurrentFrameIndex].RenderCompleteSemaphore;
+         if (swap_chain_rebuild_) return;
+         VkSemaphore render_complete_semaphore = frame_semaphores_[current_frame_index_].RenderCompleteSemaphore;
          VkPresentInfoKHR info = {};
          info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
          info.waitSemaphoreCount = 1;
          info.pWaitSemaphores = &render_complete_semaphore;
          info.swapchainCount = 1;
-         info.pSwapchains = &g_Swapchain;
-         info.pImageIndices = &g_CurrentFrameIndex;
-         VkResult err = vkQueuePresentKHR(g_Queue, &info);
+         info.pSwapchains = &swapchain_;
+         info.pImageIndices = &current_frame_index_;
+         VkResult err = vkQueuePresentKHR(queue_, &info);
          if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR) {
-              m_SwapChainRebuild = true;
+              swap_chain_rebuild_ = true;
               return;
          }
          check_vk_result(err);

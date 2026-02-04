@@ -21,8 +21,8 @@ namespace EngineScripts {
                 std::string url = py_url_str.c_str();
                 nb::str py_path_str = nb::str(py_path);
                 std::string path = py_path_str.c_str();
-                return CreateBrowserTab(url, path);
-            } catch (const std::exception& e) {
+                return create_browser_tab(url, path);
+            } catch (const std::exception&) {
                 return -1;
             } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
 
@@ -42,7 +42,7 @@ namespace EngineScripts {
                     }
                 }
                 return nb::str("{\"success\": true}");
-            } catch (const std::exception& e) {
+            } catch (const std::exception&) {
                 return nb::str("{\"success\": false \"}");
             } }, nb::arg("tab_id"), nb::arg("js_code"));
 	}

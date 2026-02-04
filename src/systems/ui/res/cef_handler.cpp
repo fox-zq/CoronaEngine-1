@@ -4,7 +4,6 @@
 void BrowserSideJSHandler::initialize_python() {
     if (!Py_IsInitialized()) {
         Py_Initialize();
-        PyEval_InitThreads();
         PyEval_SaveThread();
     }
 
@@ -50,7 +49,7 @@ void BrowserSideJSHandler::initialize_python() {
         Py_DECREF(pClass);
         Py_DECREF(pModule);
 
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         // 清理资源
         if (pModule) {
             Py_DECREF(pModule);
@@ -77,7 +76,6 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
     // 初始化 Python 环境
     if (!Py_IsInitialized()) {
         Py_Initialize();
-        PyEval_InitThreads();  // initialize and acquire the GIL
         PyEval_SaveThread();   // release GIL
     }
 
@@ -145,9 +143,9 @@ void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElement
     if (tab && type == PET_VIEW) {
         // 复制像素数据
         size_t bufferSize = width * height * 4;
-        tab->pixelBuffer.resize(bufferSize);
-        memcpy(tab->pixelBuffer.data(), buffer, bufferSize);
-        tab->bufferDirty = true;
+        tab->pixel_buffer.resize(bufferSize);
+        memcpy(tab->pixel_buffer.data(), buffer, bufferSize);
+        tab->buffer_dirty = true;
     }
 }
 

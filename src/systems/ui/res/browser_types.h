@@ -3,9 +3,10 @@
 
 #pragma once
 
-#include <vulkan/vulkan.h>
 #include <SDL3/SDL.h>
 #include <cef_client.h>
+#include <vulkan/vulkan.h>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -23,28 +24,27 @@ struct BrowserTab {
     std::string name;
     std::string url;
     class OffscreenCefClient* client;  // 使用前向声明的类
-    VkDescriptorSet textureId = VK_NULL_HANDLE;
+    VkDescriptorSet texture_id = VK_NULL_HANDLE;
     int width = 800;
     int height = 600;
     bool open = true;
-    bool needsResize = false;
-    char urlBuffer[1024] = "";
-    std::vector<uint8_t> pixelBuffer;
-    bool bufferDirty = false;
+    bool needs_resize = false;
+    char url_buffer[1024] = "";
+    std::vector<uint8_t> pixel_buffer;
+    bool buffer_dirty = false;
 
-    
-    bool hasFocus = false;
+    bool has_focus = false;
 };
 
 // 全局变量声明（在实际的cpp文件中定义）
 extern std::unordered_map<int, BrowserTab*> g_tabs;
-extern int g_tabCounter;
+extern int g_tab_counter;
 extern Corona::Systems::VulkanBackend* g_vulkan_backend;
 
-extern "C" int CreateBrowserTab(const std::string& url, const std::string& path = "");
+extern "C" int create_browser_tab(const std::string& url, const std::string& path = "");
 
 // 键码转换函数
-static int ConvertSDLKeyCodeToWindows(int sdl_key) {
+static int convert_sdl_key_code_to_windows(int sdl_key) {
     if (sdl_key >= SDLK_A && sdl_key <= SDLK_Z) {
         return 0x41 + (sdl_key - SDLK_A);  // A-Z: 0x41-0x5A
     }
@@ -171,7 +171,7 @@ static int ConvertSDLKeyCodeToWindows(int sdl_key) {
 }
 
 // 判断是否是修饰键
-static bool IsModifierKey(int key) {
+static bool is_modifier_key(int key) {
     return key == SDLK_LCTRL || key == SDLK_RCTRL ||
            key == SDLK_LSHIFT || key == SDLK_RSHIFT ||
            key == SDLK_LALT || key == SDLK_RALT ||
@@ -179,9 +179,9 @@ static bool IsModifierKey(int key) {
 }
 
 // 判断是否应该发送CHAR事件
-static bool ShouldSendCharEvent(int key, int modifiers) {
+static bool should_send_char_event(int key, int modifiers) {
     // 修饰键不发送CHAR事件
-    if (IsModifierKey(key)) {
+    if (is_modifier_key(key)) {
         return false;
     }
 
@@ -225,6 +225,8 @@ static bool ShouldSendCharEvent(int key, int modifiers) {
         case SDLK_KP_CLEAR:
         case SDLK_BACKSPACE:
             return false;
+        default:
+            break;
     }
 
     // 如果Alt键按下，通常不发送CHAR事件（用于菜单快捷键）

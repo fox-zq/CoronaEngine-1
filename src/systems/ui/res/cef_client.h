@@ -1,5 +1,6 @@
 ﻿#pragma once
 #include <cef_app.h>
+
 #include "cef_handler.h"
 
 struct BrowserTab;
@@ -9,12 +10,12 @@ class BrowserSideJSHandler;
 
 // 离屏渲染的 CefClient
 class OffscreenCefClient : public CefClient,
-                            public CefLifeSpanHandler,
-                            public CefLoadHandler,
-                            public CefRequestHandler,
-                            public CefRenderHandler,
-                            public CefDisplayHandler {
-    public:
+                           public CefLifeSpanHandler,
+                           public CefLoadHandler,
+                           public CefRequestHandler,
+                           public CefRenderHandler,
+                           public CefDisplayHandler {
+   public:
     OffscreenCefClient();
     void SetTab(BrowserTab* tab);
 
@@ -35,13 +36,13 @@ class OffscreenCefClient : public CefClient,
 
     void GetViewRect(CefRefPtr<CefBrowser> browser, CefRect& rect) override;
     void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
-                    const RectList& dirtyRects, const void* buffer,
-                    int width, int height) override;
+                 const RectList& dirtyRects, const void* buffer,
+                 int width, int height) override;
     bool OnConsoleMessage(CefRefPtr<CefBrowser> browser,
-                            cef_log_severity_t level,
-                            const CefString& message,
-                            const CefString& source,
-                            int line) override;
+                          cef_log_severity_t level,
+                          const CefString& message,
+                          const CefString& source,
+                          int line) override;
 
     void OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame, int httpStatusCode) override;
 
@@ -49,9 +50,9 @@ class OffscreenCefClient : public CefClient,
     void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
 
     void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
-                                    TerminationStatus status,
-                                    int error_code,
-                                    const CefString& error_string) override {
+                                   TerminationStatus status,
+                                   int error_code,
+                                   const CefString& error_string) override {
         CEF_REQUIRE_UI_THREAD();
         browser_side_router_->OnRenderProcessTerminated(browser);
     }
@@ -72,7 +73,7 @@ class OffscreenCefClient : public CefClient,
         return browser_side_router_->OnProcessMessageReceived(browser, frame, source_process, message);
     }
 
-    private:
+   private:
     CefRefPtr<CefBrowser> browser_;
     CefRefPtr<OffscreenRenderHandler> renderHandler_;
     CefRefPtr<CefMessageRouterBrowserSide> browser_side_router_;
@@ -81,32 +82,18 @@ class OffscreenCefClient : public CefClient,
     IMPLEMENT_REFCOUNTING(OffscreenCefClient);
 };
 
-    
-
-// 自定义 App 类
 class SimpleApp : public CefApp, public CefRenderProcessHandler {
-    public:
+   public:
     SimpleApp();
 
     CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
         return renderProcessHandler_;
     }
-    // virtual CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() override {
-    //     return this;
-    // }
 
     virtual void OnBeforeCommandLineProcessing(const CefString& process_type,
-                                                CefRefPtr<CefCommandLine> command_line) override;
+                                               CefRefPtr<CefCommandLine> command_line) override;
 
-    //// CefBrowserProcessHandler 方法
-    // virtual void OnContextInitialized() override {
-    //     CEF_REQUIRE_UI_THREAD();
-
-    //    // 创建浏览器窗口
-    //    //CreateBrowserTab(ResolveHtmlPathForCef("/test.html"));
-    //}
-
-    private:
+   private:
     CefRefPtr<CefRenderProcessHandler> renderProcessHandler_;
     CefRefPtr<CefMessageRouterRendererSide> renderer_side_router_;
 

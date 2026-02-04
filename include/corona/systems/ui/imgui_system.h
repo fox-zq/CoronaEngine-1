@@ -25,7 +25,16 @@ class VulkanBackend;
  */
 class ImguiSystem : public Kernel::SystemBase {
    public:
-    ImguiSystem() : m_MouseDragStart(0, 0), m_IsMouseDragging(false), m_IsLeftMouseDown(false), m_MouseDownStartTime(0), m_HasBrowserFocus(false) {
+    ImguiSystem()
+        : event_{},
+          show_demo_window_(false),
+          running_(false),
+          window_(nullptr),
+          mouse_drag_start_(0, 0),
+          is_mouse_dragging_(false),
+          is_left_mouse_down_(false),
+          mouse_down_start_time_(0),
+          has_browser_focus_(false) {
         set_target_fps(60);  // 几何系统运行在 60 FPS
     }
 
@@ -69,20 +78,20 @@ class ImguiSystem : public Kernel::SystemBase {
     void shutdown() override;
 
    private:
-    SDL_Event event;
-    bool showDemoWindow;
-    bool running;
-    SDL_Window* window;
-    ImGuiIO* io = nullptr;
+    SDL_Event event_;
+    bool show_demo_window_;
+    bool running_;
+    SDL_Window* window_;
+    ImGuiIO* io_ = nullptr;
 
-    std::unique_ptr<VulkanBackend> m_VulkanBackend;
+    std::unique_ptr<VulkanBackend> vulkan_backend_;
 
     // 键盘输入处理相关成员
     struct PendingKeyEvent {
         enum EventType {
-            MKEY_EVENT,
-            TEXT_EVENT,
-            IME_COMPOSITION
+            kMKeyEvent,
+            kTextEvent,
+            kImeComposition
         };
 
         EventType type;
@@ -95,31 +104,31 @@ class ImguiSystem : public Kernel::SystemBase {
         int ime_length = 0;
         bool is_modifier_combo = false;
 
-        PendingKeyEvent(EventType t) : type(t) {}
+        explicit PendingKeyEvent(EventType t) : type(t) {}
     };
 
-    std::vector<PendingKeyEvent> m_PendingKeyEvents;  // 待处理的键盘事件队列
-    int m_ActiveTabId = -1;  // 当前活动的标签页ID
+    std::vector<PendingKeyEvent> pending_key_events_;  // 待处理的键盘事件队列
+    int active_tab_id_ = -1;  // 当前活动的标签页ID
 
-    ImVec2 m_MouseDragStart;      // 鼠标拖动起始位置
-    bool m_IsMouseDragging;       // 是否正在拖动
-    bool m_IsLeftMouseDown;       // 左键是否按下
-    Uint32 m_MouseDownStartTime;  // 鼠标按下的开始时间
-    bool m_HasBrowserFocus;       // 浏览器是否已有焦点
+    ImVec2 mouse_drag_start_;      // 鼠标拖动起始位置
+    bool is_mouse_dragging_;       // 是否正在拖动
+    bool is_left_mouse_down_;       // 左键是否按下
+    Uint32 mouse_down_start_time_;  // 鼠标按下的开始时间
+    bool has_browser_focus_;       // 浏览器是否已有焦点
 
-    Uint32 m_LastClickTime = 0;      // 上次点击的时间戳
-    ImVec2 m_LastClickPos = {0, 0};  // 上次点击的坐标
-    int m_ManualClickCount = 0;      // 手动维护的连击计数
+    Uint32 last_click_time_ = 0;      // 上次点击的时间戳
+    ImVec2 last_click_pos_ = {0, 0};  // 上次点击的坐标
+    int manual_click_count_ = 0;      // 手动维护的连击计数
 
     // 连击判定的常量
-    const Uint32 DOUBLE_CLICK_TIME = 500;  // 500毫秒内视为连击
-    const float DOUBLE_CLICK_DIST = 5.0f;  // 点击距离偏移在5像素内视为连击
+    const Uint32 kDoubleClickTime = 500;  // 500毫秒内视为连击
+    const float kDoubleClickDist = 5.0f;  // 点击距离偏移在5像素内视为连击
 
     // 输入处理函数
-    void ProcessSDLKeyEvent(const SDL_Event& event);
-    void ProcessSDLTextEvent(const SDL_Event& event);
-    void ProcessSDLIMEEvent(const SDL_Event& event);
-    void SendKeyEventsToBrowser(int tabId);
+    void process_sdl_key_event(const SDL_Event& event);
+    void process_sdl_text_event(const SDL_Event& event);
+    void process_sdl_ime_event(const SDL_Event& event);
+    void send_key_events_to_browser(int tab_id);
 };
 
 }  // namespace Corona::Systems
