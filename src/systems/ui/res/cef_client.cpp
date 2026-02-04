@@ -6,7 +6,7 @@
 // OffscreenCefClient Implementation
 // ----------------------------------------------------------------------------
 
-OffscreenCefClient::OffscreenCefClient() {
+OffscreenCefClient::OffscreenCefClient() : m_jsHandler(nullptr) {
     renderHandler_ = new OffscreenRenderHandler();
 }
 
@@ -21,15 +21,15 @@ void OffscreenCefClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     if (!browser_) {
         browser_ = browser;
 
-        // CefRefPtr<CefProcessMessage> msg =
-        //     CefProcessMessage::Create("Ping");
-        // browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+        //CefRefPtr<CefProcessMessage> msg =
+        //    CefProcessMessage::Create("Ping");
+        //browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
 
-        // std::cout << "send Render msg: " << msg << std::endl;
-        browser_side_router_ = CefMessageRouterBrowserSide::Create(g_messageRouterConfig);
+        //std::cout << "send Render msg: " << msg << std::endl;
+        browser_side_router_ = CefMessageRouterBrowserSide::Create(message_router_config);
 
         // 注册自定义的 JS 处理器
-        m_jsHandler = new BrowserSideJSHandler();
+
         if (browser_side_router_.get()) {
             browser_side_router_->AddHandler(m_jsHandler, true);
         }
@@ -122,7 +122,7 @@ SimpleApp::SimpleApp() {
     std::cout << "SimpleApp constructor called" << std::endl;
     renderProcessHandler_ = new SimpleRenderProcessHandler();
 
-    renderer_side_router_ = CefMessageRouterRendererSide::Create(g_messageRouterConfig);
+    renderer_side_router_ = CefMessageRouterRendererSide::Create(message_router_config);
 }
 
 void SimpleApp::OnBeforeCommandLineProcessing(const CefString& process_type,

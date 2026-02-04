@@ -26,7 +26,7 @@ struct OwnedImage {
     uint32_t width;
     uint32_t height;
 };
-static std::map<VkDescriptorSet, OwnedImage> ownedImages;
+static std::map<VkDescriptorSet, OwnedImage> owned_images;
 
 using namespace Corona::Systems;
 
@@ -136,7 +136,7 @@ VkDescriptorSet create_browser_texture(int width, int height) {
     VkDescriptorSet descriptor = ImGui_ImplVulkan_AddTexture(sampler, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
     // Store owned resources for later cleanup
-    ownedImages[descriptor] = {image, image_memory, image_view, sampler, (uint32_t)width, (uint32_t)height};
+    owned_images[descriptor] = {image, image_memory, image_view, sampler, (uint32_t)width, (uint32_t)height};
 
     return descriptor;
 }
@@ -279,8 +279,8 @@ void update_browser_texture(int tab_id) {
     // Find owned image by matching descriptor
     OwnedImage* found = nullptr;
     VkDescriptorSet desc = tab->texture_id;
-    auto it = ownedImages.find(desc);
-    if (it != ownedImages.end()) {
+    auto it = owned_images.find(desc);
+    if (it != owned_images.end()) {
         found = &it->second;
     }
     if (!found) {
@@ -430,14 +430,14 @@ void close_browser_tab(int tab_id) {
     if (tab->texture_id != VK_NULL_HANDLE) {
         // Remove ImGui binding and destroy Vulkan resources
         ImGui_ImplVulkan_RemoveTexture(tab->texture_id);
-        auto it = ownedImages.find(tab->texture_id);
-        if (it != ownedImages.end()) {
+        auto it = owned_images.find(tab->texture_id);
+        if (it != owned_images.end()) {
             VkDevice device = g_vulkan_backend->get_device();
             vkDestroySampler(device, it->second.sampler, nullptr);
             vkDestroyImageView(device, it->second.view, nullptr);
             vkFreeMemory(device, it->second.memory, nullptr);
             vkDestroyImage(device, it->second.image, nullptr);
-            ownedImages.erase(it);
+            owned_images.erase(it);
         }
         tab->texture_id = VK_NULL_HANDLE;
     }

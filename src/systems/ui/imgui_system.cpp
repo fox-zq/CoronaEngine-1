@@ -14,7 +14,7 @@
 #include "res/browser_window.h"
 #include "res/cef_client.h"
 
-CefMessageRouterConfig g_messageRouterConfig;
+CefMessageRouterConfig message_router_config;
 
 namespace Corona::Systems {
 
@@ -22,15 +22,15 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
     // 设置 CEF 消息路由函数名称
-    g_messageRouterConfig.js_query_function = "cefQuery";
-    g_messageRouterConfig.js_cancel_function = "cefQueryCancel";
+    message_router_config.js_query_function = "cefQuery";
+    message_router_config.js_cancel_function = "cefQueryCancel";
 
     // 初始化 CEF
-    CefMainArgs mainArgs(GetModuleHandle(nullptr));
+    CefMainArgs main_args(GetModuleHandle(nullptr));
     CefRefPtr<SimpleApp> app(new SimpleApp());
-    int exitCode = CefExecuteProcess(mainArgs, app.get(), nullptr);
-    if (exitCode >= 0) {
-        return exitCode;
+    int exit_code = CefExecuteProcess(main_args, app.get(), nullptr);
+    if (exit_code >= 0) {
+        return exit_code;
     }
 
     // 配置 CEF 设置
@@ -53,9 +53,9 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CefString(&settings.cache_path).FromString(cache_path.string());
 
     // 设置子进程可执行文件路径和用户代理
-    wchar_t exePath[MAX_PATH];
-    GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    CefString(&settings.browser_subprocess_path).FromWString(exePath);
+    wchar_t exe_path[MAX_PATH];
+    GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+    CefString(&settings.browser_subprocess_path).FromWString(exe_path);
     CefString(&settings.user_agent).FromASCII("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     settings.background_color = CefColorSetARGB(255, 255, 255, 255);
     settings.persist_session_cookies = true;
@@ -64,7 +64,7 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CefRefPtr<CefCommandLine> command_line = CefCommandLine::CreateCommandLine();
     command_line->InitFromString(::GetCommandLineW());
 
-    if (!CefInitialize(mainArgs, settings, app.get(), nullptr)) {
+    if (!CefInitialize(main_args, settings, app.get(), nullptr)) {
         std::cerr << "CefInitialize failed!" << std::endl;
         return EXIT_FAILURE;
     }
