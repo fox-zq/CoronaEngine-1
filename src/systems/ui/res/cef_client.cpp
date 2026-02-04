@@ -1,6 +1,6 @@
 ﻿#include "cef_client.h"
-#include "browser_types.h"
 
+#include "browser_types.h"
 
 // ----------------------------------------------------------------------------
 // OffscreenCefClient Implementation
@@ -21,11 +21,11 @@ void OffscreenCefClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
     if (!browser_) {
         browser_ = browser;
 
-        //CefRefPtr<CefProcessMessage> msg =
-        //    CefProcessMessage::Create("Ping");
-        //browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+        // CefRefPtr<CefProcessMessage> msg =
+        //     CefProcessMessage::Create("Ping");
+        // browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
 
-        //std::cout << "send Render msg: " << msg << std::endl;
+        // std::cout << "send Render msg: " << msg << std::endl;
         browser_side_router_ = CefMessageRouterBrowserSide::Create(g_messageRouterConfig);
 
         // 注册自定义的 JS 处理器
@@ -113,8 +113,6 @@ bool OffscreenCefClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
 
     return true;  // 消息已处理
 }
-
-
 
 // ----------------------------------------------------------------------------
 // SimpleApp Implementation

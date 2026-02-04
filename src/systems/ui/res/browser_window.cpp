@@ -1,22 +1,23 @@
 ﻿// BrowserWindow.cpp
 #include "browser_window.h"
-#include "cef_client.h"
-#include "browser_types.h"
-#include <imgui_impl_vulkan.h>
 
 #include <corona/systems/ui/vulkan_backend.h>
-#include <iostream>
-#include <cstring>
-#include <map>
-#include <filesystem>
+#include <imgui_impl_vulkan.h>
 
+#include <cstring>
+#include <filesystem>
+#include <iostream>
+#include <map>
+
+#include "browser_types.h"
+#include "cef_client.h"
 
 // 全局变量定义
 std::unordered_map<int, BrowserTab*> g_tabs;
 int g_tab_counter = 0;
 Corona::Systems::VulkanBackend* g_vulkan_backend = nullptr;
 class OffscreenCefClient;
-    // Track owned Vulkan resources for each ImGui descriptor set
+// Track owned Vulkan resources for each ImGui descriptor set
 struct OwnedImage {
     VkImage image;
     VkDeviceMemory memory;
@@ -216,7 +217,6 @@ int create_browser_tab(const std::string& url, const std::string& path) {
 
     // 转换本地路径为URL
     std::string full_url = convert_local_path_to_url(url);
-
 
     // 如果提供了 fragment，添加到 URL
     if (!path.empty()) {

@@ -1,4 +1,5 @@
 ﻿#include "cef_handler.h"
+
 #include <iostream>
 
 void BrowserSideJSHandler::initialize_python() {
@@ -62,7 +63,6 @@ void BrowserSideJSHandler::initialize_python() {
     PyGILState_Release(gstate);
 }
 
-
 bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    int64_t query_id,
@@ -76,7 +76,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
     // 初始化 Python 环境
     if (!Py_IsInitialized()) {
         Py_Initialize();
-        PyEval_SaveThread();   // release GIL
+        PyEval_SaveThread();  // release GIL
     }
 
     PyGILState_STATE gstate = PyGILState_Ensure();
@@ -148,4 +148,3 @@ void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElement
         tab->buffer_dirty = true;
     }
 }
-
