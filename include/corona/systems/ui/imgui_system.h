@@ -84,6 +84,8 @@ class ImguiSystem : public Kernel::SystemBase {
     SDL_Window* window_;
     ImGuiIO* io_ = nullptr;
 
+    bool window_size_changed_ = false;
+
     std::unique_ptr<VulkanBackend> vulkan_backend_;
 
     // 键盘输入处理相关成员

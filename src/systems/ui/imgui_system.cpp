@@ -91,7 +91,7 @@ void ImguiSystem::thread_loop() {
     }
 
     SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
-    window_ = SDL_CreateWindow("Corona Engine (Vulkan)", 1400, 900,
+    window_ = SDL_CreateWindow("Corona Engine (Vulkan)", 1920, 1080,
                                SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN | SDL_WINDOW_HIDDEN);
     if (window_ == nullptr) {
         std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << '\n';
@@ -129,9 +129,9 @@ void ImguiSystem::thread_loop() {
     style.Colors[ImGuiCol_DockingPreview] = ImVec4(0.2f, 0.2f, 0.8f, 0.3f);  // Docking预览半透明
 
     // 调整窗口圆角和边框
-    style.WindowRounding = 6.0f;
+    style.WindowRounding = 1.0f;
     style.WindowBorderSize = 1.0f;
-    style.WindowPadding = ImVec2(8.0f, 8.0f);
+    style.WindowPadding = ImVec2(1.0f, 1.0f);
 
     // 初始化 ImGui SDL3 和 Vulkan 后端
     ImGui_ImplSDL3_InitForVulkan(window_);
@@ -250,6 +250,10 @@ void ImguiSystem::update() {
                 break;
             case SDL_EVENT_WINDOW_RESIZED:  // 窗口大小调整事件
                 if (event_.window.windowID == SDL_GetWindowID(window_)) {
+                    // 更新窗口大小
+
+                    window_size_changed_ = true;
+
                     vulkan_backend_->set_swap_chain_rebuild(true);
                     if (should_process_in_imgui) {
                         ImGui_ImplSDL3_ProcessEvent(&event_);
@@ -295,15 +299,14 @@ void ImguiSystem::update() {
     ImGui::SetNextWindowViewport(viewport->ID);
 
     // 设置DockSpace窗口标志
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar |
-                                    ImGuiWindowFlags_NoDocking |
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking |
                                     ImGuiWindowFlags_NoTitleBar |
                                     ImGuiWindowFlags_NoCollapse |
                                     ImGuiWindowFlags_NoResize |
                                     ImGuiWindowFlags_NoMove |
                                     ImGuiWindowFlags_NoBringToFrontOnFocus |
                                     ImGuiWindowFlags_NoNavFocus |
-                                    ImGuiWindowFlags_NoBackground;  // 重要：无背景
+                                    ImGuiWindowFlags_NoBackground;
 
     // 开始DockSpace窗口
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
@@ -325,36 +328,6 @@ void ImguiSystem::update() {
     ImGuiID dockSpaceId = ImGui::GetID("MyDockSpace");
     ImGui::DockSpace(dockSpaceId, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
-    // 创建主菜单栏
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("New Tab")) {
-                UI::BrowserManager::instance().create_tab("https://www.baidu.com");
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Exit")) {
-                running_ = false;
-            }
-            ImGui::EndMenu();
-        }
-        if (ImGui::BeginMenu("Websites")) {
-            if (ImGui::MenuItem("Baidu")) {
-                UI::BrowserManager::instance().create_tab("https://www.baidu.com");
-            }
-            if (ImGui::MenuItem("Bing")) {
-                UI::BrowserManager::instance().create_tab("https://www.bing.com");
-            }
-            if (ImGui::MenuItem("Google")) {
-                UI::BrowserManager::instance().create_tab("https://www.google.com");
-            }
-            if (ImGui::MenuItem("GitHub")) {
-                UI::BrowserManager::instance().create_tab("https://www.github.com");
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenuBar();
-    }
-
     ImGui::End();
 
     // 渲染浏览器标签页
@@ -372,127 +345,100 @@ void ImguiSystem::update() {
         std::string window_id = tab->name + "##" + std::to_string(tabId);
 
         // 设置窗口标志，如果固定则添加不能移动的标志
-        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar |  // 添加此行
+                                        ImGuiWindowFlags_NoScrollbar |
                                         ImGuiWindowFlags_NoNavInputs |
                                         ImGuiWindowFlags_NoNavFocus;
 
-        if (tab->dock_fixed) {
-            window_flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
-        }
+        // 特殊处理 main 窗口
+        bool is_main_tab = (tab->docking_pos == "main");
 
-        // 如果是第一次显示，设置docking位置
-        if (!tab->dock_initialized && !tab->docking_pos.empty()) {
-            // 设置下一个窗口的属性
-            if (tab->dock_width > 0 && tab->dock_height > 0) {
-                ImGui::SetNextWindowSize(ImVec2(tab->dock_width, tab->dock_height),
-                                         ImGuiCond_FirstUseEver);
-            }
+        if (is_main_tab) {
+            // 移除 ImGuiWindowFlags_NoDocking，允许停靠
+            // 保持 NoTitleBar 等标志可以使其看起来更像背景或主视图
+            window_flags |= ImGuiWindowFlags_NoMove;
 
-            // 根据docking位置设置
+            ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_Always);
+        } else {
+            // 2. 精确计算靠边居中的浮动位置
             ImGuiViewport* viewport = ImGui::GetMainViewport();
-            ImVec2 work_pos = viewport->WorkPos;
-            ImVec2 work_size = viewport->WorkSize;
+            ImVec2 work_pos = viewport->WorkPos;    // 考虑了菜单栏等占位后的起始坐标
+            ImVec2 work_size = viewport->WorkSize;  // 工作区域的总宽高
 
-            if (tab->docking_pos == "left") {
-                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y), ImGuiCond_FirstUseEver);
-                if (tab->dock_width > 0) {
-                    ImGui::SetNextWindowSize(ImVec2(tab->dock_width, work_size.y),
-                                             ImGuiCond_FirstUseEver);
-                }
-                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
-                // 设置窗口停靠在左侧
-                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
-                                                                       ImGuiDir_Left, 0.3f, nullptr, &dockSpaceId),
-                                           ImGuiCond_FirstUseEver);
-            } else if (tab->docking_pos == "right") {
-                ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x - tab->dock_width, work_pos.y),
-                                        ImGuiCond_FirstUseEver);
-                if (tab->dock_width > 0) {
-                    ImGui::SetNextWindowSize(ImVec2(tab->dock_width, work_size.y),
-                                             ImGuiCond_FirstUseEver);
-                }
-                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
-                // 设置窗口停靠在右侧
-                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
-                                                                       ImGuiDir_Right, 0.3f, nullptr, &dockSpaceId),
-                                           ImGuiCond_FirstUseEver);
-            } else if (tab->docking_pos == "top") {
-                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y), ImGuiCond_FirstUseEver);
-                if (tab->dock_height > 0) {
-                    ImGui::SetNextWindowSize(ImVec2(work_size.x, tab->dock_height),
-                                             ImGuiCond_FirstUseEver);
-                }
-                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
-                // 设置窗口停靠在顶部
-                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
-                                                                       ImGuiDir_Up, 0.3f, nullptr, &dockSpaceId),
-                                           ImGuiCond_FirstUseEver);
-            } else if (tab->docking_pos == "bottom") {
-                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y + work_size.y - tab->dock_height),
-                                        ImGuiCond_FirstUseEver);
-                if (tab->dock_height > 0) {
-                    ImGui::SetNextWindowSize(ImVec2(work_size.x, tab->dock_height),
-                                             ImGuiCond_FirstUseEver);
-                }
-                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
-                // 设置窗口停靠在底部
-                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
-                                                                       ImGuiDir_Down, 0.3f, nullptr, &dockSpaceId),
-                                           ImGuiCond_FirstUseEver);
-            } else if (tab->docking_pos == "center") {
-                ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x / 2 - tab->dock_width / 2,
-                                               work_pos.y + work_size.y / 2 - tab->dock_height / 2),
-                                        ImGuiCond_FirstUseEver);
-                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+            // 使用插件传入的原始尺寸
+            float target_w = (float)tab->dock_width;
+            float target_h = (float)tab->dock_height;
+
+            ImVec2 final_pos = work_pos;
+
+            if (tab->docking_pos == "left_top") {
+                final_pos.x = work_pos.x;
+                final_pos.y = work_pos.y + 50.f;
+            } else if (tab->docking_pos == "left_bottom") {
+                final_pos.x = work_pos.x;
+                final_pos.y = work_pos.y + work_size.y - target_h;
+            } else if (tab->docking_pos == "right_top") {
+                final_pos.x = work_pos.x + work_size.x - target_w;
+                final_pos.y = work_pos.y + 50.f;
+            } else if (tab->docking_pos == "right_bottom") {
+                final_pos.x = work_pos.x + work_size.x - target_w;
+                final_pos.y = work_pos.y + work_size.y - target_h;
+            } else if (tab->docking_pos == "bottom_left") {
+                final_pos.x = work_pos.x + 300.f;
+                final_pos.y = work_pos.y + work_size.y - target_h;
+            } else if (tab->docking_pos == "bottom_right") {
+                final_pos.x = work_pos.x + work_size.x - target_w - 300.f;
+                final_pos.y = work_pos.y + work_size.y - target_h;
+            } else {
+                final_pos.x = work_pos.x + 300.f;
+                final_pos.y = work_pos.y + 50.f;
             }
+
+            // 3. 强制应用位置和大小
+            ImGui::SetNextWindowPos(final_pos, ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(target_w, target_h), ImGuiCond_FirstUseEver);
 
             tab->dock_initialized = true;
         }
 
         if (ImGui::Begin(window_id.c_str(), &tab->open, window_flags)) {
-            ImGui::PushItemWidth(-200);
-            std::string url_input_id = "##url_" + std::to_string(tabId);
+            ImGui::PushItemWidth(-200);  // 留出按钮空间
+            //std::string url_input_id = "##url_" + std::to_string(tabId);
 
-            // URL 输入框 (保持不变)
-            if (ImGui::InputText(url_input_id.c_str(), tab->url_buffer, sizeof(tab->url_buffer),
-                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
-                if (tab->client && tab->client->GetBrowser()) {
-                    tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->url_buffer);
-                }
-            }
+            //// URL 输入框
+            //if (ImGui::InputText(url_input_id.c_str(), tab->url_buffer, sizeof(tab->url_buffer),
+            //                     ImGuiInputTextFlags_EnterReturnsTrue)) {
+            //    if (tab->client && tab->client->GetBrowser()) {
+            //        tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->url_buffer);
+            //    }
+            //}
 
-            if (ImGui::IsItemActive()) {
-                url_input_active_tab = tabId;
-                active_tab_id_ = -1;
-
-                // 当URL输入框激活时，移除浏览器焦点
-                if (tab->client && tab->client->GetBrowser()) {
-                    tab->client->GetBrowser()->GetHost()->SetFocus(false);
-                    has_browser_focus_ = false;
-                }
-            }
-            // 导航按钮
+            //// 处理输入框激活逻辑
+            //if (ImGui::IsItemActive()) {
+            //    url_input_active_tab = tabId;
+            //    active_tab_id_ = -1;
+            //    if (tab->client && tab->client->GetBrowser()) {
+            //        tab->client->GetBrowser()->GetHost()->SetFocus(false);
+            //    }
+            //}
+            ImGui::SameLine();
             ImGui::PopItemWidth();
             ImGui::SameLine();
-            if (ImGui::Button("Go")) {
-                if (tab->client && tab->client->GetBrowser()) {
-                    tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->url_buffer);
-                }
-            }
+
+            // 导航按钮组
+            //if (ImGui::Button("Go")) {
+            //    if (tab->client && tab->client->GetBrowser()) {
+            //        tab->client->GetBrowser()->GetMainFrame()->LoadURL(tab->url_buffer);
+            //    }
+            //}
+            //ImGui::SameLine();
+            //if (ImGui::Button("Back")) {
+            //    if (tab->client && tab->client->GetBrowser()) {
+            //        tab->client->GetBrowser()->GoBack();
+            //    }
+            //}
             ImGui::SameLine();
-            if (ImGui::Button("Back")) {
-                if (tab->client && tab->client->GetBrowser()) {
-                    tab->client->GetBrowser()->GoBack();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Forward")) {
-                if (tab->client && tab->client->GetBrowser()) {
-                    tab->client->GetBrowser()->GoForward();
-                }
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Refresh")) {
+            if (ImGui::Button("Refresh")) {  // 刷新按钮
                 if (tab->client && tab->client->GetBrowser()) {
                     tab->client->GetBrowser()->Reload();
                 }
@@ -503,16 +449,9 @@ void ImguiSystem::update() {
             int newHeight = static_cast<int>(availSize.y);
 
             // 如果不是固定窗口，允许调整大小
-            if (!tab->dock_fixed && newWidth > 0 && newHeight > 0 &&
+            if (newWidth > 0 && newHeight > 0 &&
                 (newWidth != tab->width || newHeight != tab->height)) {
                 UI::BrowserManager::instance().resize_tab(tabId, newWidth, newHeight);
-            }
-            // 如果是固定窗口，使用指定的dock大小或窗口大小
-            else if (tab->dock_fixed) {
-                if (tab->dock_width > 0 && tab->dock_height > 0) {
-                    newWidth = tab->dock_width;
-                    newHeight = tab->dock_height;
-                }
             }
 
             // 修改浏览器内容区域的鼠标事件处理
@@ -520,6 +459,30 @@ void ImguiSystem::update() {
                 ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(tab->texture_id)), availSize);
 
                 bool browser_hovered = ImGui::IsItemHovered();
+
+                bool browser_active = (active_tab_id_ == tabId);
+                // 处理鼠标离开浏览器区域的情况
+                if (!browser_hovered && is_left_mouse_down_ && browser_active) {
+                    // 鼠标移出浏览器区域但仍处于按下状态
+                    // 发送鼠标抬起事件
+                    if (tab->client && tab->client->GetBrowser()) {
+                        ImVec2 mousePos = ImGui::GetMousePos();
+                        ImVec2 itemPos = ImGui::GetItemRectMin();
+
+                        CefMouseEvent mouseEvent;
+                        mouseEvent.x = static_cast<int>(mousePos.x - itemPos.x);
+                        mouseEvent.y = static_cast<int>(mousePos.y - itemPos.y);
+
+                        // 确保鼠标位置在有效范围内
+                        if (mouseEvent.x >= 0 && mouseEvent.x < tab->width &&
+                            mouseEvent.y >= 0 && mouseEvent.y < tab->height) {
+                            tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, manual_click_count_);
+                        }
+                    }
+                    is_left_mouse_down_ = false;
+                    is_mouse_dragging_ = false;
+                }
+
 
                 if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                     active_tab_id_ = tabId;
@@ -580,10 +543,32 @@ void ImguiSystem::update() {
                             tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, manual_click_count_);
                         }
                         is_left_mouse_down_ = false;
+                        is_mouse_dragging_ = false;  // 新增：重置拖动状态
 
                         // 如果连击次数过大，可以在此处选择是否重置 (通常由时间差逻辑自然处理)
                         if (manual_click_count_ >= 3) manual_click_count_ = 0;
                     }
+                }
+
+                // 新增：全局鼠标抬起事件处理（即使不在浏览器区域内）
+                if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && is_left_mouse_down_ && browser_active) {
+                    // 如果鼠标在任何地方抬起，且当前浏览器处于活动状态，发送鼠标抬起事件
+                    if (tab->client && tab->client->GetBrowser()) {
+                        ImVec2 mousePos = ImGui::GetMousePos();
+                        ImVec2 itemPos = ImGui::GetItemRectMin();
+
+                        CefMouseEvent mouseEvent;
+                        mouseEvent.x = static_cast<int>(mousePos.x - itemPos.x);
+                        mouseEvent.y = static_cast<int>(mousePos.y - itemPos.y);
+
+                        // 确保坐标在有效范围内
+                        if (mouseEvent.x >= 0 && mouseEvent.x < tab->width &&
+                            mouseEvent.y >= 0 && mouseEvent.y < tab->height) {
+                            tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(mouseEvent, MBT_LEFT, true, manual_click_count_);
+                        }
+                    }
+                    is_left_mouse_down_ = false;
+                    is_mouse_dragging_ = false;
                 }
 
                 if (browser_hovered) {
