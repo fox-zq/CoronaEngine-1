@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <memory>
 #include <unordered_map>
@@ -17,7 +17,11 @@ class BrowserManager {
    public:
     static BrowserManager& instance();
 
-    int create_tab(const std::string& url, const std::string& path = "");
+    // 修改函数签名，添加docking参数
+    int create_tab(const std::string& url, const std::string& path = "",
+                   const std::string& docking_pos = "",
+                   int dock_width = 0, int dock_height = 0,
+                   bool dock_fixed = false);
     BrowserTab* get_tab(int tab_id);
     void remove_tab(int tab_id);
     void update_texture(int tab_id);

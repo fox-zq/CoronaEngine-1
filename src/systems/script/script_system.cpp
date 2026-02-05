@@ -13,6 +13,27 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
     // 【订阅系统内部事件】使用 EventBus
     auto* event_bus = ctx->event_bus();
     if (event_bus) {
+        python_start_id_ = event_bus->subscribe<Events::ImguiToPythonEvent>(
+            [this](const Events::ImguiToPythonEvent& event) {
+                CFW_LOG_INFO("ScriptSystem: Received ImguiToPythonEvent start");
+                nanobind::gil_scoped_acquire gil;
+                if (!python_api_.pStartFunc.is_valid()) {
+                    return;
+                }
+                python_api_.pStartFunc();
+            });
+
+        js_call_python_id_ = event_bus->subscribe<Events::ImguiCallPythonEvent>(
+            [this](const Events::ImguiCallPythonEvent& event) {
+                CFW_LOG_INFO("ScriptSystem: Received ImguiCallPythonEvent js_call");
+                nanobind::gil_scoped_acquire gil;
+                if (!python_api_.pJsCallFunc.is_valid()) {
+                    return;
+                }
+                python_api_.pJsCallFunc(event.args);
+            });
+
+
         CFW_LOG_DEBUG("ScriptSystem: EventBus subscriptions ready");
     } else {
         CFW_LOG_WARNING("ScriptSystem: No event bus available");
@@ -31,6 +52,18 @@ void ScriptSystem::update() {
 
 void ScriptSystem::shutdown() {
     CFW_LOG_NOTICE("ScriptSystem: Shutting down...");
+
+        // 取消 EventBus 订阅
+    if (auto* event_bus = context()->event_bus()) {
+        if (python_start_id_ != 0) {
+            event_bus->unsubscribe(python_start_id_);
+        }
+        if (js_call_python_id_ != 0) {
+            event_bus->unsubscribe(js_call_python_id_);
+        }
+        CFW_LOG_DEBUG("ScriptSystem: Unsubscribed from events");
+    }
+
 }
 
 }  // namespace Corona::Systems

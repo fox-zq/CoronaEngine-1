@@ -13,20 +13,48 @@ namespace EngineScripts {
 
 void BindCef(nanobind::module_& m) {
     // 向python注册创建浏览器标签页函数绑定
-    m.def("create_browser_tab", [](nb::object py_url, nb::object py_path) -> int {
+    m.def("create_browser_tab", [](nb::object py_url, nb::object py_path, nb::object py_docking_pos, nb::object py_dock_width, nb::object py_dock_height, nb::object py_dock_fixed) -> int {
             try {
                 if (!py_url.is_valid()) {
                     return -1;
                 }
+                
                 nb::str py_url_str = nb::str(py_url);
                 std::string url = py_url_str.c_str();
+                
                 nb::str py_path_str = nb::str(py_path);
                 std::string path = py_path_str.c_str();
+                
+                // 处理docking参数
+                std::string docking_pos = "";
+                int dock_width = 0;
+                int dock_height = 0;
+                bool dock_fixed = false;
+                
+                if (py_docking_pos.is_valid()) {
+                    nb::str pos_str = nb::str(py_docking_pos);
+                    docking_pos = pos_str.c_str();
+                }
+                
+                if (py_dock_width.is_valid() && !py_dock_width.is_none()) {
+                    dock_width = nb::cast<int>(py_dock_width);
+                }
+                
+                if (py_dock_height.is_valid() && !py_dock_height.is_none()) {
+                    dock_height = nb::cast<int>(py_dock_height);
+                }
+                
+                if (py_dock_fixed.is_valid() && !py_dock_fixed.is_none()) {
+                    dock_fixed = nb::cast<bool>(py_dock_fixed);
+                }
+                
                 // Use BrowserManager
-                return Corona::Systems::UI::BrowserManager::instance().create_tab(url, path);
-            } catch (const std::exception&) {
+                return Corona::Systems::UI::BrowserManager::instance().create_tab(
+                    url, path, docking_pos, dock_width, dock_height, dock_fixed);
+            } catch (const std::exception& e) {
+                std::cerr << "Error in create_browser_tab: " << e.what() << std::endl;
                 return -1;
-            } }, nb::arg("url") = "", nb::arg("path") = "", nb::rv_policy::take_ownership);
+            } }, nb::arg("url") = "", nb::arg("path") = "", nb::arg("docking_pos") = "", nb::arg("dock_width") = 0, nb::arg("dock_height") = 0, nb::arg("dock_fixed") = false, nb::rv_policy::take_ownership);
 
     // 向python注册执行JavaScript代码函数绑定
     m.def("execute_javascript", [](int tab_id, nb::object py_js_code) -> nb::str {

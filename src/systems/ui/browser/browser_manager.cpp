@@ -1,4 +1,4 @@
-#include "browser_manager.h"
+﻿#include "browser_manager.h"
 #include <filesystem>
 #include <iostream>
 #include <cstring>
@@ -32,18 +32,33 @@ BrowserManager& BrowserManager::instance() {
     return instance;
 }
 
-int BrowserManager::create_tab(const std::string& url, const std::string& path) {
+int BrowserManager::create_tab(const std::string& url, const std::string& path,
+                               const std::string& docking_pos,
+                               int dock_width, int dock_height,
+                               bool dock_fixed) {
     auto tab = std::make_unique<BrowserTab>();
 
     int id = ++tab_counter_;
 
-    // Initial Size
-    tab->width = 1600;
-    tab->height = 900;
+    // 设置 docking 属性
+    tab->docking_pos = docking_pos;
+    tab->dock_width = dock_width;
+    tab->dock_height = dock_height;
+    tab->dock_fixed = dock_fixed;
+    tab->dock_initialized = false;
+
+    // 如果有指定的dock大小，使用它，否则使用默认大小
+    if (dock_width > 0 && dock_height > 0) {
+        tab->width = dock_width;
+        tab->height = dock_height;
+    } else {
+        tab->width = 1600;
+        tab->height = 900;
+    }
 
     tab->name = "Browser " + std::to_string(id);
 
-    // URL Processing
+    // URL Processing (保持不变)
     std::string full_url = convert_local_path_to_url(url);
     if (!path.empty()) {
         std::string clean_fragment = path;

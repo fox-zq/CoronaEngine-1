@@ -1,5 +1,7 @@
 ﻿#include "cef_handler.h"
-
+#include <corona/kernel/core/kernel_context.h>
+#include <corona/kernel/event/i_event_bus.h>
+#include <corona/events/script_system_events.h>
 #include <iostream>
 
 void BrowserSideJSHandler::initialize_python() {
@@ -124,6 +126,11 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
     }
 
     PyGILState_Release(gstate);
+
+    //if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+    //    event_bus->publish<Events::ImguiCallPythonEvent>({req});
+    //}
+
     return true;
 }
 

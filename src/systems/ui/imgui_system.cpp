@@ -1,7 +1,9 @@
 ﻿#include <SDL3/SDL_vulkan.h>
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
+#include <corona/events/script_system_events.h>
 #include <corona/kernel/event/i_event_stream.h>
+#include <corona/kernel/core/kernel_context.h>
 #include <corona/systems/ui/imgui_system.h>
 #include <imgui_internal.h>
 #include <nanobind/nanobind.h>
@@ -366,16 +368,92 @@ void ImguiSystem::update() {
 
         UI::BrowserManager::instance().update_texture(tabId);  // 更新浏览器纹理
 
-        ImGui::SetNextWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
+        // 设置窗口大小和位置
         std::string window_id = tab->name + "##" + std::to_string(tabId);
 
-        if (ImGui::Begin(window_id.c_str(), &tab->open,
-                         ImGuiWindowFlags_NoScrollbar |
-                             ImGuiWindowFlags_NoNavInputs |
-                             ImGuiWindowFlags_NoNavFocus)) {
+        // 设置窗口标志，如果固定则添加不能移动的标志
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoScrollbar |
+                                        ImGuiWindowFlags_NoNavInputs |
+                                        ImGuiWindowFlags_NoNavFocus;
+
+        if (tab->dock_fixed) {
+            window_flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+        }
+
+        // 如果是第一次显示，设置docking位置
+        if (!tab->dock_initialized && !tab->docking_pos.empty()) {
+            // 设置下一个窗口的属性
+            if (tab->dock_width > 0 && tab->dock_height > 0) {
+                ImGui::SetNextWindowSize(ImVec2(tab->dock_width, tab->dock_height),
+                                         ImGuiCond_FirstUseEver);
+            }
+
+            // 根据docking位置设置
+            ImGuiViewport* viewport = ImGui::GetMainViewport();
+            ImVec2 work_pos = viewport->WorkPos;
+            ImVec2 work_size = viewport->WorkSize;
+
+            if (tab->docking_pos == "left") {
+                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y), ImGuiCond_FirstUseEver);
+                if (tab->dock_width > 0) {
+                    ImGui::SetNextWindowSize(ImVec2(tab->dock_width, work_size.y),
+                                             ImGuiCond_FirstUseEver);
+                }
+                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+                // 设置窗口停靠在左侧
+                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
+                                                                       ImGuiDir_Left, 0.3f, nullptr, &dockSpaceId),
+                                           ImGuiCond_FirstUseEver);
+            } else if (tab->docking_pos == "right") {
+                ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x - tab->dock_width, work_pos.y),
+                                        ImGuiCond_FirstUseEver);
+                if (tab->dock_width > 0) {
+                    ImGui::SetNextWindowSize(ImVec2(tab->dock_width, work_size.y),
+                                             ImGuiCond_FirstUseEver);
+                }
+                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+                // 设置窗口停靠在右侧
+                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
+                                                                       ImGuiDir_Right, 0.3f, nullptr, &dockSpaceId),
+                                           ImGuiCond_FirstUseEver);
+            } else if (tab->docking_pos == "top") {
+                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y), ImGuiCond_FirstUseEver);
+                if (tab->dock_height > 0) {
+                    ImGui::SetNextWindowSize(ImVec2(work_size.x, tab->dock_height),
+                                             ImGuiCond_FirstUseEver);
+                }
+                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+                // 设置窗口停靠在顶部
+                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
+                                                                       ImGuiDir_Up, 0.3f, nullptr, &dockSpaceId),
+                                           ImGuiCond_FirstUseEver);
+            } else if (tab->docking_pos == "bottom") {
+                ImGui::SetNextWindowPos(ImVec2(work_pos.x, work_pos.y + work_size.y - tab->dock_height),
+                                        ImGuiCond_FirstUseEver);
+                if (tab->dock_height > 0) {
+                    ImGui::SetNextWindowSize(ImVec2(work_size.x, tab->dock_height),
+                                             ImGuiCond_FirstUseEver);
+                }
+                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+                // 设置窗口停靠在底部
+                ImGui::SetNextWindowDockID(ImGui::DockBuilderSplitNode(dockSpaceId,
+                                                                       ImGuiDir_Down, 0.3f, nullptr, &dockSpaceId),
+                                           ImGuiCond_FirstUseEver);
+            } else if (tab->docking_pos == "center") {
+                ImGui::SetNextWindowPos(ImVec2(work_pos.x + work_size.x / 2 - tab->dock_width / 2,
+                                               work_pos.y + work_size.y / 2 - tab->dock_height / 2),
+                                        ImGuiCond_FirstUseEver);
+                ImGui::SetNextWindowDockID(dockSpaceId, ImGuiCond_FirstUseEver);
+            }
+
+            tab->dock_initialized = true;
+        }
+
+        if (ImGui::Begin(window_id.c_str(), &tab->open, window_flags)) {
             ImGui::PushItemWidth(-200);
             std::string url_input_id = "##url_" + std::to_string(tabId);
-            // URL 输入框
+
+            // URL 输入框 (保持不变)
             if (ImGui::InputText(url_input_id.c_str(), tab->url_buffer, sizeof(tab->url_buffer),
                                  ImGuiInputTextFlags_EnterReturnsTrue)) {
                 if (tab->client && tab->client->GetBrowser()) {
@@ -424,9 +502,17 @@ void ImguiSystem::update() {
             int newWidth = static_cast<int>(availSize.x);
             int newHeight = static_cast<int>(availSize.y);
 
-            if (newWidth > 0 && newHeight > 0 &&
+            // 如果不是固定窗口，允许调整大小
+            if (!tab->dock_fixed && newWidth > 0 && newHeight > 0 &&
                 (newWidth != tab->width || newHeight != tab->height)) {
                 UI::BrowserManager::instance().resize_tab(tabId, newWidth, newHeight);
+            }
+            // 如果是固定窗口，使用指定的dock大小或窗口大小
+            else if (tab->dock_fixed) {
+                if (tab->dock_width > 0 && tab->dock_height > 0) {
+                    newWidth = tab->dock_width;
+                    newHeight = tab->dock_height;
+                }
             }
 
             // 修改浏览器内容区域的鼠标事件处理

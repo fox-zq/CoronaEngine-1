@@ -119,8 +119,11 @@ bool PythonAPI::ensureInitialized() {
 
             nanobind::module_ entrance = nanobind::module_::import_("main");
             nanobind::object editor = nanobind::getattr(entrance, "editor");
-
-
+            nanobind::object start_attr = nanobind::getattr(entrance, "run");
+            nanobind::object call_attr = nanobind::getattr(editor, "deal_func_from_js");
+            pStartFunc = std::move(start_attr);
+            pJsCallFunc = std::move(call_attr);
+            pStartFunc();
             CFW_LOG_INFO("PythonAPI: Python interpreter initialized successfully");
         } catch (const nanobind::python_error& e) {
             log_python_error(e);

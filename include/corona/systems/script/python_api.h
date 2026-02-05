@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <Python.h>
 #include <corona/systems/script/python_hotfix.h>
@@ -21,6 +21,10 @@ struct PythonAPI {
     static void checkPythonScriptChange();
     void checkReleaseScriptChange();
     void sendMessage(const std::string& message) const;
+
+    
+    nanobind::object pStartFunc;   // callable 'start'
+    nanobind::object pJsCallFunc;  // callable 'js_call'
 
    private:
     static const std::string codePath;

@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/event/i_event_bus.h>
@@ -59,6 +59,9 @@ public:
 
 private:
     Script::Python::PythonAPI python_api_;
+
+    Kernel::EventId python_start_id_ = 0;
+    Kernel::EventId js_call_python_id_ = 0;
 };
 
 }  // namespace Corona::Systems

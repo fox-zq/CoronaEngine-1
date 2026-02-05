@@ -41,6 +41,8 @@ corona_add_system(imgui
         winmm
         Python::Python
         nanobind-static
+        ktm
+        corona::resource::manager
     INCLUDE_DIRS
         ${CMAKE_SOURCE_DIR}/build_deps/imgui-src
         ${volk_SOURCE_DIR}
