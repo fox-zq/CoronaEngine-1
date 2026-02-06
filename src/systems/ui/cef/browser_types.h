@@ -6,6 +6,7 @@
 
 #include <string>
 #include <vector>
+#include <mutex>
 
 namespace Corona::Systems::UI {
 
@@ -34,6 +35,7 @@ struct BrowserTab {
 
     char url_buffer[1024] = "";
     std::vector<uint8_t> pixel_buffer;
+    std::mutex mutex; // Protects pixel_buffer and buffer_dirty
 };
 
 } // namespace Corona::Systems::UI

@@ -1,14 +1,16 @@
 #include "browser_renderer.h"
+
+#include <SDL3/SDL.h>
+
+#include "../sdl/sdl_mouse_utils.h"
 #include "browser_manager.h"
 #include "browser_types.h"
 #include "cef_client.h"  // Added to get full definition of OffscreenCefClient
-#include "../sdl/sdl_mouse_utils.h"
-#include <SDL3/SDL.h>
 
 namespace Corona::Systems::UI {
 
 // 静态鼠标状态管理器
-static MouseUtils::MouseStateManager g_mouse_state;
+static MouseUtils::MouseStateManager mouse_state;
 
 void BrowserRenderer::setup_window_transform(BrowserTab* tab,
                                              ImGuiID dock_space_id,
@@ -57,15 +59,15 @@ void BrowserRenderer::setup_window_transform(BrowserTab* tab,
 }
 
 void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
-                                                   int tab_id,
-                                                   int& active_tab_id,
-                                                   int& url_input_active_tab,
-                                                   ImGuiIO* io) {
+                                                  int tab_id,
+                                                  int& active_tab_id,
+                                                  int& url_input_active_tab,
+                                                  ImGuiIO* io) {
     bool browser_hovered = ImGui::IsItemHovered();
     bool browser_active = (active_tab_id == tab_id);
 
     // 处理鼠标离开浏览器区域的情况
-    if (!browser_hovered && g_mouse_state.is_mouse_down() && browser_active) {
+    if (!browser_hovered && mouse_state.is_mouse_down() && browser_active) {
         if (tab->client && tab->client->GetBrowser()) {
             ImVec2 mouse_pos = ImGui::GetMousePos();
             ImVec2 item_pos = ImGui::GetItemRectMin();
@@ -75,11 +77,11 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
             if (mouse_event.x >= 0 && mouse_event.x < tab->width &&
                 mouse_event.y >= 0 && mouse_event.y < tab->height) {
                 tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(
-                    mouse_event, MBT_LEFT, true, g_mouse_state.get_click_count());
+                    mouse_event, MBT_LEFT, true, mouse_state.get_click_count());
             }
         }
-        g_mouse_state.set_mouse_down(false);
-        g_mouse_state.set_dragging(false);
+        mouse_state.set_mouse_down(false);
+        mouse_state.set_dragging(false);
     }
 
     // 处理鼠标点击
@@ -91,8 +93,8 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
         ImVec2 item_pos = ImGui::GetItemRectMin();
         Uint32 current_time = SDL_GetTicks();
 
-        int click_count = g_mouse_state.handle_mouse_click(current_pos, current_time);
-        g_mouse_state.set_mouse_down(true);
+        int click_count = mouse_state.handle_mouse_click(current_pos, current_time);
+        mouse_state.set_mouse_down(true);
 
         if (tab->client && tab->client->GetBrowser()) {
             tab->client->GetBrowser()->GetHost()->SetFocus(true);
@@ -105,23 +107,23 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
 
     // 处理鼠标抬起
     if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        if (g_mouse_state.is_mouse_down()) {
+        if (mouse_state.is_mouse_down()) {
             if (tab->client && tab->client->GetBrowser()) {
                 ImVec2 mouse_pos = ImGui::GetMousePos();
                 ImVec2 item_pos = ImGui::GetItemRectMin();
 
                 MouseUtils::send_mouse_click(
                     tab->client->GetBrowser(), mouse_pos, item_pos,
-                    MBT_LEFT, true, g_mouse_state.get_click_count());
+                    MBT_LEFT, true, mouse_state.get_click_count());
             }
 
-            g_mouse_state.set_mouse_down(false);
-            g_mouse_state.set_dragging(false);
+            mouse_state.set_mouse_down(false);
+            mouse_state.set_dragging(false);
         }
     }
 
     // 全局鼠标抬起事件处理
-    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && g_mouse_state.is_mouse_down() && browser_active) {
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && mouse_state.is_mouse_down() && browser_active) {
         if (tab->client && tab->client->GetBrowser()) {
             ImVec2 mouse_pos = ImGui::GetMousePos();
             ImVec2 item_pos = ImGui::GetItemRectMin();
@@ -131,11 +133,11 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
             if (mouse_event.x >= 0 && mouse_event.x < tab->width &&
                 mouse_event.y >= 0 && mouse_event.y < tab->height) {
                 tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(
-                    mouse_event, MBT_LEFT, true, g_mouse_state.get_click_count());
+                    mouse_event, MBT_LEFT, true, mouse_state.get_click_count());
             }
         }
-        g_mouse_state.set_mouse_down(false);
-        g_mouse_state.set_dragging(false);
+        mouse_state.set_mouse_down(false);
+        mouse_state.set_dragging(false);
     }
 
     // 处理鼠标移动和滚轮
@@ -147,12 +149,12 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
             MouseUtils::send_mouse_move(browser, mouse_pos, item_pos, false);
 
             // 处理鼠标拖动
-            if (g_mouse_state.is_mouse_down()) {
+            if (mouse_state.is_mouse_down()) {
                 ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
                 float drag_distance = drag_delta.x * drag_delta.x + drag_delta.y * drag_delta.y;
 
                 if (drag_distance > 4.0f) {
-                    g_mouse_state.set_dragging(true);
+                    mouse_state.set_dragging(true);
                 }
             }
 
@@ -227,9 +229,9 @@ void BrowserRenderer::render_single_tab(int tab_id,
 }
 
 std::vector<int> BrowserRenderer::render_browser_tabs(ImGuiID dock_space_id,
-                                                       int& active_tab_id,
-                                                       int& url_input_active_tab,
-                                                       ImGuiIO* io) {
+                                                      int& active_tab_id,
+                                                      int& url_input_active_tab,
+                                                      ImGuiIO* io) {
     std::vector<int> tabs_to_close;
     auto& tabs = BrowserManager::instance().get_tabs();
 

@@ -14,7 +14,8 @@ target_link_libraries(imgui_backends PUBLIC imgui SDL3::SDL3-static volk)
 # ImGui System 配置
 file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
-    vulkan_backend.cpp
+    vulkan/vulkan_backend.cpp
+    vulkan/browser_manager_vulkan.cpp
     imgui/ui_layout_manager.cpp
     cef/browser_manager.cpp
     cef/browser_renderer.cpp
@@ -49,6 +50,7 @@ corona_add_system(imgui
         ktm
         corona::resource::manager
     INCLUDE_DIRS
+        ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/build_deps/imgui-src
         ${volk_SOURCE_DIR}
         ${CEF_INCLUDE_DIR}

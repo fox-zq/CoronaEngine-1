@@ -39,6 +39,7 @@ class BrowserManager {
     BrowserManager() = default;
 
     VkDescriptorSet create_browser_texture(int width, int height);
+    void destroy_tab_texture(BrowserTab* tab);
 
     struct OwnedImage {
         VkImage image;

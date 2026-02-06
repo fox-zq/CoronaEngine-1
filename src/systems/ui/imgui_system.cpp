@@ -75,7 +75,6 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     }
 
     running_ = true;
-    pending_key_events_.clear();
     active_tab_id_ = -1;
 
     return true;
@@ -355,8 +354,6 @@ void ImguiSystem::shutdown() {
     for (int id : ids) {
         UI::BrowserManager::instance().remove_tab(id);
     }
-
-    pending_key_events_.clear();
 }
 
 }  // namespace Corona::Systems
