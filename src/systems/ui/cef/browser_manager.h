@@ -34,6 +34,7 @@ class BrowserManager {
     std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs();
 
     void update();
+    void close_all_tabs();
 
    private:
     BrowserManager() = default;

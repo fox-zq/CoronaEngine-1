@@ -5,9 +5,10 @@
 #include "cef/browser_manager.h"
 #include "cef/browser_renderer.h"
 #include "cef/browser_input_handler.h"
+#include "cef/cef_client.h"
 #include "imgui/ui_layout_manager.h"
 #include "sdl/sdl_event_handler.h"
-#include "vulkan_backend.h"
+#include <corona/systems/ui/vulkan_backend.h>
 
 namespace Corona::Systems::UI {
 

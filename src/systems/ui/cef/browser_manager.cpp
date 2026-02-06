@@ -147,4 +147,16 @@ void BrowserManager::update() {
     }
 }
 
+void BrowserManager::close_all_tabs() {
+    std::vector<int> ids;
+    ids.reserve(tabs_.size());
+    for (const auto& [id, tab] : tabs_) {
+        ids.push_back(id);
+    }
+
+    for (int id : ids) {
+        remove_tab(id);
+    }
+}
+
 }  // namespace Corona::Systems::UI
