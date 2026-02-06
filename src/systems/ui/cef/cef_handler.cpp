@@ -1,7 +1,9 @@
 ﻿#include "cef_handler.h"
+
+#include <corona/events/script_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
 #include <corona/kernel/event/i_event_bus.h>
-#include <corona/events/script_system_events.h>
+
 #include <iostream>
 
 void BrowserSideJSHandler::initialize_python() {

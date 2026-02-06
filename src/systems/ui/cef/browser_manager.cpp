@@ -1,10 +1,13 @@
 ﻿#include "browser_manager.h"
-#include <filesystem>
-#include <iostream>
-#include <cstring>
-#include "cef_client.h"
+
 #include <corona/systems/ui/vulkan_backend.h>
 #include <imgui_impl_vulkan.h>
+
+#include <cstring>
+#include <filesystem>
+#include <iostream>
+
+#include "cef_client.h"
 
 namespace fs = std::filesystem;
 

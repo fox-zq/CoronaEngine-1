@@ -1,9 +1,9 @@
 ﻿#include <SDL3/SDL_vulkan.h>
-#include <corona/kernel/core/i_logger.h>
-#include <corona/kernel/event/i_event_bus.h>
 #include <corona/events/script_system_events.h>
-#include <corona/kernel/event/i_event_stream.h>
+#include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/core/kernel_context.h>
+#include <corona/kernel/event/i_event_bus.h>
+#include <corona/kernel/event/i_event_stream.h>
 #include <corona/systems/ui/imgui_system.h>
 #include <imgui_internal.h>
 #include <nanobind/nanobind.h>
@@ -13,10 +13,10 @@
 #include <iostream>
 #include <ranges>
 
-#include "browser/browser_types.h"
-#include "browser/cef_client.h"
-#include "browser/browser_manager.h"
-#include "browser/sdl_key_utils.h"
+#include "cef/browser_types.h"
+#include "cef/browser_manager.h"
+#include "cef/cef_client.h"
+#include "sdl/sdl_key_utils.h"
 
 CefMessageRouterConfig message_router_config;
 
@@ -688,7 +688,7 @@ void ImguiSystem::send_key_events_to_browser(int tab_id) {
             cef_key_event.type = pending_event.pressed ? KEYEVENT_RAWKEYDOWN : KEYEVENT_KEYUP;
 
             // 转换键码
-            cef_key_event.windows_key_code = Corona::Systems::UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
+            cef_key_event.windows_key_code = UI::KeyUtils::convert_sdl_key_code_to_windows(pending_event.key_code);
             cef_key_event.native_key_code = pending_event.scan_code;
 
             // 设置修饰键
