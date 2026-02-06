@@ -6,13 +6,15 @@
 
 #include <iostream>
 
+namespace Corona::Systems::UI {
+
 void BrowserSideJSHandler::initialize_python() {
     if (!Py_IsInitialized()) {
         Py_Initialize();
         PyEval_SaveThread();
     }
 
-    PyGILState_STATE gstate = PyGILState_Ensure();
+    PyGILState_STATE state = PyGILState_Ensure();
     PyObject* pModule = nullptr;  // 在开头声明，确保作用域
 
     try {
@@ -33,7 +35,7 @@ void BrowserSideJSHandler::initialize_python() {
         if (!pModule) {
             // 获取错误信息
             PyErr_Print();
-            PyGILState_Release(gstate);
+            PyGILState_Release(state);
             throw std::runtime_error("Failed to import Python module 'main'");
         }
 
@@ -42,7 +44,7 @@ void BrowserSideJSHandler::initialize_python() {
         if (!pClass) {
             Py_DECREF(pModule);
             PyErr_Print();
-            PyGILState_Release(gstate);
+            PyGILState_Release(state);
             throw std::runtime_error("Failed to get 'editor' attribute from module");
         }
 
@@ -60,11 +62,11 @@ void BrowserSideJSHandler::initialize_python() {
             Py_DECREF(pModule);
         }
         PyErr_Print();
-        PyGILState_Release(gstate);
+        PyGILState_Release(state);
         throw;
     }
 
-    PyGILState_Release(gstate);
+    PyGILState_Release(state);
 }
 
 bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
@@ -129,9 +131,9 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
 
     PyGILState_Release(gstate);
 
-    //if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
-    //    event_bus->publish<Events::ImguiCallPythonEvent>({req});
-    //}
+    // if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+    //     event_bus->publish<Events::ImguiCallPythonEvent>({req});
+    // }
 
     return true;
 }
@@ -150,8 +152,15 @@ void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElement
     if (tab && type == PET_VIEW) {
         // 复制像素数据
         size_t bufferSize = width * height * 4;
-        tab->pixel_buffer.resize(bufferSize);
-        memcpy(tab->pixel_buffer.data(), buffer, bufferSize);
-        tab->buffer_dirty = true;
+        if (tab->pixel_buffer.size() != bufferSize) {
+            tab->pixel_buffer.resize(bufferSize);
+        }
+
+        if (buffer) {
+            memcpy(tab->pixel_buffer.data(), buffer, bufferSize);
+            tab->buffer_dirty = true;
+        }
     }
 }
+
+}  // namespace Corona::Systems::UI

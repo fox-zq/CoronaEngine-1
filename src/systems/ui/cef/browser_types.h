@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+namespace Corona::Systems::UI {
+
 class OffscreenCefClient;
 
 struct BrowserTab {
@@ -19,7 +21,7 @@ struct BrowserTab {
     int width = 800;
     int height = 600;
     // 添加 docking 相关属性
-    std::string docking_pos = "";   // docking位置，如"left", "right", "top", "bottom", "center"
+    std::string docking_pos;   // docking位置，如"left", "right", "top", "bottom", "center"
     int dock_width = 0;             // 如果指定宽度，0表示自动
     int dock_height = 0;            // 如果指定高度，0表示自动
     bool dock_fixed = false;        // 是否固定位置，不能移动
@@ -33,3 +35,5 @@ struct BrowserTab {
     char url_buffer[1024] = "";
     std::vector<uint8_t> pixel_buffer;
 };
+
+} // namespace Corona::Systems::UI

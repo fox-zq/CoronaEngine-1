@@ -3,10 +3,13 @@
 
 #include "cef_handler.h"
 
+namespace Corona::Systems::UI {
 struct BrowserTab;
-
 class OffscreenRenderHandler;
 class BrowserSideJSHandler;
+}
+
+namespace Corona::Systems::UI {
 
 // 离屏渲染的 CefClient
 class OffscreenCefClient : public CefClient,
@@ -20,7 +23,7 @@ class OffscreenCefClient : public CefClient,
     void SetTab(BrowserTab* tab);
 
     CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
-    CefRefPtr<CefRenderHandler> GetRenderHandler() override { return render_handler_; }
+    CefRefPtr<CefRenderHandler> GetRenderHandler() override; // Implementation moved to .cpp or fixed
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
@@ -54,7 +57,9 @@ class OffscreenCefClient : public CefClient,
                                    int error_code,
                                    const CefString& error_string) override {
         CEF_REQUIRE_UI_THREAD();
-        browser_side_router_->OnRenderProcessTerminated(browser);
+        // Check browser_side_router_ before using it
+        if (browser_side_router_)
+            browser_side_router_->OnRenderProcessTerminated(browser);
     }
 
     virtual bool OnProcessMessageReceived(
@@ -70,7 +75,9 @@ class OffscreenCefClient : public CefClient,
             return true;
         }
         // 处理Renderer进程发来的消息
-        return browser_side_router_->OnProcessMessageReceived(browser, frame, source_process, message);
+        if (browser_side_router_)
+            return browser_side_router_->OnProcessMessageReceived(browser, frame, source_process, message);
+        return false;
     }
 
    private:
@@ -99,3 +106,6 @@ class SimpleApp : public CefApp, public CefRenderProcessHandler {
 
     IMPLEMENT_REFCOUNTING(SimpleApp);
 };
+
+} // namespace Corona::Systems::UI
+

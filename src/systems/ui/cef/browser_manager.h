@@ -18,7 +18,6 @@ class BrowserManager {
    public:
     static BrowserManager& instance();
 
-    // 修改函数签名，添加docking参数
     int create_tab(const std::string& url, const std::string& path = "",
                    const std::string& docking_pos = "",
                    int dock_width = 0, int dock_height = 0,
@@ -33,6 +32,8 @@ class BrowserManager {
 
     const std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs() const;
     std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs();
+
+    void update();
 
    private:
     BrowserManager() = default;
@@ -49,6 +50,7 @@ class BrowserManager {
     };
 
     std::unordered_map<int, std::unique_ptr<BrowserTab>> tabs_;
+    std::vector<int> tabs_to_close_;
     std::map<VkDescriptorSet, OwnedImage> owned_images_;
     int tab_counter_ = 0;
     VulkanBackend* vulkan_backend_ = nullptr;

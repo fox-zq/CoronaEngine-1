@@ -6,6 +6,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <ranges>
 
 #include "cef_client.h"
 
@@ -95,7 +96,7 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     browser_settings.local_storage = STATE_ENABLED;
     browser_settings.webgl = STATE_ENABLED;
 
-    CefBrowserHost::CreateBrowser(window_info, tab->client, full_url, browser_settings, nullptr, nullptr);
+    CefBrowserHost::CreateBrowser(window_info, CefRefPtr<CefClient>(tab->client), full_url, browser_settings, nullptr, nullptr);
 
     tabs_[id] = std::move(tab);
     return id;
@@ -435,6 +436,21 @@ const std::unordered_map<int, std::unique_ptr<BrowserTab>>& BrowserManager::get_
 
 std::unordered_map<int, std::unique_ptr<BrowserTab>>& BrowserManager::get_tabs() {
     return tabs_;
+}
+
+void BrowserManager::update() {
+    for (auto& [tab_id, tab] : tabs_) {
+        if (!tab->open) {
+            tabs_to_close_.push_back(tab_id);
+            continue;
+        }
+
+        update_texture(tab_id);
+
+        std::string window_id = tab->name + "##" + std::to_string(tab_id);
+
+
+    }
 }
 
 }

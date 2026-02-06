@@ -15,11 +15,15 @@ target_link_libraries(imgui_backends PUBLIC imgui SDL3::SDL3-static volk)
 file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
     vulkan_backend.cpp
+    ui_layout_manager.cpp
     cef/browser_manager.cpp
+    cef/browser_renderer.cpp
     cef/cef_client.cpp
     cef/cef_handler.cpp
     cef/cef_py_bind.cpp
     sdl/sdl_key_utils.cpp
+    sdl/sdl_mouse_utils.cpp
+    sdl/sdl_event_handler.cpp
 )
 
 

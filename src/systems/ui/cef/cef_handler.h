@@ -17,7 +17,10 @@
 
 #include "browser_types.h"
 
+namespace Corona::Systems::UI {
+
 extern CefMessageRouterConfig message_router_config;
+
 // 离屏渲染的 CefRenderHandler
 class OffscreenRenderHandler : public CefRenderHandler {
    public:
@@ -36,29 +39,29 @@ class BrowserSideJSHandler : public CefMessageRouterBrowserSide::Handler, public
     BrowserSideJSHandler() {
         initialize_python();
     };
-    ~BrowserSideJSHandler() {
-        PyGILState_STATE gstate = PyGILState_Ensure();
+    ~BrowserSideJSHandler() override {
+        PyGILState_STATE state = PyGILState_Ensure();
         Py_XDECREF(pFunc);
-        PyGILState_Release(gstate);
+        PyGILState_Release(state);
     };
 
     // 处理来自JS的请求
-    virtual bool OnQuery(CefRefPtr<CefBrowser> browser,
-                         CefRefPtr<CefFrame> frame,
-                         int64_t query_id,
-                         const CefString& request,
-                         bool persistent,
-                         CefRefPtr<Callback> callback) override;
+    bool OnQuery(CefRefPtr<CefBrowser> browser,
+                 CefRefPtr<CefFrame> frame,
+                 int64_t query_id,
+                 const CefString& request,
+                 bool persistent,
+                 CefRefPtr<Callback> callback) override;
 
-    virtual void OnQueryCanceled(CefRefPtr<CefBrowser> browser,
-                                 CefRefPtr<CefFrame> frame,
-                                 int64_t query_id) override {
+    void OnQueryCanceled(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefFrame> frame,
+                         int64_t query_id) override {
         CEF_REQUIRE_UI_THREAD();
         std::cout << "[Browser] Query canceled: " << query_id << std::endl;
     }
 
    private:
-    PyObject* pFunc;
+    PyObject* pFunc{};
     void initialize_python();
 
     IMPLEMENT_REFCOUNTING(BrowserSideJSHandler);
@@ -112,3 +115,5 @@ class SimpleRenderProcessHandler : public CefRenderProcessHandler {
     CefRefPtr<CefMessageRouterRendererSide> renderer_side_router_;
     IMPLEMENT_REFCOUNTING(SimpleRenderProcessHandler);
 };
+
+}  // namespace Corona::Systems::UI
