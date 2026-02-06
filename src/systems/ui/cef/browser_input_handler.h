@@ -7,9 +7,27 @@
 #include <memory>
 #include <include/cef_browser.h>
 
-#include "pending_key_event.h"
-
 namespace Corona::Systems::UI {
+
+struct PendingKeyEvent {
+    enum EventType {
+        kMKeyEvent,
+        kTextEvent,
+        kImeComposition
+    };
+
+    EventType type;
+    int key_code = 0;
+    int scan_code = 0;
+    int modifiers = 0;
+    bool pressed = false;
+    std::string text;
+    int ime_start = 0;
+    int ime_length = 0;
+    bool is_modifier_combo = false;
+
+    explicit PendingKeyEvent(EventType t) : type(t) {}
+};
 
 class BrowserInputHandler {
 public:
