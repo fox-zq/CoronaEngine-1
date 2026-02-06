@@ -125,12 +125,6 @@ class ImguiSystem : public Kernel::SystemBase {
     // 连击判定的常量
     const Uint32 kDoubleClickTime = 500;  // 500毫秒内视为连击
     const float kDoubleClickDist = 5.0f;  // 点击距离偏移在5像素内视为连击
-
-    // 输入处理函数
-    void process_sdl_key_event(const SDL_Event& event);
-    void process_sdl_text_event(const SDL_Event& event);
-    void process_sdl_ime_event(const SDL_Event& event);
-    void send_key_events_to_browser(int tab_id);
 };
 
 }  // namespace Corona::Systems
