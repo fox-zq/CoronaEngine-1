@@ -1,6 +1,7 @@
 #include "sdl_event_handler.h"
-#include <imgui_impl_sdl3.h>
+
 #include <corona/systems/ui/imgui_system.h>
+#include <imgui_impl_sdl3.h>
 
 namespace Corona::Systems::UI {
 
@@ -36,7 +37,6 @@ EventProcessResult SDLEventHandler::process_events(
     KeyEventCallback on_key_event,
     KeyEventCallback on_text_event,
     KeyEventCallback on_ime_event) {
-
     EventProcessResult result;
     result.url_input_active_tab = current_url_input_active_tab;
 
