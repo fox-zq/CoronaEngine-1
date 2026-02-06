@@ -18,6 +18,7 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     imgui/ui_layout_manager.cpp
     cef/browser_manager.cpp
     cef/browser_renderer.cpp
+    cef/browser_input_handler.cpp
     cef/cef_client.cpp
     cef/cef_handler.cpp
     cef/cef_py_bind.cpp
