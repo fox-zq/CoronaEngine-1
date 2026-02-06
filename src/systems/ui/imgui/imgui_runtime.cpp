@@ -6,7 +6,7 @@
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
-#include "../cef/browser_manager.h"
+#include "cef/browser_manager.h"
 
 namespace Corona::Systems::UI {
 

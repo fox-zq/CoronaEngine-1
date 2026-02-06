@@ -1,11 +1,11 @@
-#include "browser_renderer.h"
+#include "cef/browser_renderer.h"
 
 #include <SDL3/SDL.h>
 
-#include "../sdl/sdl_mouse_utils.h"
-#include "browser_manager.h"
-#include "browser_types.h"
-#include "cef_client.h"  // Added to get full definition of OffscreenCefClient
+#include "sdl/sdl_mouse_utils.h"
+#include "cef/browser_manager.h"
+#include "cef/browser_types.h"
+#include "cef/cef_client.h"  // Added to get full definition of OffscreenCefClient
 
 namespace Corona::Systems::UI {
 

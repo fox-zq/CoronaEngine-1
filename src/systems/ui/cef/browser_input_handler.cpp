@@ -1,6 +1,8 @@
 #include "browser_input_handler.h"
+
 #include <SDL3/SDL.h>
-#include "../sdl/sdl_key_utils.h"
+
+#include "sdl/sdl_key_utils.h"
 
 namespace Corona::Systems::UI {
 
