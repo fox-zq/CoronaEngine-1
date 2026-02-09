@@ -1,7 +1,7 @@
 ﻿#include "cef_client.h"
 
 #include <iostream>
-
+#include <corona/kernel/core/i_logger.h>
 #include "browser_types.h"
 #include "cef_handler.h"
 
@@ -124,14 +124,17 @@ bool OffscreenCefClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
     }
 
     // 输出到控制台
-    std::cout << "[Browser Console][" << levelStr << "] ";
-
-    // 如果有源文件和行号，显示它们
     if (!source.empty()) {
-        std::cout << source.ToString() << ":" << line << " - ";
+        VUE_LOG_INFO("[{}] {}:{} - {}",
+                     levelStr,
+                     source.ToString().c_str(),
+                     line,
+                     message.ToString().c_str());
+    } else {
+        VUE_LOG_INFO("[{}] {}",
+                     levelStr,
+                     message.ToString().c_str());
     }
-
-    std::cout << message.ToString() << std::endl;
 
     return true;  // 消息已处理
 }
@@ -141,7 +144,6 @@ bool OffscreenCefClient::OnConsoleMessage(CefRefPtr<CefBrowser> browser,
 // ----------------------------------------------------------------------------
 
 SimpleApp::SimpleApp() {
-    std::cout << "SimpleApp constructor called" << std::endl;
     render_process_handler_ = new SimpleRenderProcessHandler();
 
     CefMessageRouterConfig config;

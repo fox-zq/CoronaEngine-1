@@ -27,8 +27,11 @@ PythonAPI::~PythonAPI() {
     if (Py_IsInitialized()) {
         {
             nanobind::gil_scoped_acquire guard;
-            pModule.reset();
-            pFunc.reset();
+            //pModule.reset();
+            //pFunc.reset();
+            //messageFunc.reset();
+            pStartFunc.reset();
+            pJsCallFunc.reset();
             messageFunc.reset();
         }
         Py_FinalizeEx();
@@ -99,36 +102,41 @@ bool PythonAPI::ensureInitialized() {
     {
         nanobind::gil_scoped_acquire gil;
         try {
-            nanobind::module_ main_mod = nanobind::module_::import_("cpp_client");
+            //nanobind::module_ main_mod = nanobind::module_::import_("cpp_client");
 
-            nanobind::object init_func = nanobind::getattr(main_mod, "initialize");
-            init_func();
+            //nanobind::object init_func = nanobind::getattr(main_mod, "initialize");
+            //init_func();
 
-            nanobind::object run_attr = nanobind::getattr(main_mod, "run");
-            nanobind::object putq_attr = nanobind::getattr(main_mod, "put_queue");
+            //nanobind::object run_attr = nanobind::getattr(main_mod, "run");
+            //nanobind::object putq_attr = nanobind::getattr(main_mod, "put_queue");
 
-            if (!nanobind::callable::check_(run_attr)) {
-                CFW_LOG_ERROR("PythonAPI: 'run' attribute is not callable");
-                return false;
-            }
+            //if (!nanobind::callable::check_(run_attr)) {
+            //    CFW_LOG_ERROR("PythonAPI: 'run' attribute is not callable");
+            //    return false;
+            //}
 
-            pModule = std::move(main_mod);
-            pFunc = std::move(run_attr);
-            messageFunc = std::move(putq_attr);
+            //pModule = std::move(main_mod);
+            //pFunc = std::move(run_attr);
+            //messageFunc = std::move(putq_attr);
             
 
             nanobind::module_ entrance = nanobind::module_::import_("main");
             nanobind::object editor = nanobind::getattr(entrance, "editor");
             nanobind::object start_attr = nanobind::getattr(entrance, "run");
             nanobind::object call_attr = nanobind::getattr(editor, "deal_func_from_js");
+            nanobind::object log_attr = nanobind::getattr(editor, "show_log_on_js");
             pStartFunc = std::move(start_attr);
             pJsCallFunc = std::move(call_attr);
+            messageFunc = std::move(log_attr);
             pStartFunc();
             CFW_LOG_INFO("PythonAPI: Python interpreter initialized successfully");
         } catch (const nanobind::python_error& e) {
             log_python_error(e);
-            pModule.reset();
-            pFunc.reset();
+            //pModule.reset();
+            //pFunc.reset();
+            //messageFunc.reset();
+            pStartFunc.reset();
+            pJsCallFunc.reset();
             messageFunc.reset();
             return false;
         }
@@ -161,7 +169,14 @@ bool PythonAPI::performHotReload() {
         nanobind::module_ mod = nanobind::module_::import_("main");
         (void)reload_func(mod);
 
-        nanobind::object newFunc = nanobind::getattr(mod, "run");
+        nanobind::object editor = nanobind::getattr(mod, "editor");
+        nanobind::object start_attr = nanobind::getattr(mod, "run");
+        nanobind::object call_attr = nanobind::getattr(editor, "deal_func_from_js");
+        nanobind::object log_attr = nanobind::getattr(editor, "show_log_on_js");
+        pStartFunc = std::move(start_attr);
+        pJsCallFunc = std::move(call_attr);
+        messageFunc = std::move(log_attr);
+      /*  nanobind::object newFunc = nanobind::getattr(mod, "run");
         if (!nanobind::callable::check_(newFunc)) {
             CFW_LOG_WARNING("PythonAPI: new run attribute is not callable");
             return false;
@@ -170,7 +185,7 @@ bool PythonAPI::performHotReload() {
 
         pModule = std::move(mod);
         pFunc = std::move(newFunc);
-        messageFunc = std::move(newMsg);
+        messageFunc = std::move(newMsg);*/
     } catch (const nanobind::python_error& e) {
         CFW_LOG_ERROR("PythonAPI: reload(main) failed");
         log_python_error(e);
@@ -184,29 +199,30 @@ bool PythonAPI::performHotReload() {
 }
 
 void PythonAPI::invokeEntry(bool isReload) const {
-    if (!pFunc.is_valid()) {
-        return;
-    }
-    nanobind::gil_scoped_acquire gil;
-
-    try {
-        (void)pFunc(isReload ? 1 : 0);
-    } catch (const nanobind::python_error& e) {
-        log_python_error(e);
-    }
-}
-
-void PythonAPI::sendMessage(const std::string& message) const {
     if (!messageFunc.is_valid()) {
         return;
     }
     nanobind::gil_scoped_acquire gil;
 
     try {
-        (void)messageFunc(message.c_str());
+        //(void)pFunc(isReload ? 1 : 0);
+        messageFunc();
     } catch (const nanobind::python_error& e) {
         log_python_error(e);
     }
+}
+
+void PythonAPI::sendMessage(const std::string& message) const {
+    //if (!messageFunc.is_valid()) {
+    //    return;
+    //}
+    //nanobind::gil_scoped_acquire gil;
+
+    //try {
+    //    (void)messageFunc(message.c_str());
+    //} catch (const nanobind::python_error& e) {
+    //    log_python_error(e);
+    //}
 }
 
 void PythonAPI::runPythonScript() {

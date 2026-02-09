@@ -1,4 +1,4 @@
-#include <corona/kernel/core/callback_sink.h>
+﻿#include <corona/kernel/core/callback_sink.h>
 #include <corona/kernel/core/i_logger.h>
 #include <corona/systems/script/corona_engine_api.h>
 #include <corona/systems/script/engine_scripts.h>
@@ -237,6 +237,24 @@ void BindAll(nanobind::module_& m) {
               return Corona::Kernel::CoronaLogger::drain_logs();
           },
           "Drain all pending log entries from the engine log queue");
+
+    
+    m.def("send_log", [](const std::string& level, const std::string& message) {
+              if (level == "TRACE") {
+                  PY_LOG_TRACE("{}", message.c_str());
+              } else if (level == "DEBUG") {
+                  PY_LOG_DEBUG("{}", message.c_str());
+              } else if (level == "INFO") {
+                  PY_LOG_INFO("{}", message.c_str());
+              } else if (level == "WARNING") {
+                  PY_LOG_WARNING("{}", message.c_str());
+              } else if (level == "ERROR") {
+                  PY_LOG_ERROR("{}", message.c_str());
+              } else if (level == "CRITICAL") {
+                  PY_LOG_CRITICAL("{}", message.c_str());
+              } else {
+                  PY_LOG_INFO("{}", message.c_str());  // Default to INFO
+              } }, nb::arg("level"), nb::arg("message"), "Send a log message to the engine logger with specified level");
 }
 
 }  // namespace EngineScripts

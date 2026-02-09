@@ -77,8 +77,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<Callback> callback) {
     CEF_REQUIRE_UI_THREAD();
     std::string req = request.ToString();
-    std::cout << "[Browser] Received query: " << req << std::endl;
-
+    VUE_LOG_INFO("Received query: {}", req.c_str());
     if (!Py_IsInitialized()) {
         Py_Initialize();
         PyEval_SaveThread();  // release GIL
@@ -89,10 +88,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
     try {
         // 确保函数对象存在
         if (!pFunc) {
-            std::cout << "=== Loading Python module ===" << std::endl;
-
             initialize_python();
-            std::cout << "Module imported successfully!" << std::endl;
         }
 
         // 创建参数（原始 JSON 字符串）
@@ -104,7 +100,7 @@ bool BrowserSideJSHandler::OnQuery(CefRefPtr<CefBrowser> browser,
 
         if (!object) {
             PyErr_Print();
-            std::cerr << "Python function call failed" << std::endl;
+            VUE_LOG_ERROR("Python function call failed for request");
             callback->Failure(0, "Python function call failed");
         } else {
             // 直接返回字符串结果
