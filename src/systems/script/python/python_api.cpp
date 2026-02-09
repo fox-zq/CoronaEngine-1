@@ -24,20 +24,42 @@ PythonAPI::PythonAPI() {
 }
 
 PythonAPI::~PythonAPI() {
-    if (Py_IsInitialized()) {
-        {
-            nanobind::gil_scoped_acquire guard;
-            //pModule.reset();
-            //pFunc.reset();
-            //messageFunc.reset();
-            pStartFunc.reset();
-            pJsCallFunc.reset();
-            messageFunc.reset();
+    if (!shutting_down_.load()) {
+        if (Py_IsInitialized()) {
+            shutdown();
+        } else {
+            (void)pStartFunc.release();
+            (void)pJsCallFunc.release();
+            (void)messageFunc.release();
+            (void)pModule.release();
+            (void)pFunc.release();
         }
-        Py_FinalizeEx();
-        CFW_LOG_DEBUG("PythonAPI: Python interpreter finalized");
     }
+}
+
+void PythonAPI::shutdown() {
+    shutting_down_.store(true);
+
+    if (!Py_IsInitialized()) {
+        CFW_LOG_INFO("PythonAPI: Python not initialized, skipping shutdown");
+        return;
+    }
+
+    CFW_LOG_INFO("PythonAPI: Shutting down Python interpreter...");
+
+    CFW_LOG_INFO("PythonAPI: Releasing ownership of Python objects...");
+    (void)pStartFunc.release();
+    (void)pJsCallFunc.release();
+    (void)messageFunc.release();
+    (void)pModule.release();
+    (void)pFunc.release();
+    CFW_LOG_INFO("PythonAPI: Python object ownership released");
+
+    CFW_LOG_INFO("PythonAPI: Skipping Py_FinalizeEx (process will clean up on exit)");
+
     PyConfig_Clear(&config);
+
+    CFW_LOG_INFO("PythonAPI: Python shutdown complete");
 }
 
 int64_t PythonAPI::nowMsec() {
@@ -62,7 +84,6 @@ bool PythonAPI::ensureInitialized() {
 
     CFW_LOG_INFO("PythonAPI: Initializing Python interpreter...");
 
-    // 注册 nanobind 导出的 CoronaEngine 模块
     PyImport_AppendInittab("CoronaEngine", &PyInit_CoronaEngine);
 
     PyConfig_InitPythonConfig(&config);
@@ -199,6 +220,11 @@ bool PythonAPI::performHotReload() {
 }
 
 void PythonAPI::invokeEntry(bool isReload) const {
+    // 如果正在关闭，不执行
+    if (shutting_down_.load()) {
+        return;
+    }
+
     if (!messageFunc.is_valid()) {
         return;
     }
@@ -226,6 +252,11 @@ void PythonAPI::sendMessage(const std::string& message) const {
 }
 
 void PythonAPI::runPythonScript() {
+    // 如果正在关闭，不执行任何 Python 代码
+    if (shutting_down_.load()) {
+        return;
+    }
+
     if (!ensureInitialized()) {
         CFW_LOG_ERROR("PythonAPI: Python initialization failed");
         return;
@@ -238,6 +269,11 @@ void PythonAPI::runPythonScript() {
         if (!reloaded && !hotfixManger.packageSet.empty()) {
             hasHotReload = false;
         }
+    }
+
+    // 再次检查是否正在关闭
+    if (shutting_down_.load()) {
+        return;
     }
 
     invokeEntry(reloaded);

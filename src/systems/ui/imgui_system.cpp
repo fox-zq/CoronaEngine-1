@@ -1,6 +1,9 @@
 ﻿#include <corona/kernel/core/i_logger.h>
 #include <corona/systems/ui/imgui_system.h>
 
+#include <chrono>
+#include <thread>
+
 #include "cef/browser_manager.h"
 #include "cef/cef_runtime.h"
 #include "imgui/imgui_runtime.h"
@@ -11,34 +14,42 @@ namespace Corona::Systems {
 bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ImguiSystem: Initializing...");
 
+    // 1. 初始化 CEF (必须在主线程)
     if (!UI::initialize_cef()) {
         CFW_LOG_ERROR("CEF initialization failed.");
         return false;
     }
 
+    // 2. 初始化 SDL 和 ImGui (必须在主线程)
+    CFW_LOG_NOTICE("ImguiSystem: Initializing SDL and ImGui in main thread...");
+    if (!UI::initialize_sdl_imgui(window_, io_, vulkan_backend_)) {
+        CFW_LOG_ERROR("SDL/ImGui initialization failed.");
+        UI::shutdown_cef();
+        return false;
+    }
+
+    sdl_initialized_ = true;
     running_ = true;
     active_tab_id_ = -1;
 
+    CFW_LOG_NOTICE("ImguiSystem: Initialized successfully (main thread mode)");
     return true;
 }
 
-void ImguiSystem::on_thread_started() {
-    CFW_LOG_NOTICE("ImguiSystem: Thread started.");
-
-    if (!UI::initialize_sdl_imgui(window_, io_, vulkan_backend_)) {
-        UI::shutdown_cef();
-        running_ = false;
-    }
+void ImguiSystem::start() {
+    // 覆盖基类的 start() - 不启动独立线程
+    // ImguiSystem 运行在主线程，由 Engine::tick() 调用 update()
+    CFW_LOG_INFO("ImguiSystem: Running in main thread mode (no separate thread)");
 }
 
-void ImguiSystem::on_thread_stopped() {
-    CFW_LOG_NOTICE("ImguiSystem: Thread stopped.");
-    UI::shutdown_sdl_imgui(window_, io_, vulkan_backend_);
-    UI::shutdown_cef();
+void ImguiSystem::stop() {
+    // 覆盖基类的 stop() - 不需要停止线程
+    CFW_LOG_INFO("ImguiSystem: Stop called (main thread mode)");
+    running_ = false;
 }
 
 void ImguiSystem::update() {
-    if (!running_) {
+    if (!running_ || !sdl_initialized_) {
         return;
     }
 
@@ -58,7 +69,26 @@ void ImguiSystem::shutdown() {
     CFW_LOG_NOTICE("ImGuiSystem: Shutting down...");
     running_ = false;
 
+    // 关闭所有浏览器标签页
+    CFW_LOG_INFO("ImGuiSystem: Closing all browser tabs...");
     UI::BrowserManager::instance().close_all_tabs();
+
+    // 给 CEF 消息循环一些时间来处理浏览器关闭事件
+    // 在 multi_threaded_message_loop 模式下，CEF 在后台线程处理消息
+    CFW_LOG_INFO("ImGuiSystem: Waiting for CEF to process close events...");
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    // 清理 SDL 和 ImGui (必须在主线程)
+    if (sdl_initialized_) {
+        CFW_LOG_INFO("ImGuiSystem: Shutting down SDL and ImGui...");
+        UI::shutdown_sdl_imgui(window_, io_, vulkan_backend_);
+        sdl_initialized_ = false;
+    }
+
+    // 清理 CEF
+    CFW_LOG_INFO("ImGuiSystem: Shutting down CEF...");
+    UI::shutdown_cef();
+    CFW_LOG_INFO("ImGuiSystem: Shutdown complete");
 }
 
 }  // namespace Corona::Systems

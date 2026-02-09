@@ -3,11 +3,11 @@
 #include <corona/systems/script/python_api.h>
 
 #include <csignal>
-#include <thread>
 
 #ifdef _WIN32
 #include <windows.h>
 #endif
+
 
 // 全局引擎实例指针，用于信号处理
 static Corona::Engine* g_engine = nullptr;
@@ -65,6 +65,7 @@ void signal_handler(int signal) {
  * 4. 优雅关闭引擎
  */
 int main(int argc, char* argv[]) {
+
     CFW_LOG_NOTICE(
         "\n"
         "    +==================================================================+\n"
@@ -106,25 +107,18 @@ int main(int argc, char* argv[]) {
     CFW_LOG_INFO("[Main] Engine initialized successfully");
 
     // ========================================
-    // 2. 启动主循环（在独立线程）
+    // 2. 启动主循环（在主线程中运行）
     // ========================================
+    // 注意：SDL/ImGui 必须在创建窗口的同一线程中处理事件
+    // 因此 engine.run() 必须在主线程中运行
     CFW_LOG_INFO("[Main] Starting engine main loop...");
     CFW_LOG_INFO("[Main] Press Ctrl+C to exit");
 
-    // 在独立线程运行引擎主循环
-    std::thread engine_thread([&engine]() {
-        engine.run();
-    });
+    // 在主线程运行引擎主循环
+    engine.run();
 
     // ========================================
-    // 3. 等待用户输入或信号中断
-    // ========================================
-
-    // 等待引擎线程结束（用户按 Ctrl+C 或调用 request_exit()）
-    engine_thread.join();
-
-    // ========================================
-    // 4. 关闭引擎
+    // 3. 关闭引擎
     // ========================================
     CFW_LOG_INFO("[Main] Shutting down engine...");
 

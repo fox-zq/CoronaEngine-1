@@ -4,6 +4,7 @@
 #include <corona/systems/script/python_hotfix.h>
 #include <nanobind/nanobind.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <memory>
@@ -17,12 +18,23 @@ struct PythonAPI {
 
     ~PythonAPI();
 
+    /**
+     * @brief 主动关闭 Python 解释器
+     *
+     * 在 shutdown 中调用，避免在析构时阻塞
+     */
+    void shutdown();
+
     void runPythonScript();
     static void checkPythonScriptChange();
     void checkReleaseScriptChange();
     void sendMessage(const std::string& message) const;
 
-    
+    /**
+     * @brief 检查 Python 是否正在关闭
+     */
+    bool is_shutting_down() const { return shutting_down_.load(); }
+
     nanobind::object pStartFunc;   // callable 'start'
     nanobind::object pJsCallFunc;  // callable 'js_call'
 
@@ -34,6 +46,7 @@ struct PythonAPI {
 
     int64_t lastHotReloadTime = 0;  // ms
     bool hasHotReload = false;
+    std::atomic<bool> shutting_down_{false};  // 标记是否正在关闭
 
     nanobind::object pModule;      // module 'main'
     nanobind::object pFunc;        // callable 'run'

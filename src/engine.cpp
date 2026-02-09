@@ -22,6 +22,9 @@
 
 namespace Corona {
 
+// 保存 ImguiSystem 指针，用于主循环中直接调用
+static Systems::ImguiSystem* g_imgui_system_ = nullptr;
+
 // ============================================================================
 // 构造与析构
 // ============================================================================
@@ -124,8 +127,13 @@ void Engine::run() {
         last_time = frame_start_time;
 
         // 执行一帧
-
         tick();
+
+        // 检查 UI 系统是否请求退出（用户关闭窗口）
+        if (g_imgui_system_ && !g_imgui_system_->is_ui_running()) {
+            CFW_LOG_INFO("UI window closed, requesting engine exit...");
+            request_exit();
+        }
 
         // 帧号递增
         frame_number_++;
@@ -253,8 +261,11 @@ bool Engine::register_systems() {
     sys_mgr->register_system(std::make_shared<Systems::ScriptSystem>());
     CFW_LOG_INFO("  - ScriptSystem registered (priority 60)");
 
-    sys_mgr->register_system(std::make_shared<Systems::ImguiSystem>());
-    CFW_LOG_INFO("  - ImguiSystem registered (priority 50)");
+    // ImguiSystem - 运行在主线程
+    auto imgui_system = std::make_shared<Systems::ImguiSystem>();
+    g_imgui_system_ = imgui_system.get();  // 保存指针用于主循环
+    sys_mgr->register_system(imgui_system);
+    CFW_LOG_INFO("  - ImguiSystem registered (priority 40, main thread mode)");
 
     CFW_LOG_NOTICE("All core systems registered successfully");
 
@@ -262,13 +273,18 @@ bool Engine::register_systems() {
 }
 
 void Engine::tick() {
-    // 4. 更新系统上下文的帧信息
+    // 在主线程中更新 ImguiSystem
+    // SDL/ImGui 必须在主线程中运行
+    if (g_imgui_system_) {
+        g_imgui_system_->update();
+    }
+
     // 系统通过 SystemBase 的 delta_time() 和 frame_number() 访问帧信息
 
-    // 5. 同步所有系统（可选）
-    // 系统在各自的线程中运行，主循环可以在这里进行跨系统的同步
+    // 同步所有系统（可选）
+    // 其他系统在各自的线程中运行，主循环可以在这里进行跨系统的同步
 
-    // 6. 收集性能统计
+    // 收集性能统计
 }
 
 }  // namespace Corona

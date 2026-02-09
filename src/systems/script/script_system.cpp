@@ -15,6 +15,10 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
     if (event_bus) {
         python_start_id_ = event_bus->subscribe<Events::ImguiToPythonEvent>(
             [this](const Events::ImguiToPythonEvent& event) {
+                // 检查是否正在关闭
+                if (python_api_.is_shutting_down()) {
+                    return;
+                }
                 CFW_LOG_INFO("ScriptSystem: Received ImguiToPythonEvent start");
                 nanobind::gil_scoped_acquire gil;
                 if (!python_api_.pStartFunc.is_valid()) {
@@ -25,6 +29,10 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
 
         js_call_python_id_ = event_bus->subscribe<Events::ImguiCallPythonEvent>(
             [this](const Events::ImguiCallPythonEvent& event) {
+                // 检查是否正在关闭
+                if (python_api_.is_shutting_down()) {
+                    return;
+                }
                 CFW_LOG_INFO("ScriptSystem: Received ImguiCallPythonEvent js_call");
                 nanobind::gil_scoped_acquire gil;
                 if (!python_api_.pJsCallFunc.is_valid()) {
@@ -53,7 +61,7 @@ void ScriptSystem::update() {
 void ScriptSystem::shutdown() {
     CFW_LOG_NOTICE("ScriptSystem: Shutting down...");
 
-        // 取消 EventBus 订阅
+    // 取消 EventBus 订阅
     if (auto* event_bus = context()->event_bus()) {
         if (python_start_id_ != 0) {
             event_bus->unsubscribe(python_start_id_);
@@ -64,6 +72,8 @@ void ScriptSystem::shutdown() {
         CFW_LOG_DEBUG("ScriptSystem: Unsubscribed from events");
     }
 
+    // 主动关闭 Python 解释器，避免在析构时阻塞
+    python_api_.shutdown();
 }
 
 }  // namespace Corona::Systems

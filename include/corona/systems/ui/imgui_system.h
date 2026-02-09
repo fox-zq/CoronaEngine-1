@@ -21,7 +21,7 @@ class VulkanBackend;
  * @brief UI系统
  *
  * 负责启动和管理 ImGui 界面。
- * 运行在独立线程。
+ * 运行在主线程（不使用独立线程），因为 SDL/ImGui 需要在主线程中运行。
  */
 class ImguiSystem : public Kernel::SystemBase {
    public:
@@ -29,8 +29,9 @@ class ImguiSystem : public Kernel::SystemBase {
         : event_{},
           show_demo_window_(false),
           running_(false),
-          window_(nullptr) {
-        set_target_fps(60);  // 几何系统运行在 60 FPS
+          window_(nullptr),
+          sdl_initialized_(false) {
+        set_target_fps(60);
     }
 
     ~ImguiSystem() override = default;
@@ -44,7 +45,7 @@ class ImguiSystem : public Kernel::SystemBase {
     }
 
     int get_priority() const override {
-        return 40;  // 最高优先级，最先初始化
+        return 40;
     }
 
     /**
@@ -57,13 +58,21 @@ class ImguiSystem : public Kernel::SystemBase {
     /**
      * @brief 每帧更新UI
      *
-     * 在独立线程中调用，处理窗口事件和输入
+     * 在主线程中调用，处理窗口事件和输入
      */
     void update() override;
 
-    void on_thread_started() override;
+    /**
+     * @brief 覆盖 start() - 不启动独立线程
+     *
+     * ImguiSystem 运行在主线程，不需要独立线程
+     */
+    void start() override;
 
-    void on_thread_stopped() override;
+    /**
+     * @brief 覆盖 stop() - 不需要停止线程
+     */
+    void stop() override;
 
     /**
      * @brief 关闭显示系统
@@ -71,6 +80,12 @@ class ImguiSystem : public Kernel::SystemBase {
      * 销毁窗口并清理UI资源
      */
     void shutdown() override;
+
+    /**
+     * @brief 检查 UI 系统是否仍在运行
+     * @return 如果用户关闭了窗口返回 false
+     */
+    bool is_ui_running() const { return running_; }
 
    private:
     SDL_Event event_;
@@ -80,6 +95,7 @@ class ImguiSystem : public Kernel::SystemBase {
     ImGuiIO* io_ = nullptr;
 
     bool window_size_changed_ = false;
+    bool sdl_initialized_;  // 标记 SDL/ImGui 是否已初始化
 
     std::unique_ptr<VulkanBackend> vulkan_backend_;
 
