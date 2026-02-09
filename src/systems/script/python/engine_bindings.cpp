@@ -230,9 +230,7 @@ void BindAll(nanobind::module_& m) {
         .def_ro("message", &Corona::Kernel::LogEntry::message,
                 "Formatted log message")
         .def_ro("timestamp", &Corona::Kernel::LogEntry::timestamp,
-                "Timestamp in nanoseconds since epoch")
-        .def_ro("source", &Corona::Kernel::LogEntry::source,
-                "Log source identifier: Engine/Python/Vue etc.");
+                "Timestamp in nanoseconds since epoch");
 
     m.def("drain_logs",
           []() -> std::vector<Corona::Kernel::LogEntry> {
