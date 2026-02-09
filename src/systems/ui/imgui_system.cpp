@@ -6,8 +6,7 @@
 
 #include "cef/browser_manager.h"
 #include "cef/cef_client.h"
-#include "imgui/imgui_runtime.h"
-#include "imgui/ui_frame_runner.h"
+#include "imgui/imgui_ui.h"
 
 namespace Corona::Systems {
 

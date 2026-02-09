@@ -16,9 +16,7 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
     vulk/vulkan_backend.cpp
     vulk/browser_manager_vulkan.cpp
-    imgui/imgui_runtime.cpp
-    imgui/ui_frame_runner.cpp
-    imgui/ui_layout_manager.cpp
+    imgui/imgui_ui.cpp
     cef/browser_manager.cpp
     cef/browser_ui.cpp
     cef/cef_client.cpp
