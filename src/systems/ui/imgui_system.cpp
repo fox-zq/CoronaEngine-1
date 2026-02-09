@@ -22,18 +22,17 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     return true;
 }
 
-void ImguiSystem::thread_loop() {
+void ImguiSystem::on_thread_started() {
+    CFW_LOG_NOTICE("ImguiSystem: Thread started.");
+
     if (!UI::initialize_sdl_imgui(window_, io_, vulkan_backend_)) {
         UI::shutdown_cef();
         running_ = false;
-        return;
     }
+}
 
-    using Corona::Kernel::SystemState;
-    while (running_ && get_state() == SystemState::running) {
-        update();
-    }
-
+void ImguiSystem::on_thread_stopped() {
+    CFW_LOG_NOTICE("ImguiSystem: Thread stopped.");
     UI::shutdown_sdl_imgui(window_, io_, vulkan_backend_);
     UI::shutdown_cef();
 }
@@ -56,7 +55,7 @@ void ImguiSystem::update() {
 }
 
 void ImguiSystem::shutdown() {
-    CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
+    CFW_LOG_NOTICE("ImGuiSystem: Shutting down...");
     running_ = false;
 
     UI::BrowserManager::instance().close_all_tabs();

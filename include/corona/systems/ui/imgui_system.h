@@ -61,9 +61,9 @@ class ImguiSystem : public Kernel::SystemBase {
      */
     void update() override;
 
-    // Run the system thread loop; override to perform graphics initialization
-    // on the system thread so SDL event handling runs on the same thread
-    void thread_loop() override;
+    void on_thread_started() override;
+
+    void on_thread_stopped() override;
 
     /**
      * @brief 关闭显示系统
