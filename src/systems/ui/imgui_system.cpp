@@ -33,19 +33,22 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
     active_tab_id_ = -1;
 
     CFW_LOG_NOTICE("ImguiSystem: Initialized successfully (main thread mode)");
+    state_ = Kernel::SystemState::running;
     return true;
 }
 
 void ImguiSystem::start() {
-    // 覆盖基类的 start() - 不启动独立线程
-    // ImguiSystem 运行在主线程，由 Engine::tick() 调用 update()
+    // 主线程系统不需要启动独立线程
+    // ImguiSystem 由 Engine::tick() 在主线程中调用 update()
     CFW_LOG_INFO("ImguiSystem: Running in main thread mode (no separate thread)");
+    state_ = Kernel::SystemState::running;
 }
 
 void ImguiSystem::stop() {
-    // 覆盖基类的 stop() - 不需要停止线程
+    // 主线程系统不需要停止线程
     CFW_LOG_INFO("ImguiSystem: Stop called (main thread mode)");
     running_ = false;
+    state_ = Kernel::SystemState::stopped;
 }
 
 void ImguiSystem::update() {
