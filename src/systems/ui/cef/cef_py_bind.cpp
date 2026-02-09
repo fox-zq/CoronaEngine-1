@@ -51,7 +51,7 @@ void BindCef(nanobind::module_& m) {
                 return Corona::Systems::UI::BrowserManager::instance().create_tab(
                     url, path, docking_pos, dock_width, dock_height, dock_fixed);
             } catch (const std::exception& e) {
-                std::cerr << "Error in create_browser_tab: " << e.what() << std::endl;
+                CFW_LOG_ERROR("Unexpected error: %s", e.what());
                 return -1;
             } }, nb::arg("url") = "", nb::arg("path") = "", nb::arg("docking_pos") = "", nb::arg("dock_width") = 0, nb::arg("dock_height") = 0, nb::arg("dock_fixed") = false, nb::rv_policy::take_ownership);
 

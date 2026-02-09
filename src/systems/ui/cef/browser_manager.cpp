@@ -150,7 +150,7 @@ void BrowserManager::update() {
 void BrowserManager::close_all_tabs() {
     std::vector<int> ids;
     ids.reserve(tabs_.size());
-    for (const auto& [id, tab] : tabs_) {
+    for (const auto& id : tabs_ | std::views::keys) {
         ids.push_back(id);
     }
 

@@ -21,9 +21,7 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     cef/browser_ui.cpp
     cef/cef_client.cpp
     cef/cef_py_bind.cpp
-    sdl/sdl_key_utils.cpp
-    sdl/sdl_mouse_utils.cpp
-    sdl/sdl_event_handler.cpp
+    sdl/sdl_utils.cpp
 )
 
 

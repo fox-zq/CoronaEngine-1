@@ -70,7 +70,7 @@ class BrowserManager {
     void set_vulkan_backend(VulkanBackend* backend);
     VulkanBackend* get_vulkan_backend() const;
 
-    const std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs() const;
+    [[nodiscard]] const std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs() const;
     std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs();
 
     void update();

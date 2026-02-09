@@ -4,8 +4,7 @@
 
 #include "browser_manager.h"
 #include "cef_client.h"
-#include "sdl/sdl_key_utils.h"
-#include "sdl/sdl_mouse_utils.h"
+#include "sdl/sdl_utils.h"
 
 namespace Corona::Systems::UI {
 
@@ -79,7 +78,7 @@ void BrowserInputHandler::process_sdl_ime_event(const SDL_Event& event) {
     }
 }
 
-void BrowserInputHandler::send_key_events_to_browser(CefRefPtr<CefBrowser> browser) {
+void BrowserInputHandler::send_key_events_to_browser(const CefRefPtr<CefBrowser>& browser) {
     if (!browser) return;
 
     for (const auto& pending_event : pending_key_events_) {
@@ -250,11 +249,11 @@ void BrowserRenderer::setup_window_transform(BrowserTab* tab,
     }
 }
 
-void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
+void BrowserRenderer::handle_browser_mouse_events(const BrowserTab* tab,
                                                   int tab_id,
                                                   int& active_tab_id,
                                                   int& url_input_active_tab,
-                                                  ImGuiIO* io) {
+                                                  const ImGuiIO* io) {
     bool browser_hovered = ImGui::IsItemHovered();
     bool browser_active = (active_tab_id == tab_id);
 

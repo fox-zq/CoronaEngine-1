@@ -45,7 +45,7 @@ class BrowserInputHandler {
     void process_sdl_key_event(const SDL_Event& event);
     void process_sdl_text_event(const SDL_Event& event);
     void process_sdl_ime_event(const SDL_Event& event);
-    void send_key_events_to_browser(CefRefPtr<CefBrowser> browser);
+    void send_key_events_to_browser(const CefRefPtr<CefBrowser>& browser);
 
    private:
     std::vector<PendingKeyEvent> pending_key_events_;
@@ -76,11 +76,11 @@ class BrowserRenderer {
                                 ImGuiID dock_space_id,
                                 bool is_main_tab);
 
-    void handle_browser_mouse_events(BrowserTab* tab,
+    void handle_browser_mouse_events(const BrowserTab* tab,
                                      int tab_id,
                                      int& active_tab_id,
                                      int& url_input_active_tab,
-                                     ImGuiIO* io);
+                                     const ImGuiIO* io);
 };
 
 }  // namespace Corona::Systems::UI

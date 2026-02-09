@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "cef/browser_ui.h"
-#include "sdl/sdl_event_handler.h"
+#include "sdl/sdl_utils.h"
 
 namespace Corona::Systems {
 class VulkanBackend;
