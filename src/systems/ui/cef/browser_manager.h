@@ -1,18 +1,58 @@
 ﻿#pragma once
 
+#include <SDL3/SDL.h>
+#include <include/internal/cef_types.h>
 #include <vulkan/vulkan.h>
 
 #include <map>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <unordered_map>
-
-#include "browser_types.h"
+#include <vector>
 
 namespace Corona::Systems {
 class VulkanBackend;
 }
 
 namespace Corona::Systems::UI {
+
+class OffscreenCefClient;
+
+// ============================================================================
+// 浏览器标签页数据结构
+// ============================================================================
+
+struct BrowserTab {
+    std::string name;
+    std::string url;
+
+    OffscreenCefClient* client = nullptr;
+    VkDescriptorSet texture_id = VK_NULL_HANDLE;
+
+    int width = 800;
+    int height = 600;
+
+    // Docking 相关属性
+    std::string docking_pos;        // 位置: "left", "right", "top", "bottom", "center"
+    int dock_width = 0;             // 指定宽度，0 表示自动
+    int dock_height = 0;            // 指定高度，0 表示自动
+    bool dock_fixed = false;        // 是否固定位置
+    bool dock_initialized = false;  // 是否已初始化 docking
+
+    bool open = true;
+    bool needs_resize = false;
+    bool buffer_dirty = false;
+    bool has_focus = false;
+
+    char url_buffer[1024] = "";
+    std::vector<uint8_t> pixel_buffer;
+    std::mutex mutex;  // 保护 pixel_buffer 和 buffer_dirty
+};
+
+// ============================================================================
+// 浏览器标签管理器
+// ============================================================================
 
 class BrowserManager {
    public:

@@ -4,8 +4,7 @@
 #include <imgui.h>
 
 #include "ui_layout_manager.h"
-#include "cef/browser_renderer.h"
-#include "cef/browser_input_handler.h"
+#include "cef/browser_ui.h"
 #include "sdl/sdl_event_handler.h"
 
 namespace Corona::Systems {

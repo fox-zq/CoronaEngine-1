@@ -19,12 +19,9 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     imgui/imgui_runtime.cpp
     imgui/ui_frame_runner.cpp
     imgui/ui_layout_manager.cpp
-    cef/cef_runtime.cpp
     cef/browser_manager.cpp
-    cef/browser_renderer.cpp
-    cef/browser_input_handler.cpp
+    cef/browser_ui.cpp
     cef/cef_client.cpp
-    cef/cef_handler.cpp
     cef/cef_py_bind.cpp
     sdl/sdl_key_utils.cpp
     sdl/sdl_mouse_utils.cpp

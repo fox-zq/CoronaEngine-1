@@ -3,8 +3,7 @@
 #include <imgui_impl_sdl3.h>
 
 #include "cef/browser_manager.h"
-#include "cef/browser_renderer.h"
-#include "cef/browser_input_handler.h"
+#include "cef/browser_ui.h"
 #include "cef/cef_client.h"
 #include "imgui/ui_layout_manager.h"
 #include "sdl/sdl_event_handler.h"

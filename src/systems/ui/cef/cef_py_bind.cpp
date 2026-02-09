@@ -5,7 +5,6 @@
 #include <nanobind/nanobind.h>
 
 #include "browser_manager.h"
-#include "browser_types.h"
 #include "cef_client.h"
 namespace nb = nanobind;
 
