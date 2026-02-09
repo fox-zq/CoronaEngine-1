@@ -1,8 +1,11 @@
+#include <corona/kernel/core/callback_sink.h>
+#include <corona/kernel/core/i_logger.h>
 #include <corona/systems/script/corona_engine_api.h>
 #include <corona/systems/script/engine_scripts.h>
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/array.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 #include <array>
 #include <cstdint>
@@ -217,6 +220,23 @@ void BindAll(nanobind::module_& m) {
     //       nb::rv_policy::take_ownership);
     // m.def("write_scene", &write_scene, nb::arg("scene"), nb::arg("scene_path"),
     //       "Save a scene to file");
+
+    // ============================================================================
+    // Logger: 日志前端转发接口
+    // ============================================================================
+    nb::class_<Corona::Kernel::LogEntry>(m, "LogEntry")
+        .def_ro("level", &Corona::Kernel::LogEntry::level,
+                "Log level string: TRACE/DEBUG/INFO/WARNING/ERROR/CRITICAL")
+        .def_ro("message", &Corona::Kernel::LogEntry::message,
+                "Formatted log message")
+        .def_ro("timestamp", &Corona::Kernel::LogEntry::timestamp,
+                "Timestamp in nanoseconds since epoch");
+
+    m.def("drain_logs",
+          []() -> std::vector<Corona::Kernel::LogEntry> {
+              return Corona::Kernel::CoronaLogger::drain_logs();
+          },
+          "Drain all pending log entries from the engine log queue");
 }
 
 }  // namespace EngineScripts
