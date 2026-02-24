@@ -116,8 +116,9 @@ endif()
 # Add CEF wrapper target (libcef_dll_wrapper)
 # We need to build this from source to match our compiler settings (Release/Debug, MT/MD, etc.)
 if(EXISTS "${CEF_ROOT}/CMakeLists.txt")
-    # Force MD in Debug for CEF wrapper to match project settings
-    set(CEF_RUNTIME_LIBRARY_FLAG "/MDd" CACHE STRING "Force MDd for CEF Debug" FORCE)
+    # Force dynamic CRT (/MD) for CEF wrapper to match project settings.
+    # CEF's cef_variables.cmake appends 'd' for Debug automatically: /MD -> /MDd (Debug), /MD (Release).
+    set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING "Use dynamic CRT (/MD) for CEF wrapper" FORCE)
 
     # Use a binary dir to keep it clean
     add_subdirectory("${CEF_ROOT}" "${CMAKE_BINARY_DIR}/cef_wrapper" EXCLUDE_FROM_ALL)
