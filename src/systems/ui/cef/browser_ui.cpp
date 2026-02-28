@@ -432,8 +432,8 @@ void BrowserRenderer::render_single_tab(int tab_id,
             BrowserManager::instance().resize_tab(tab_id, new_width, new_height);
         }
 
-        if (tab->texture_id != VK_NULL_HANDLE) {
-            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<intptr_t>(tab->texture_id)), avail_size);
+        if (tab->texture_id != nullptr) {
+            ImGui::Image(tab->texture_id, avail_size);
             handle_browser_mouse_events(tab, tab_id, active_tab_id, url_input_active_tab, io);
         }
     }
