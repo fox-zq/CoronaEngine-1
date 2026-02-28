@@ -21,7 +21,7 @@ bool ImguiSystem::initialize(Kernel::ISystemContext* ctx) {
 
     // 2. 初始化 SDL 和 ImGui (必须在主线程)
     CFW_LOG_NOTICE("ImguiSystem: Initializing SDL and ImGui in main thread...");
-    if (!UI::initialize_sdl_imgui(window_, io_, vulkan_backend_)) {
+    if (!UI::initialize_sdl_imgui(window_, io_, render_backend_)) {
         CFW_LOG_ERROR("SDL/ImGui initialization failed.");
         UI::shutdown_cef();
         return false;
@@ -59,7 +59,7 @@ void ImguiSystem::update() {
     UI::UiFrameContext context{
         window_,
         io_,
-        vulkan_backend_.get(),
+        render_backend_.get(),
         &active_tab_id_,
         &running_,
         &window_size_changed_};
@@ -83,7 +83,7 @@ void ImguiSystem::shutdown() {
     // 清理 SDL 和 ImGui (必须在主线程)
     if (sdl_initialized_) {
         CFW_LOG_INFO("ImGuiSystem: Shutting down SDL and ImGui...");
-        UI::shutdown_sdl_imgui(window_, io_, vulkan_backend_);
+        UI::shutdown_sdl_imgui(window_, io_, render_backend_);
         sdl_initialized_ = false;
     }
 
