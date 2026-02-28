@@ -9,7 +9,7 @@
 #include "sdl/sdl_utils.h"
 
 namespace Corona::Systems {
-class VulkanBackend;
+class IUiRenderBackend;
 }
 
 namespace Corona::Systems::UI {
@@ -19,9 +19,9 @@ namespace Corona::Systems::UI {
 // ============================================================================
 
 bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                          std::unique_ptr<VulkanBackend>& vulkan_backend);
+                          std::unique_ptr<IUiRenderBackend>& render_backend);
 void shutdown_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                        std::unique_ptr<VulkanBackend>& vulkan_backend);
+                        std::unique_ptr<IUiRenderBackend>& render_backend);
 
 // ============================================================================
 // UI 布局管理器
@@ -45,7 +45,7 @@ class UiLayoutManager {
 struct UiFrameContext {
     SDL_Window* window = nullptr;
     ImGuiIO* io = nullptr;
-    VulkanBackend* vulkan_backend = nullptr;
+    IUiRenderBackend* render_backend = nullptr;
     int* active_tab_id = nullptr;
     bool* running = nullptr;
     bool* window_size_changed = nullptr;
@@ -71,5 +71,3 @@ class UiFrameRunner {
 };
 
 }  // namespace Corona::Systems::UI
-
-
