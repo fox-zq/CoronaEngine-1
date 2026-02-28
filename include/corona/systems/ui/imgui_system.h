@@ -2,14 +2,12 @@
 
 #include <SDL3/SDL.h>
 #include <corona/kernel/system/i_system.h>
-#include <corona/systems/ui/vulkan_backend.h>
+#include <corona/systems/ui/ui_render_backend.h>
 #include <imgui.h>
 
 #include <memory>
 
 namespace Corona::Systems {
-
-class VulkanBackend;
 
 /**
  * @brief UI系统
@@ -71,7 +69,7 @@ class ImguiSystem : public Kernel::ISystem {
     bool window_size_changed_ = false;
     bool sdl_initialized_ = false;
 
-    std::unique_ptr<VulkanBackend> vulkan_backend_;
+    std::unique_ptr<IUiRenderBackend> render_backend_;
 
     int active_tab_id_ = -1;
 };
