@@ -50,6 +50,10 @@ bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
     io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
+    // TODO: 这能确保首帧前 FontAtlas 已有可构建内容，避免 Builder 为空断言，但后续如果有动态字体加载需求，这里可能需要改成更灵活的方式。
+    io->Fonts->AddFontDefault();
+    io->Fonts->Build();
+
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
     style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
