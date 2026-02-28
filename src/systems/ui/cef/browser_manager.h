@@ -1,19 +1,15 @@
 ﻿#pragma once
 
+#include <CabbageHardware.h>
 #include <SDL3/SDL.h>
+#include <imgui.h>
 #include <include/internal/cef_types.h>
-#include <vulkan/vulkan.h>
 
-#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-namespace Corona::Systems {
-class VulkanBackend;
-}
 
 namespace Corona::Systems::UI {
 
@@ -28,7 +24,7 @@ struct BrowserTab {
     std::string url;
 
     OffscreenCefClient* client = nullptr;
-    VkDescriptorSet texture_id = VK_NULL_HANDLE;
+    ImTextureID texture_id = nullptr;
 
     int width = 800;
     int height = 600;
@@ -67,9 +63,6 @@ class BrowserManager {
     void update_texture(int tab_id);
     void resize_tab(int tab_id, int width, int height);
 
-    void set_vulkan_backend(VulkanBackend* backend);
-    VulkanBackend* get_vulkan_backend() const;
-
     [[nodiscard]] const std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs() const;
     std::unordered_map<int, std::unique_ptr<BrowserTab>>& get_tabs();
 
@@ -79,23 +72,21 @@ class BrowserManager {
    private:
     BrowserManager() = default;
 
-    VkDescriptorSet create_browser_texture(int width, int height);
+    ImTextureID create_browser_texture(int width, int height);
     void destroy_tab_texture(BrowserTab* tab);
 
     struct OwnedImage {
-        VkImage image;
-        VkDeviceMemory memory;
-        VkImageView view;
-        VkSampler sampler;
-        uint32_t width;
-        uint32_t height;
+        HardwareImage image;
+        uint32_t width = 0;
+        uint32_t height = 0;
     };
 
     std::unordered_map<int, std::unique_ptr<BrowserTab>> tabs_;
     std::vector<int> tabs_to_close_;
-    std::map<VkDescriptorSet, OwnedImage> owned_images_;
+    std::unordered_map<ImTextureID, OwnedImage> owned_images_;
     int tab_counter_ = 0;
-    VulkanBackend* vulkan_backend_ = nullptr;
+
+    HardwareExecutor texture_executor_;
 };
 
 }  // namespace Corona::Systems::UI
