@@ -1,7 +1,8 @@
 #include "sdl_utils.h"
 
-#include <cmath>
 #include <imgui_impl_sdl3.h>
+
+#include <cmath>
 
 namespace Corona::Systems::UI {
 
@@ -150,11 +151,12 @@ CefMouseEvent create_mouse_event(const ImVec2& mouse_pos, const ImVec2& item_pos
     return mouse_event;
 }
 
-uint32_t get_modifiers(bool is_left_down) {
+uint32_t get_modifiers(bool is_left_down, bool is_right_down) {
     ImGuiIO& io = ImGui::GetIO();
     uint32_t modifiers = 0;
 
     if (is_left_down) modifiers |= EVENTFLAG_LEFT_MOUSE_BUTTON;
+    if (is_right_down) modifiers |= EVENTFLAG_RIGHT_MOUSE_BUTTON;
     if (io.KeyShift) modifiers |= EVENTFLAG_SHIFT_DOWN;
     if (io.KeyCtrl) modifiers |= EVENTFLAG_CONTROL_DOWN;
     if (io.KeyAlt) modifiers |= EVENTFLAG_ALT_DOWN;
@@ -166,7 +168,11 @@ void send_mouse_click(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
                       const ImVec2& item_pos, CefBrowserHost::MouseButtonType button,
                       bool mouse_up, int click_count) {
     if (!browser) return;
-    uint32_t modifiers = get_modifiers(!mouse_up);
+
+    bool is_left = (button == MBT_LEFT);
+    bool is_right = (button == MBT_RIGHT);
+    uint32_t modifiers = get_modifiers(!mouse_up && is_left, !mouse_up && is_right);
+
     CefMouseEvent mouse_event = create_mouse_event(mouse_pos, item_pos, modifiers);
     browser->GetHost()->SendMouseClickEvent(mouse_event, button, mouse_up, click_count);
 }
@@ -174,7 +180,12 @@ void send_mouse_click(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
 void send_mouse_move(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
                      const ImVec2& item_pos, bool mouse_leave) {
     if (!browser) return;
-    uint32_t modifiers = get_modifiers();
+
+    ImGuiIO& io = ImGui::GetIO();
+    bool is_left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    bool is_right_down = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    uint32_t modifiers = get_modifiers(is_left_down, is_right_down);
+
     CefMouseEvent mouse_event = create_mouse_event(mouse_pos, item_pos, modifiers);
     browser->GetHost()->SendMouseMoveEvent(mouse_event, mouse_leave);
 }
@@ -182,7 +193,12 @@ void send_mouse_move(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
 void send_mouse_wheel(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
                       const ImVec2& item_pos, float wheel_delta) {
     if (!browser) return;
-    uint32_t modifiers = get_modifiers();
+
+    ImGuiIO& io = ImGui::GetIO();
+    bool is_left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    bool is_right_down = ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    uint32_t modifiers = get_modifiers(is_left_down, is_right_down);
+
     CefMouseEvent mouse_event = create_mouse_event(mouse_pos, item_pos, modifiers);
     browser->GetHost()->SendMouseWheelEvent(mouse_event, 0, static_cast<int>(wheel_delta * 100));
 }
@@ -224,7 +240,6 @@ EventProcessResult SDLEventHandler::process_events(
     KeyEventCallback on_key_event,
     KeyEventCallback on_text_event,
     KeyEventCallback on_ime_event) {
-
     EventProcessResult result;
     result.url_input_active_tab = current_url_input_active_tab;
 
@@ -269,4 +284,3 @@ EventProcessResult SDLEventHandler::process_events(
 }
 
 }  // namespace Corona::Systems::UI
-

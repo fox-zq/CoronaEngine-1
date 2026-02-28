@@ -274,6 +274,7 @@ void BrowserRenderer::handle_browser_mouse_events(const BrowserTab* tab,
         mouse_state.set_dragging(false);
     }
 
+    // 处理鼠标左键点击
     if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         active_tab_id = tab_id;
         url_input_active_tab = -1;
@@ -294,6 +295,37 @@ void BrowserRenderer::handle_browser_mouse_events(const BrowserTab* tab,
         }
     }
 
+    // 处理鼠标右键点击 - 关键修改
+    if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        active_tab_id = tab_id;
+        url_input_active_tab = -1;
+
+        ImVec2 current_pos = ImGui::GetMousePos();
+        ImVec2 item_pos = ImGui::GetItemRectMin();
+
+        if (tab->client && tab->client->GetBrowser()) {
+            tab->client->GetBrowser()->GetHost()->SetFocus(true);
+
+            // 发送鼠标右键按下事件
+            MouseUtils::send_mouse_click(
+                tab->client->GetBrowser(), current_pos, item_pos,
+                MBT_RIGHT, false, 1);
+        }
+    }
+
+    // 处理鼠标右键释放
+    if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+        if (tab->client && tab->client->GetBrowser()) {
+            ImVec2 mouse_pos = ImGui::GetMousePos();
+            ImVec2 item_pos = ImGui::GetItemRectMin();
+
+            MouseUtils::send_mouse_click(
+                tab->client->GetBrowser(), mouse_pos, item_pos,
+                MBT_RIGHT, true, mouse_state.get_click_count());
+        }
+    }
+
+    // 处理鼠标左键释放
     if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (mouse_state.is_mouse_down()) {
             if (tab->client && tab->client->GetBrowser()) {
@@ -428,4 +460,3 @@ std::vector<int> BrowserRenderer::render_browser_tabs(ImGuiID dock_space_id,
 }
 
 }  // namespace Corona::Systems::UI
-
