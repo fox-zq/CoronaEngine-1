@@ -9,17 +9,17 @@ namespace Corona::Systems::UI {
 
 namespace {
 inline ImTextureID descriptor_to_texture_id(uint32_t descriptor) {
-    return reinterpret_cast<ImTextureID>(static_cast<uintptr_t>(descriptor));
+    return (ImTextureID)descriptor;
 }
 }  // namespace
 
 void BrowserManager::destroy_tab_texture(BrowserTab* tab) {
-    if (!tab || tab->texture_id == nullptr) {
+    if (!tab || tab->texture_id == -1) {
         return;
     }
 
     owned_images_.erase(tab->texture_id);
-    tab->texture_id = nullptr;
+    tab->texture_id = -1;
 }
 
 ImTextureID BrowserManager::create_browser_texture(int width, int height) {
@@ -29,7 +29,7 @@ ImTextureID BrowserManager::create_browser_texture(int width, int height) {
     OwnedImage owned{};
     owned.image = HardwareImage(safe_width, safe_height, ImageFormat::RGBA8_SRGB, ImageUsage::SampledImage);
     if (!owned.image) {
-        return nullptr;
+        return -1;
     }
 
     owned.width = safe_width;
@@ -49,11 +49,11 @@ void BrowserManager::update_texture(int tab_id) {
     BrowserTab* tab = it->second.get();
 
     std::vector<uint8_t> pixels;
-    ImTextureID texture_id = nullptr;
+    ImTextureID texture_id = -1;
 
     {
         std::unique_lock<std::mutex> lock(tab->mutex);
-        if (!(tab->buffer_dirty && !tab->pixel_buffer.empty() && tab->texture_id != nullptr)) {
+        if (!(tab->buffer_dirty && !tab->pixel_buffer.empty() && tab->texture_id != -1)) {
             return;
         }
 

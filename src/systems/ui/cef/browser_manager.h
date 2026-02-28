@@ -24,7 +24,7 @@ struct BrowserTab {
     std::string url;
 
     OffscreenCefClient* client = nullptr;
-    ImTextureID texture_id = nullptr;
+    ImTextureID texture_id = -1;
 
     int width = 800;
     int height = 600;
