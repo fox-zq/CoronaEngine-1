@@ -82,7 +82,7 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     tab->client = new OffscreenCefClient();
     tab->client->SetTab(tab.get());
 
-    // Create OpenGL/Vulkan Texture
+    // Create browser texture (CabbageHardware)
     tab->texture_id = create_browser_texture(tab->width, tab->height);
 
     // Create Offscreen Browser
@@ -117,15 +117,6 @@ void BrowserManager::remove_tab(int tab_id) {
     destroy_tab_texture(tab);
 
     tabs_.erase(tab_id);
-}
-
-
-void BrowserManager::set_vulkan_backend(VulkanBackend* backend) {
-    vulkan_backend_ = backend;
-}
-
-VulkanBackend* BrowserManager::get_vulkan_backend() const {
-    return vulkan_backend_;
 }
 
 const std::unordered_map<int, std::unique_ptr<BrowserTab>>& BrowserManager::get_tabs() const {
