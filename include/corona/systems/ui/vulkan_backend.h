@@ -11,10 +11,10 @@ namespace Corona::Systems
     class VulkanBackend 
     {
     public:
-        VulkanBackend() = default;
+        VulkanBackend(SDL_Window* window);
         ~VulkanBackend() = default;
 
-        bool initialize(SDL_Window* window);
+        bool initialize();
         void shutdown();
 
         void new_frame();
@@ -29,7 +29,7 @@ namespace Corona::Systems
         bool initialized_ = false;
         bool rebuild_needed_ = false;
 
-        std::unique_ptr<HardwareDisplayer> displayer_;
+        HardwareDisplayer displayer_;
         HardwareExecutor executor_;
     };
 
