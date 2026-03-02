@@ -12,8 +12,8 @@ target_link_libraries(imgui_backends PUBLIC imgui SDL3::SDL3-static)
 # ImGui System 配置
 file(GLOB IMGUI_SYSTEM_SOURCES
     imgui_system.cpp
-    chw/browser_manager_hardware.cpp
-    chw/cabbage_ui_backend.cpp
+    vulk/vulkan_backend.cpp
+    vulk/browser_manager_vulkan.cpp
     imgui/imgui_ui.cpp
     cef/browser_manager.cpp
     cef/browser_ui.cpp

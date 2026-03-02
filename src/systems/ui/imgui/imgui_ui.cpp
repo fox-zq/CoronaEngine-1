@@ -1,217 +1,265 @@
 #include "imgui_ui.h"
 
 #include <corona/kernel/core/i_logger.h>
-#include <corona/systems/ui/cabbage_ui_backend.h>
+#include <corona/systems/ui/vulkan_backend.h>
 #include <imgui_impl_sdl3.h>
 
 #include "cef/browser_manager.h"
 #include "cef/cef_client.h"
 
-namespace Corona::Systems::UI {
+namespace Corona::Systems::UI 
+{
 
-// ============================================================================
-// SDL/ImGui 生命周期管理
-// ============================================================================
+    // ============================================================================
+    // SDL/ImGui 生命周期管理
+    // ============================================================================
 
-bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                          std::unique_ptr<IUiRenderBackend>& render_backend) {
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
-        CFW_LOG_ERROR("Failed to initialize SDL: {}", SDL_GetError());
-        return false;
+    bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io, std::unique_ptr<VulkanBackend>& vulkan_backend)
+    {
+        if (!SDL_Init(SDL_INIT_VIDEO))
+        {
+            CFW_LOG_ERROR("Failed to initialize SDL: {}", SDL_GetError());
+            return false;
+        }
+
+        SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
+        window = SDL_CreateWindow("Corona Engine (CabbageHardware)", 1920, 1080, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
+        if (window == nullptr) 
+        {
+            CFW_LOG_ERROR("Failed to create window: {}", SDL_GetError());
+            SDL_Quit();
+            return false;
+        }
+
+        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        SDL_ShowWindow(window);
+        SDL_StartTextInput(window);
+        SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
+
+        vulkan_backend = std::make_unique<VulkanBackend>(window);
+        if (!vulkan_backend->initialize()) 
+        {
+            CFW_LOG_ERROR("Failed to initialize Cabbage UI backend");
+            SDL_DestroyWindow(window);
+            window = nullptr;
+            SDL_Quit();
+            return false;
+        }
+
+        IMGUI_CHECKVERSION();
+        ImGui::CreateContext();
+        io = &ImGui::GetIO();
+        io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+        io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+        io->ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
+
+        // TODO: 这能确保首帧前 FontAtlas 已有可构建内容，避免 Builder 为空断言，但后续如果有动态字体加载需求，这里可能需要改成更灵活的方式。
+        io->Fonts->AddFontDefault();
+        io->Fonts->Build();
+
+        ImGui::StyleColorsDark();
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
+        style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
+        style.Colors[ImGuiCol_DockingPreview] = ImVec4(0.2f, 0.2f, 0.8f, 0.3f);
+        style.WindowRounding = 1.0f;
+        style.WindowBorderSize = 1.0f;
+        style.WindowPadding = ImVec2(1.0f, 1.0f);
+
+        /*ImGui_ImplSDL3_InitForVulkan(window);
+
+        ImGui_ImplVulkan_InitInfo init_info = {};
+        init_info.Instance = vulkan_backend->get_instance();
+        init_info.PhysicalDevice = vulkan_backend->get_physical_device();
+        init_info.Device = vulkan_backend->get_device();
+        init_info.QueueFamily = vulkan_backend->get_queue_family();
+        init_info.Queue = vulkan_backend->get_queue();
+        init_info.DescriptorPool = vulkan_backend->get_descriptor_pool();
+        init_info.PipelineInfoMain.RenderPass = vulkan_backend->get_render_pass();
+        init_info.MinImageCount = vulkan_backend->get_min_image_count();
+        init_info.ImageCount = vulkan_backend->get_image_count();
+        init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+        init_info.UseDynamicRendering = false;
+
+        ImGui_ImplVulkan_Init(&init_info);*/
+
+        ImGui_ImplSDL3_InitForOther(window);
+
+        return true;
     }
 
-    SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
-    window = SDL_CreateWindow("Corona Engine (CabbageHardware)", 1920, 1080,
-                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
-    if (window == nullptr) {
-        CFW_LOG_ERROR("Failed to create window: {}", SDL_GetError());
+    void shutdown_sdl_imgui(SDL_Window*& window, ImGuiIO*& io, std::unique_ptr<VulkanBackend>& vulkan_backend)
+    {
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+
+        if (vulkan_backend) 
+        {
+            vulkan_backend->shutdown();
+            vulkan_backend.reset();
+            //BrowserManager::instance().set_vulkan_backend(nullptr);
+        }
+
+        if (window) 
+        {
+            SDL_DestroyWindow(window);
+            window = nullptr;
+        }
+
+        SDL_StopTextInput(window);
         SDL_Quit();
-        return false;
+
+        io = nullptr;
     }
 
-    SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-    SDL_ShowWindow(window);
-    SDL_StartTextInput(window);
-    SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
+    // ============================================================================
+    // UiLayoutManager 实现
+    // ============================================================================
 
-    render_backend = std::make_unique<CabbageUiBackend>();
-    if (!render_backend->initialize(window)) {
-        CFW_LOG_ERROR("Failed to initialize Cabbage UI backend");
-        SDL_DestroyWindow(window);
-        window = nullptr;
-        SDL_Quit();
-        return false;
+    ImGuiID UiLayoutManager::setup_dockspace() 
+    {
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->WorkPos);
+        ImGui::SetNextWindowSize(viewport->WorkSize);
+        ImGui::SetNextWindowViewport(viewport->ID);
+
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking |
+                                        ImGuiWindowFlags_NoTitleBar |
+                                        ImGuiWindowFlags_NoCollapse |
+                                        ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove |
+                                        ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                        ImGuiWindowFlags_NoNavFocus |
+                                        ImGuiWindowFlags_NoBackground;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+
+        ImGui::Begin("DockSpace", nullptr, window_flags);
+
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor(3);
+
+        ImGuiID dock_space_id = ImGui::GetID("MyDockSpace");
+        ImGui::DockSpace(dock_space_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+
+        dockspace_active_ = true;
+
+        return dock_space_id;
     }
 
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    io = &ImGui::GetIO();
-    io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-    io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
-
-    // TODO: 这能确保首帧前 FontAtlas 已有可构建内容，避免 Builder 为空断言，但后续如果有动态字体加载需求，这里可能需要改成更灵活的方式。
-    io->Fonts->AddFontDefault();
-    io->Fonts->Build();
-
-    ImGui::StyleColorsDark();
-    ImGuiStyle& style = ImGui::GetStyle();
-    style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
-    style.Colors[ImGuiCol_DockingPreview] = ImVec4(0.2f, 0.2f, 0.8f, 0.3f);
-    style.WindowRounding = 1.0f;
-    style.WindowBorderSize = 1.0f;
-    style.WindowPadding = ImVec2(1.0f, 1.0f);
-
-    ImGui_ImplSDL3_InitForOther(window);
-
-    return true;
-}
-
-void shutdown_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                        std::unique_ptr<IUiRenderBackend>& render_backend) {
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
-
-    if (render_backend) {
-        render_backend->shutdown();
-        render_backend.reset();
+    void UiLayoutManager::end_dockspace() 
+    {
+        if (dockspace_active_) 
+        {
+            ImGui::End();
+            dockspace_active_ = false;
+        }
     }
 
-    if (window) {
-        SDL_DestroyWindow(window);
-        window = nullptr;
-    }
+    // ============================================================================
+    // UiFrameRunner 实现
+    // ============================================================================
 
-    SDL_StopTextInput(window);
-    SDL_Quit();
+    void UiFrameRunner::run_frame(UiFrameContext& context) 
+    {
+        if (!context.running || !context.active_tab_id || !context.vulkan_backend) 
+        {
+            return;
+        }
 
-    io = nullptr;
-}
+        auto result = event_handler_.process_events(context.window,
+                                                    url_input_active_tab_,
+                                                    [&](const SDL_Event& e) { input_handler_.process_sdl_key_event(e); },
+                                                    [&](const SDL_Event& e) { input_handler_.process_sdl_text_event(e); },
+                                                    [&](const SDL_Event& e) { input_handler_.process_sdl_ime_event(e); });
 
-// ============================================================================
-// UiLayoutManager 实现
-// ============================================================================
+        if (result.should_quit) 
+        {
+            *context.running = false;
+        }
 
-ImGuiID UiLayoutManager::setup_dockspace() {
-    ImGuiViewport* viewport = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(viewport->WorkPos);
-    ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::SetNextWindowViewport(viewport->ID);
+        if (result.window_resized && context.window && context.window_size_changed) 
+        {
+            *context.window_size_changed = true;
+            context.vulkan_backend->request_rebuild();
+        }
 
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking |
-                                    ImGuiWindowFlags_NoTitleBar |
-                                    ImGuiWindowFlags_NoCollapse |
-                                    ImGuiWindowFlags_NoResize |
-                                    ImGuiWindowFlags_NoMove |
-                                    ImGuiWindowFlags_NoBringToFrontOnFocus |
-                                    ImGuiWindowFlags_NoNavFocus |
-                                    ImGuiWindowFlags_NoBackground;
+        if (context.vulkan_backend->is_rebuild_needed())
+        {
+            int width = 0;
+            int height = 0;
+            SDL_GetWindowSize(context.window, &width, &height);
+            context.vulkan_backend->rebuild(width, height);
+        }
 
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+        context.vulkan_backend->new_frame();
+        ImGui_ImplSDL3_NewFrame();
+        ImGui::NewFrame();
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGuiID dock_space_id = layout_manager_.setup_dockspace();
 
-    ImGui::Begin("DockSpace", nullptr, window_flags);
+        std::vector<int> tabs_to_close = browser_renderer_.render_browser_tabs(dock_space_id, *context.active_tab_id, url_input_active_tab_, context.io);
 
-    ImGui::PopStyleVar(3);
-    ImGui::PopStyleColor(3);
+        // 调试用：当没有任何浏览器标签页时，强制画一个窗口，确保有 draw cmd
+        if (BrowserManager::instance().get_tabs().empty()) {
+            ImGui::SetNextWindowBgAlpha(0.35f);
+            ImGui::Begin("UI Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+            ImGui::TextUnformatted("No browser tabs. ImGui fallback window is rendering.");
+            ImGui::End();
+        }
 
-    ImGuiID dock_space_id = ImGui::GetID("MyDockSpace");
-    ImGui::DockSpace(dock_space_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        layout_manager_.end_dockspace();
 
-    dockspace_active_ = true;
-
-    return dock_space_id;
-}
-
-void UiLayoutManager::end_dockspace() {
-    if (dockspace_active_) {
-        ImGui::End();
-        dockspace_active_ = false;
-    }
-}
-
-// ============================================================================
-// UiFrameRunner 实现
-// ============================================================================
-
-void UiFrameRunner::run_frame(UiFrameContext& context) {
-    if (!context.running || !context.active_tab_id || !context.render_backend) {
-        return;
-    }
-
-    auto result = event_handler_.process_events(
-        context.window,
-        url_input_active_tab_,
-        [&](const SDL_Event& e) { input_handler_.process_sdl_key_event(e); },
-        [&](const SDL_Event& e) { input_handler_.process_sdl_text_event(e); },
-        [&](const SDL_Event& e) { input_handler_.process_sdl_ime_event(e); });
-
-    if (result.should_quit) {
-        *context.running = false;
-    }
-
-    if (result.window_resized && context.window && context.window_size_changed) {
-        *context.window_size_changed = true;
-        context.render_backend->request_rebuild();
-    }
-
-    if (context.render_backend->is_rebuild_needed()) {
-        int width = 0;
-        int height = 0;
-        SDL_GetWindowSize(context.window, &width, &height);
-        context.render_backend->rebuild(width, height);
-    }
-
-    context.render_backend->new_frame();
-    ImGui_ImplSDL3_NewFrame();
-    ImGui::NewFrame();
-
-    ImGuiID dock_space_id = layout_manager_.setup_dockspace();
-
-    std::vector<int> tabs_to_close = browser_renderer_.render_browser_tabs(
-        dock_space_id, *context.active_tab_id, url_input_active_tab_, context.io);
-
-    layout_manager_.end_dockspace();
-
-    if (*context.active_tab_id != -1 && url_input_active_tab_ == -1) {
-        auto* tab = BrowserManager::instance().get_tab(*context.active_tab_id);
-        if (tab && tab->client && tab->client->GetBrowser()) {
-            input_handler_.send_key_events_to_browser(tab->client->GetBrowser());
-        } else {
+        if (*context.active_tab_id != -1 && url_input_active_tab_ == -1) 
+        {
+            auto* tab = BrowserManager::instance().get_tab(*context.active_tab_id);
+            if (tab && tab->client && tab->client->GetBrowser()) 
+            {
+                input_handler_.send_key_events_to_browser(tab->client->GetBrowser());
+            } 
+            else 
+            {
+                input_handler_.clear_pending_events();
+            }
+        } 
+        else 
+        {
             input_handler_.clear_pending_events();
         }
-    } else {
-        input_handler_.clear_pending_events();
-    }
 
-    for (auto tab_id : tabs_to_close) {
-        BrowserManager::instance().remove_tab(tab_id);
-        if (tab_id == *context.active_tab_id) {
-            *context.active_tab_id = -1;
+        for (auto tab_id : tabs_to_close) 
+        {
+            BrowserManager::instance().remove_tab(tab_id);
+            if (tab_id == *context.active_tab_id) 
+            {
+                *context.active_tab_id = -1;
+            }
+            if (tab_id == url_input_active_tab_) 
+            {
+                url_input_active_tab_ = -1;
+            }
         }
-        if (tab_id == url_input_active_tab_) {
-            url_input_active_tab_ = -1;
+
+        ImGui::Render();
+        ImDrawData* draw_data = ImGui::GetDrawData();
+        const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
+        if (!is_minimized) 
+        {
+            context.vulkan_backend->render_frame(draw_data);
+            context.vulkan_backend->present_frame();
+        }
+
+        if (context.io && (context.io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) 
+        {
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
         }
     }
-
-    ImGui::Render();
-    ImDrawData* draw_data = ImGui::GetDrawData();
-    const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
-    if (!is_minimized) {
-        context.render_backend->render_frame(draw_data);
-        context.render_backend->present_frame();
-    }
-
-    if (context.io && (context.io->ConfigFlags & ImGuiConfigFlags_ViewportsEnable)) {
-        ImGui::UpdatePlatformWindows();
-        ImGui::RenderPlatformWindowsDefault();
-    }
-}
 
 }  // namespace Corona::Systems::UI

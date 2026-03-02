@@ -1,24 +1,22 @@
+#include <corona/systems/ui/vulkan_backend.h>
+
 #include <algorithm>
-#include <cstdint>
 #include <mutex>
 
 #include "cef/browser_manager.h"
 #include "cef/cef_client.h"
 
 namespace Corona::Systems::UI {
-
-namespace {
-inline ImTextureID descriptor_to_texture_id(uint32_t descriptor) {
-    return (ImTextureID)descriptor;
-}
-}  // namespace
-
 void BrowserManager::destroy_tab_texture(BrowserTab* tab) {
     if (!tab || tab->texture_id == -1) {
         return;
     }
 
-    owned_images_.erase(tab->texture_id);
+    auto it = owned_images_.find(tab->texture_id);
+    if (it != owned_images_.end()) {
+        owned_images_.erase(it);
+    }
+
     tab->texture_id = -1;
 }
 
@@ -36,7 +34,7 @@ ImTextureID BrowserManager::create_browser_texture(int width, int height) {
     owned.height = safe_height;
 
     const uint32_t descriptor = owned.image.storeDescriptor();
-    const ImTextureID texture_id = descriptor_to_texture_id(descriptor);
+    const ImTextureID texture_id = static_cast<ImTextureID>(descriptor);
 
     owned_images_[texture_id] = std::move(owned);
     return texture_id;
@@ -44,7 +42,9 @@ ImTextureID BrowserManager::create_browser_texture(int width, int height) {
 
 void BrowserManager::update_texture(int tab_id) {
     auto it = tabs_.find(tab_id);
-    if (it == tabs_.end()) return;
+    if (it == tabs_.end()) {
+        return;
+    }
 
     BrowserTab* tab = it->second.get();
 
@@ -68,7 +68,13 @@ void BrowserManager::update_texture(int tab_id) {
         return;
     }
 
-    if (!pixels.empty()) {
+    constexpr size_t rgba_bytes_per_pixel = 4;
+    const size_t expected_size =
+        static_cast<size_t>(image_it->second.width) *
+        static_cast<size_t>(image_it->second.height) *
+        rgba_bytes_per_pixel;
+
+    if (pixels.size() >= expected_size) {
         texture_executor_ << image_it->second.image.copyFrom(pixels.data())
                           << texture_executor_.commit();
     }
@@ -79,22 +85,26 @@ void BrowserManager::update_texture(int tab_id) {
 
 void BrowserManager::resize_tab(int tab_id, int width, int height) {
     auto it = tabs_.find(tab_id);
-    if (it == tabs_.end()) return;
+    if (it == tabs_.end()) {
+        return;
+    }
 
     BrowserTab* tab = it->second.get();
-    if (width <= 0 || height <= 0) return;
-    if (width == tab->width && height == tab->height) return;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+    if (width == tab->width && height == tab->height) {
+        return;
+    }
 
     tab->width = width;
     tab->height = height;
 
     destroy_tab_texture(tab);
-
     tab->texture_id = create_browser_texture(tab->width, tab->height);
 
     if (tab->client) {
         tab->client->Resize(tab->width, tab->height);
     }
 }
-
 }  // namespace Corona::Systems::UI
