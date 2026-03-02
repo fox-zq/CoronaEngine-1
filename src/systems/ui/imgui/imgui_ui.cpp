@@ -23,7 +23,7 @@ namespace Corona::Systems::UI
         }
 
         SDL_SetHint(SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR, "0");
-        window = SDL_CreateWindow("Corona Engine (CabbageHardware)", 1920, 1080, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
+        window = SDL_CreateWindow("Corona Engine (CabbageHardware)", 1280, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
         if (window == nullptr) 
         {
             CFW_LOG_ERROR("Failed to create window: {}", SDL_GetError());
