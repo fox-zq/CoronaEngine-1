@@ -8,26 +8,27 @@
 #include "cef/browser_ui.h"
 #include "sdl/sdl_utils.h"
 
-namespace Corona::Systems {
-class IUiRenderBackend;
+namespace Corona::Systems 
+{
+    class VulkanBackend;
 }
 
-namespace Corona::Systems::UI {
+namespace Corona::Systems::UI 
+{
 
 // ============================================================================
 // SDL/ImGui 生命周期管理
 // ============================================================================
 
-bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                          std::unique_ptr<IUiRenderBackend>& render_backend);
-void shutdown_sdl_imgui(SDL_Window*& window, ImGuiIO*& io,
-                        std::unique_ptr<IUiRenderBackend>& render_backend);
+    bool initialize_sdl_imgui(SDL_Window*& window, ImGuiIO*& io, std::unique_ptr<VulkanBackend>& vulkan_backend);
+    void shutdown_sdl_imgui(SDL_Window*& window, ImGuiIO*& io, std::unique_ptr<VulkanBackend>& vulkan_backend);
 
 // ============================================================================
 // UI 布局管理器
 // ============================================================================
 
-class UiLayoutManager {
+class UiLayoutManager 
+{
    public:
     UiLayoutManager() = default;
 
@@ -42,10 +43,11 @@ class UiLayoutManager {
 // UI 帧上下文
 // ============================================================================
 
-struct UiFrameContext {
+struct UiFrameContext 
+{
     SDL_Window* window = nullptr;
     ImGuiIO* io = nullptr;
-    IUiRenderBackend* render_backend = nullptr;
+    VulkanBackend* vulkan_backend = nullptr;
     int* active_tab_id = nullptr;
     bool* running = nullptr;
     bool* window_size_changed = nullptr;
@@ -55,7 +57,8 @@ struct UiFrameContext {
 // UI 帧运行器
 // ============================================================================
 
-class UiFrameRunner {
+class UiFrameRunner 
+{
    public:
     UiFrameRunner() = default;
 
