@@ -51,16 +51,12 @@ namespace Corona::Systems::UI
         io = &ImGui::GetIO();
         io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
-        io->ConfigFlags &= ~ImGuiConfigFlags_ViewportsEnable;
-
-        // TODO: 这能确保首帧前 FontAtlas 已有可构建内容，避免 Builder 为空断言，但后续如果有动态字体加载需求，这里可能需要改成更灵活的方式。
-        io->Fonts->AddFontDefault();
-        io->Fonts->Build();
+        io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
         ImGui::StyleColorsDark();
         ImGuiStyle& style = ImGui::GetStyle();
-        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
-        style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
+        style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+        style.Colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
         style.Colors[ImGuiCol_DockingPreview] = ImVec4(0.2f, 0.2f, 0.8f, 0.3f);
         style.WindowRounding = 1.0f;
         style.WindowBorderSize = 1.0f;
@@ -205,14 +201,6 @@ namespace Corona::Systems::UI
         ImGuiID dock_space_id = layout_manager_.setup_dockspace();
 
         std::vector<int> tabs_to_close = browser_renderer_.render_browser_tabs(dock_space_id, *context.active_tab_id, url_input_active_tab_, context.io);
-
-        // 调试用：当没有任何浏览器标签页时，强制画一个窗口，确保有 draw cmd
-        if (BrowserManager::instance().get_tabs().empty()) {
-            ImGui::SetNextWindowBgAlpha(0.35f);
-            ImGui::Begin("UI Debug", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::TextUnformatted("No browser tabs. ImGui fallback window is rendering.");
-            ImGui::End();
-        }
 
         layout_manager_.end_dockspace();
 
