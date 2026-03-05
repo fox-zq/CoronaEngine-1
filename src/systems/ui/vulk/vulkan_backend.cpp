@@ -2,21 +2,29 @@
 #include <corona/systems/ui/vulkan_backend.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <type_traits>
 #include <vector>
 
 namespace {
+struct ImGuiGpuVertex {
+    float pos[2]{};
+    float uv[2]{};
+    float color[4]{};
+};
+
 static constexpr const char* k_imgui_vertex_shader = R"GLSL(
 #version 460
 
+// Keep offsets in sync with CPU-side push constant writes.
 layout(push_constant) uniform PushConsts
 {
-    vec2 scale;
-    vec2 translate;
-    vec4 clip_rect;
-    uint texture_index;
+    layout(offset = 0) vec2 scale;
+    layout(offset = 8) vec2 translate;
+    layout(offset = 16) vec4 clip_rect;
+    layout(offset = 32) uint texture_index;
 } pushConsts;
 
 layout(location = 0) in vec2 in_pos;
@@ -38,12 +46,13 @@ static constexpr const char* k_imgui_fragment_shader = R"GLSL(
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 
+// Keep offsets in sync with CPU-side push constant writes.
 layout(push_constant) uniform PushConsts
 {
-    vec2 scale;
-    vec2 translate;
-    vec4 clip_rect;
-    uint texture_index;
+    layout(offset = 0) vec2 scale;
+    layout(offset = 8) vec2 translate;
+    layout(offset = 16) vec4 clip_rect;
+    layout(offset = 32) uint texture_index;
 } pushConsts;
 
 layout(set = 0, binding = 0) uniform sampler2D textures[];
@@ -171,34 +180,65 @@ void VulkanBackend::new_frame() {
 }
 
 void VulkanBackend::render_frame(ImDrawData* draw_data) {
-    if (!initialized_ || draw_data == nullptr) {
-        return;
-    }
-
-    const int fb_width = static_cast<int>(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    const int fb_height = static_cast<int>(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
-    if (fb_width <= 0 || fb_height <= 0) {
-        return;
-    }
-
-    if (!ensure_render_target(static_cast<uint32_t>(fb_width), static_cast<uint32_t>(fb_height))) {
-        rebuild_needed_ = true;
-        return;
-    }
-
-    if (!ensure_imgui_pipeline() || !ensure_font_texture()) {
+    uint32_t fb_width = 0;
+    uint32_t fb_height = 0;
+    if (!prepare_frame(draw_data, fb_width, fb_height)) {
         return;
     }
 
     int total_draw_cmds = 0;
     int recorded_draw_cmds = 0;
+    if (!record_draw_lists(draw_data, fb_width, fb_height, total_draw_cmds, recorded_draw_cmds)) {
+        return;
+    }
 
-    // 先清屏（透明）
+    submit_frame(
+        fb_width,
+        fb_height,
+        draw_data->CmdListsCount,
+        total_draw_cmds,
+        recorded_draw_cmds);
+}
+
+bool VulkanBackend::prepare_frame(ImDrawData* draw_data, uint32_t& fb_width, uint32_t& fb_height) {
+    if (!initialized_ || draw_data == nullptr) {
+        return false;
+    }
+
+    const int fb_w = static_cast<int>(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
+    const int fb_h = static_cast<int>(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+    if (fb_w <= 0 || fb_h <= 0) {
+        return false;
+    }
+
+    fb_width = static_cast<uint32_t>(fb_w);
+    fb_height = static_cast<uint32_t>(fb_h);
+
+    if (!ensure_render_target(fb_width, fb_height)) {
+        rebuild_needed_ = true;
+        return false;
+    }
+
+    if (!ensure_imgui_pipeline() || !ensure_font_texture()) {
+        return false;
+    }
+
     if (!clear_pixels_.empty()) {
         executor_ << render_target_.copyFrom(clear_pixels_.data());
     }
 
     imgui_pipeline_["out_color"] = render_target_;
+    return true;
+}
+
+bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
+                                      uint32_t fb_width,
+                                      uint32_t fb_height,
+                                      int& total_draw_cmds,
+                                      int& recorded_draw_cmds) {
+    if (draw_data == nullptr || draw_data->DisplaySize.x == 0.0f || draw_data->DisplaySize.y == 0.0f) {
+        return false;
+    }
 
     const float sx = 2.0f / draw_data->DisplaySize.x;
     const float sy = 2.0f / draw_data->DisplaySize.y;
@@ -237,12 +277,31 @@ void VulkanBackend::render_frame(ImDrawData* draw_data) {
             continue;
         }
 
+        std::vector<ImDrawIdx> indices;
+        indices.reserve(static_cast<size_t>(cmd_list->IdxBuffer.Size));
+        for (const ImDrawIdx idx : cmd_list->IdxBuffer) {
+            indices.push_back(idx);
+        }
+
+        if (indices.empty()) {
+            continue;
+        }
+
+        HardwareBuffer index_buffer(indices, BufferUsage::IndexBuffer);
+        if (!index_buffer) {
+            continue;
+        }
+
         for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; ++cmd_i) {
             ++total_draw_cmds;
 
             const ImDrawCmd& pcmd = cmd_list->CmdBuffer[cmd_i];
 
             if (pcmd.UserCallback != nullptr) {
+                if (pcmd.UserCallback == ImDrawCallback_ResetRenderState) {
+                    imgui_pipeline_["out_color"] = render_target_;
+                    continue;
+                }
                 pcmd.UserCallback(cmd_list, &pcmd);
                 continue;
             }
@@ -261,27 +320,6 @@ void VulkanBackend::render_frame(ImDrawData* draw_data) {
                 continue;
             }
 
-            // 使用 ImGui 原生索引位宽，避免在 32-bit 索引构建下被截断
-            std::vector<ImDrawIdx> indices;
-            indices.reserve(static_cast<size_t>(pcmd.ElemCount));
-
-            const size_t idx_begin = static_cast<size_t>(pcmd.IdxOffset);
-            const size_t idx_end = idx_begin + static_cast<size_t>(pcmd.ElemCount);
-            for (size_t i = idx_begin; i < idx_end; ++i) {
-                const uint32_t idx = static_cast<uint32_t>(cmd_list->IdxBuffer[static_cast<int>(i)]) +
-                                     static_cast<uint32_t>(pcmd.VtxOffset);
-                indices.push_back(static_cast<ImDrawIdx>(idx));
-            }
-
-            if (indices.empty()) {
-                continue;
-            }
-
-            HardwareBuffer index_buffer(indices, BufferUsage::IndexBuffer);
-            if (!index_buffer) {
-                continue;
-            }
-
             uint32_t texture_index = texture_id_to_descriptor(pcmd.GetTexID());
             if (texture_index == 0 && font_atlas_image_) {
                 texture_index = font_atlas_image_.storeDescriptor();
@@ -292,17 +330,45 @@ void VulkanBackend::render_frame(ImDrawData* draw_data) {
             imgui_pipeline_["pushConsts.clip_rect"] = ktm::fvec4(clip_min.x, clip_min.y, clip_max.x, clip_max.y);
             imgui_pipeline_["pushConsts.texture_index"] = texture_index;
 
-            imgui_pipeline_.record(index_buffer, vertex_buffer);
+            const int32_t scissor_x = static_cast<int32_t>(std::floor(clip_min.x));
+            const int32_t scissor_y = static_cast<int32_t>(std::floor(clip_min.y));
+            const int32_t scissor_w = static_cast<int32_t>(std::ceil(clip_max.x)) - scissor_x;
+            const int32_t scissor_h = static_cast<int32_t>(std::ceil(clip_max.y)) - scissor_y;
+            if (scissor_w <= 0 || scissor_h <= 0) {
+                continue;
+            }
+
+            DrawIndexedParams draw_params;
+            draw_params.indexCount = static_cast<uint32_t>(pcmd.ElemCount);
+            draw_params.firstIndex = static_cast<uint32_t>(pcmd.IdxOffset);
+            draw_params.vertexOffset = static_cast<int32_t>(pcmd.VtxOffset);
+            draw_params.indexType = sizeof(ImDrawIdx) == sizeof(uint16_t) ? IndexType::UInt16 : IndexType::UInt32;
+            draw_params.enableScissor = true;
+            draw_params.scissor = ScissorRect{
+                scissor_x,
+                scissor_y,
+                static_cast<uint32_t>(scissor_w),
+                static_cast<uint32_t>(scissor_h)};
+
+            imgui_pipeline_.record(index_buffer, vertex_buffer, draw_params);
             ++recorded_draw_cmds;
         }
     }
 
+    return true;
+}
+
+void VulkanBackend::submit_frame(uint32_t fb_width,
+                                 uint32_t fb_height,
+                                 int cmd_lists_count,
+                                 int total_draw_cmds,
+                                 int recorded_draw_cmds) {
     executor_ << imgui_pipeline_(static_cast<uint16_t>(fb_width), static_cast<uint16_t>(fb_height))
               << executor_.commit();
 
-    CFW_LOG_INFO(
+    CFW_LOG_DEBUG(
         "VulkanBackend: frame stats cmd_lists={}, total_draw_cmds={}, recorded_draw_cmds={}, fb={}x{}",
-        draw_data->CmdListsCount, total_draw_cmds, recorded_draw_cmds, fb_width, fb_height);
+        cmd_lists_count, total_draw_cmds, recorded_draw_cmds, fb_width, fb_height);
 
     frame_ready_ = true;
 }

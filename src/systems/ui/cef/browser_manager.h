@@ -20,6 +20,13 @@ namespace Corona::Systems::UI
 {
     class OffscreenCefClient;
 
+    inline constexpr ImTextureID k_invalid_texture_id = static_cast<ImTextureID>(0);
+
+    inline bool is_valid_texture_id(const ImTextureID texture_id)
+    {
+        return texture_id != k_invalid_texture_id;
+    }
+
     // ============================================================================
     // 浏览器标签页数据结构
     // ============================================================================
@@ -31,7 +38,7 @@ namespace Corona::Systems::UI
 
         OffscreenCefClient* client = nullptr;
         //VkDescriptorSet texture_id = VK_NULL_HANDLE;
-        ImTextureID texture_id = -1;
+        ImTextureID texture_id = k_invalid_texture_id;
 
         int width = 800;
         int height = 600;
