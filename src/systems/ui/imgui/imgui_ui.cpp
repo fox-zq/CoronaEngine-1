@@ -53,6 +53,15 @@ namespace Corona::Systems::UI
         io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;
         io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 
+        // TODO: 明确这是自定义 renderer，并禁用未实现的 RendererHasTextures 路径
+        // 确保字体图集在首帧前已建立，避免 atlas->Builder 为 nullptr
+        // 不熟看你们怎么改
+        io->BackendRendererName = "Corona.CabbageHardware";
+        io->BackendFlags &= ~ImGuiBackendFlags_RendererHasTextures;
+
+        io->Fonts->AddFontDefault();
+        io->Fonts->Build();
+
         ImGui::StyleColorsDark();
         ImGuiStyle& style = ImGui::GetStyle();
         style.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -196,6 +205,13 @@ namespace Corona::Systems::UI
 
         context.vulkan_backend->new_frame();
         ImGui_ImplSDL3_NewFrame();
+
+        // TODO: 字体Bug，随便修一个，后面看你们怎么改
+        if (context.io) 
+        {
+            context.io->BackendFlags &= ~ImGuiBackendFlags_RendererHasTextures;
+        }
+
         ImGui::NewFrame();
 
         ImGuiID dock_space_id = layout_manager_.setup_dockspace();
