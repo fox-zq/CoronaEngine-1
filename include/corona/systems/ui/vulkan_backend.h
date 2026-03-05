@@ -21,26 +21,30 @@ class VulkanBackend {
     void render_frame(ImDrawData* draw_data);
     void present_frame();
 
-    [[nodiscard]] bool is_rebuild_needed() const { return rebuild_needed_; }
-    void request_rebuild() { rebuild_needed_ = true; }
+    [[nodiscard]] bool is_rebuild_needed() const noexcept { return rebuild_needed_; }
+    void request_rebuild() noexcept { rebuild_needed_ = true; }
     void rebuild(int width, int height);
 
    private:
-    struct ImGuiGpuVertex {
-        float pos[2]{};
-        float uv[2]{};
-        float color[4]{};
-    };
+    bool prepare_frame(ImDrawData* draw_data, uint32_t& fb_width, uint32_t& fb_height);
+    bool record_draw_lists(ImDrawData* draw_data,
+                           uint32_t fb_width,
+                           uint32_t fb_height,
+                           int& total_draw_cmds,
+                           int& recorded_draw_cmds);
+    void submit_frame(uint32_t fb_width,
+                      uint32_t fb_height,
+                      int cmd_lists_count,
+                      int total_draw_cmds,
+                      int recorded_draw_cmds);
 
     bool ensure_render_target(uint32_t width, uint32_t height);
     bool ensure_imgui_pipeline();
     bool ensure_font_texture();
 
    private:
-    SDL_Window* window_ = nullptr;
     bool initialized_ = false;
     bool rebuild_needed_ = false;
-
     bool frame_ready_ = false;
     bool imgui_pipeline_ready_ = false;
     bool font_ready_ = false;
@@ -48,6 +52,7 @@ class VulkanBackend {
     uint32_t render_target_width_ = 0;
     uint32_t render_target_height_ = 0;
 
+    SDL_Window* window_ = nullptr;
     HardwareImage render_target_;
     HardwareImage font_atlas_image_;
     RasterizerPipeline imgui_pipeline_;
