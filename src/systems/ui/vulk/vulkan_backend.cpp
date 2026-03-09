@@ -434,6 +434,7 @@ bool VulkanBackend::ensure_imgui_pipeline() {
         imgui_pipeline_ = RasterizerPipeline(
             std::string(k_imgui_vertex_shader),
             std::string(k_imgui_fragment_shader));
+        imgui_pipeline_.setDepthEnabled(false);
         imgui_pipeline_ready_ = (imgui_pipeline_.getRasterizerPipelineID() != 0);
 
         if (imgui_pipeline_ready_) {
