@@ -61,6 +61,11 @@ class VulkanBackend {
 
     HardwareDisplayer displayer_;
     HardwareExecutor executor_;
+
+    HardwareBuffer vertex_buffer_;
+    HardwareBuffer index_buffer_;
+    size_t vertex_buffer_capacity_ = 0;
+    size_t index_buffer_capacity_ = 0;
 };
 
 }  // namespace Corona::Systems

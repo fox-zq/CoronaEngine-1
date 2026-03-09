@@ -161,6 +161,11 @@ void VulkanBackend::shutdown() {
     font_atlas_image_ = HardwareImage();
     imgui_pipeline_ = RasterizerPipeline();
 
+    vertex_buffer_ = HardwareBuffer();
+    index_buffer_ = HardwareBuffer();
+    vertex_buffer_capacity_ = 0;
+    index_buffer_capacity_ = 0;
+
     clear_pixels_.clear();
     render_target_width_ = 0;
     render_target_height_ = 0;
@@ -236,24 +241,25 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
                                       uint32_t fb_height,
                                       int& total_draw_cmds,
                                       int& recorded_draw_cmds) {
-    if (draw_data == nullptr || draw_data->DisplaySize.x == 0.0f || draw_data->DisplaySize.y == 0.0f) {
+    if (draw_data == nullptr || draw_data->TotalVtxCount <= 0) {
         return false;
     }
 
-    const float sx = 2.0f / draw_data->DisplaySize.x;
-    const float sy = 2.0f / draw_data->DisplaySize.y;
-    const ktm::fvec2 scale(sx, sy);
-    const ktm::fvec2 translate(-1.0f - draw_data->DisplayPos.x * sx,
-                               -1.0f - draw_data->DisplayPos.y * sy);
+    // --- Merge all draw lists into single vertex/index arrays ---
+    const auto total_vtx = static_cast<size_t>(draw_data->TotalVtxCount);
+    const auto total_idx = static_cast<size_t>(draw_data->TotalIdxCount);
 
-    for (int cmd_list_index = 0; cmd_list_index < draw_data->CmdListsCount; ++cmd_list_index) {
-        const ImDrawList* cmd_list = draw_data->CmdLists[cmd_list_index];
+    std::vector<ImGuiGpuVertex> merged_vertices;
+    merged_vertices.reserve(total_vtx);
+    std::vector<ImDrawIdx> merged_indices;
+    merged_indices.reserve(total_idx);
+
+    for (int n = 0; n < draw_data->CmdListsCount; ++n) {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
         if (cmd_list == nullptr) {
             continue;
         }
 
-        std::vector<ImGuiGpuVertex> vertices;
-        vertices.reserve(static_cast<size_t>(cmd_list->VtxBuffer.Size));
         for (const ImDrawVert& v : cmd_list->VtxBuffer) {
             ImGuiGpuVertex gv{};
             gv.pos[0] = v.pos.x;
@@ -265,30 +271,57 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
             gv.color[1] = color.y;
             gv.color[2] = color.z;
             gv.color[3] = color.w;
-            vertices.push_back(gv);
+            merged_vertices.push_back(gv);
         }
 
-        if (vertices.empty()) {
-            continue;
-        }
+        const auto* idx_src = cmd_list->IdxBuffer.Data;
+        merged_indices.insert(merged_indices.end(), idx_src, idx_src + cmd_list->IdxBuffer.Size);
+    }
 
-        HardwareBuffer vertex_buffer(vertices, BufferUsage::VertexBuffer);
-        if (!vertex_buffer) {
-            continue;
-        }
+    if (merged_vertices.empty() || merged_indices.empty()) {
+        return false;
+    }
 
-        std::vector<ImDrawIdx> indices;
-        indices.reserve(static_cast<size_t>(cmd_list->IdxBuffer.Size));
-        for (const ImDrawIdx idx : cmd_list->IdxBuffer) {
-            indices.push_back(idx);
-        }
+    // --- Ensure buffer capacity, only reallocate when needed ---
+    const size_t vtx_bytes = merged_vertices.size() * sizeof(ImGuiGpuVertex);
+    const size_t idx_bytes = merged_indices.size() * sizeof(ImDrawIdx);
 
-        if (indices.empty()) {
-            continue;
+    if (!vertex_buffer_ || vertex_buffer_capacity_ < vtx_bytes) {
+        const size_t new_capacity = vtx_bytes + 5000 * sizeof(ImGuiGpuVertex);
+        vertex_buffer_ = HardwareBuffer(new_capacity, BufferUsage::VertexBuffer);
+        vertex_buffer_capacity_ = new_capacity;
+        if (!vertex_buffer_) {
+            CFW_LOG_ERROR("VulkanBackend: failed to allocate vertex buffer ({} bytes)", new_capacity);
+            return false;
         }
+    }
 
-        HardwareBuffer index_buffer(indices, BufferUsage::IndexBuffer);
-        if (!index_buffer) {
+    if (!index_buffer_ || index_buffer_capacity_ < idx_bytes) {
+        const size_t new_capacity = idx_bytes + 10000 * sizeof(ImDrawIdx);
+        index_buffer_ = HardwareBuffer(new_capacity, BufferUsage::IndexBuffer);
+        index_buffer_capacity_ = new_capacity;
+        if (!index_buffer_) {
+            CFW_LOG_ERROR("VulkanBackend: failed to allocate index buffer ({} bytes)", new_capacity);
+            return false;
+        }
+    }
+
+    vertex_buffer_.copyFromData(merged_vertices.data(), vtx_bytes);
+    index_buffer_.copyFromData(merged_indices.data(), idx_bytes);
+
+    // --- Record draw commands with global offsets ---
+    const float sx = 2.0f / draw_data->DisplaySize.x;
+    const float sy = 2.0f / draw_data->DisplaySize.y;
+    const ktm::fvec2 scale(sx, sy);
+    const ktm::fvec2 translate(-1.0f - draw_data->DisplayPos.x * sx,
+                               -1.0f - draw_data->DisplayPos.y * sy);
+
+    int global_vtx_offset = 0;
+    int global_idx_offset = 0;
+
+    for (int n = 0; n < draw_data->CmdListsCount; ++n) {
+        const ImDrawList* cmd_list = draw_data->CmdLists[n];
+        if (cmd_list == nullptr) {
             continue;
         }
 
@@ -340,8 +373,8 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
 
             DrawIndexedParams draw_params;
             draw_params.indexCount = static_cast<uint32_t>(pcmd.ElemCount);
-            draw_params.firstIndex = static_cast<uint32_t>(pcmd.IdxOffset);
-            draw_params.vertexOffset = static_cast<int32_t>(pcmd.VtxOffset);
+            draw_params.firstIndex = static_cast<uint32_t>(pcmd.IdxOffset + global_idx_offset);
+            draw_params.vertexOffset = static_cast<int32_t>(pcmd.VtxOffset + global_vtx_offset);
             draw_params.indexType = sizeof(ImDrawIdx) == sizeof(uint16_t) ? IndexType::UInt16 : IndexType::UInt32;
             draw_params.enableScissor = true;
             draw_params.scissor = ScissorRect{
@@ -350,9 +383,12 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
                 static_cast<uint32_t>(scissor_w),
                 static_cast<uint32_t>(scissor_h)};
 
-            imgui_pipeline_.record(index_buffer, vertex_buffer, draw_params);
+            imgui_pipeline_.record(index_buffer_, vertex_buffer_, draw_params);
             ++recorded_draw_cmds;
         }
+
+        global_idx_offset += cmd_list->IdxBuffer.Size;
+        global_vtx_offset += cmd_list->VtxBuffer.Size;
     }
 
     return true;
