@@ -124,13 +124,17 @@ void DisplaySystem::update() {
         const bool has_optics = state.optics.image != nullptr && state.optics.executor != nullptr;
         const bool has_ui = state.ui.image != nullptr && state.ui.executor != nullptr;
 
-/*        if (has_optics && has_ui) {
-            compose_and_present(displayer, state);
-        } else if (has_optics) {
-            displayer.wait(*state.optics.executor) << *state.optics.image;
-        } else */if (has_ui) {
+        if (has_ui) {
             displayer.wait(*state.ui.executor) << *state.ui.image;
         }
+
+        //if (has_optics && has_ui) {
+        //    compose_and_present(displayer, state);
+        //} else if (has_optics) {
+        //    displayer.wait(*state.optics.executor) << *state.optics.image;
+        //} else if (has_ui) {
+        //    displayer.wait(*state.ui.executor) << *state.ui.image;
+        //}
     }
 }
 
@@ -142,17 +146,20 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceSta
         return;
     }
 
-    if (!ensure_composite_resources(out_w, out_h)) {
-        // Fallback: present optics layer only when compositing is unavailable
-        displayer.wait(*state.optics.executor) << *state.optics.image;
-        return;
-    }
+    //if (!ensure_composite_resources(out_w, out_h)) {
+    //    // Fallback: present optics layer only when compositing is unavailable
+    //    displayer.wait(*state.optics.executor) << *state.optics.image;
+    //    return;
+    //}
 
     composite_pipeline_["pushConsts.bgImage"] = state.optics.image->storeDescriptor();
     composite_pipeline_["pushConsts.fgImage"] = state.ui.image->storeDescriptor();
     composite_pipeline_["pushConsts.outputImage"] = composite_output_.storeDescriptor();
     composite_pipeline_["pushConsts.outputWidth"] = out_w;
     composite_pipeline_["pushConsts.outputHeight"] = out_h;
+
+    compositor_executor_.wait(*state.optics.executor);
+    compositor_executor_.wait(*state.ui.executor);
 
     compositor_executor_ << composite_pipeline_(out_w / 8, out_h / 8, 1)
                          << compositor_executor_.commit();
