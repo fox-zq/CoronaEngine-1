@@ -38,22 +38,30 @@ namespace Corona::Events
         void* surface;
     };
 
-    enum class DisplayFrameSource : uint8_t
-    {
-        ui = 0,
-        optics = 1
-    };
-
     /**
-     * @brief 待显示帧事件（由 UI/Optics 发布，DisplaySystem 消费）
+     * @brief Optics layer frame ready (published by OpticsSystem, consumed by DisplaySystem)
      */
-    struct DisplayFrameReadyEvent
+    struct OpticsFrameReadyEvent
     {
         void* surface = nullptr;
         HardwareImage* image = nullptr;
         HardwareExecutor* executor = nullptr;
         uint64_t frame_index = 0;
-        DisplayFrameSource source = DisplayFrameSource::ui;
+        uint32_t width = 0;
+        uint32_t height = 0;
+    };
+
+    /**
+     * @brief UI layer frame ready (published by VulkanBackend, consumed by DisplaySystem)
+     */
+    struct UIFrameReadyEvent
+    {
+        void* surface = nullptr;
+        HardwareImage* image = nullptr;
+        HardwareExecutor* executor = nullptr;
+        uint64_t frame_index = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
     };
 
 } // namespace Corona::Events

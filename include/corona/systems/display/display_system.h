@@ -13,23 +13,24 @@
 namespace Corona::Systems
 {
     /**
-     * @brief 显示系统
+     * @brief Display system
      *
-     * 负责管理窗口、输入事件和显示设备。
-     * 运行在独立线程，以 120 FPS 响应输入事件。
+     * Manages windows, input events, and display devices.
+     * Runs on a dedicated thread at 120 FPS for responsive input handling.
+     * Receives Optics and UI layers, composites them before presenting.
      */
     class DisplaySystem : public Kernel::SystemBase
     {
     public:
         DisplaySystem()
         {
-            set_target_fps(120); // 显示系统高刷新率以提升响应速度
+            set_target_fps(120);
         }
 
         ~DisplaySystem() override = default;
 
         // ========================================
-        // ISystem 接口实现
+        // ISystem interface
         // ========================================
 
         std::string_view get_name() const override
@@ -39,43 +40,45 @@ namespace Corona::Systems
 
         int get_priority() const override
         {
-            return 100; // 最高优先级，最先初始化
+            return 100;
         }
 
-        /**
-         * @brief 初始化显示系统
-         * @param ctx 系统上下文
-         * @return 初始化成功返回 true
-         */
         bool initialize(Kernel::ISystemContext* ctx) override;
-
-        /**
-         * @brief 每帧更新显示
-         *
-         * 在独立线程中调用，处理窗口事件和输入
-         */
         void update() override;
-
-        /**
-         * @brief 关闭显示系统
-         *
-         * 销毁窗口并清理显示资源
-         */
         void shutdown() override;
 
     private:
-        struct PendingFrame
+        struct PendingLayer
         {
             HardwareImage* image = nullptr;
             HardwareExecutor* executor = nullptr;
             uint64_t frame_index = 0;
-            Events::DisplayFrameSource source = Events::DisplayFrameSource::ui;
+            uint32_t width = 0;
+            uint32_t height = 0;
         };
 
+        struct SurfaceState
+        {
+            PendingLayer optics;
+            PendingLayer ui;
+        };
+
+        void compose_and_present(HardwareDisplayer& displayer, SurfaceState& state);
+        bool ensure_composite_resources(uint32_t width, uint32_t height);
+
         Kernel::EventId surface_changed_sub_id_ = 0;
-        Kernel::EventId frame_ready_sub_id_ = 0;
+        Kernel::EventId optics_frame_sub_id_ = 0;
+        Kernel::EventId ui_frame_sub_id_ = 0;
 
         std::unordered_map<uint64_t, HardwareDisplayer> displayers_;
-        std::unordered_map<uint64_t, PendingFrame> latest_frames_;
+        std::unordered_map<uint64_t, SurfaceState> surface_states_;
+
+        // Compositing resources
+        ComputePipeline composite_pipeline_;
+        HardwareExecutor compositor_executor_;
+        HardwareImage composite_output_;
+        uint32_t composite_width_ = 0;
+        uint32_t composite_height_ = 0;
+        bool composite_pipeline_ready_ = false;
     };
 } // namespace Corona::Systems

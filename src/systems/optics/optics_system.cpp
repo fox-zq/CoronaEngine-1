@@ -286,12 +286,13 @@ namespace Corona::Systems
                         {
                             if (auto* event_bus = context()->event_bus())
                             {
-                                event_bus->publish<Events::DisplayFrameReadyEvent>({
+                                event_bus->publish<Events::OpticsFrameReadyEvent>({
                                     camera->surface,
                                     &hardware_->finalOutputImage,
                                     &hardware_->executor,
                                     frame_index,
-                                    Events::DisplayFrameSource::optics});
+                                    hardware_->gbufferSize.x,
+                                    hardware_->gbufferSize.y});
                             }
                         }
 

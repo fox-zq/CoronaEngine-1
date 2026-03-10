@@ -426,12 +426,13 @@ void VulkanBackend::present_frame() {
 
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
         ++frame_index_;
-        event_bus->publish<Events::DisplayFrameReadyEvent>({
+        event_bus->publish<Events::UIFrameReadyEvent>({
             surface_,
             &render_target_,
             &executor_,
             frame_index_,
-            Events::DisplayFrameSource::ui});
+            render_target_width_,
+            render_target_height_});
     }
 
     executor_.cleanupDeferredResources();
