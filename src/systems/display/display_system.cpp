@@ -142,12 +142,6 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceSta
         return;
     }
 
-    //if (!ensure_composite_resources(out_w, out_h)) {
-    //    // Fallback: present optics layer only when compositing is unavailable
-    //    displayer.wait(*state.optics.executor) << *state.optics.image;
-    //    return;
-    //}
-
     composite_pipeline_["pushConsts.bgImage"] = state.optics.image->storeDescriptor();
     composite_pipeline_["pushConsts.fgImage"] = state.ui.image->storeDescriptor();
     composite_pipeline_["pushConsts.outputImage"] = composite_output_.storeDescriptor();
@@ -163,31 +157,6 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceSta
     displayer.wait(compositor_executor_) << composite_output_;
 }
 
-bool DisplaySystem::ensure_composite_resources(uint32_t width, uint32_t height) {
-    if (composite_output_ && composite_width_ == width && composite_height_ == height
-        && composite_pipeline_ready_) {
-        return true;
-    }
-
-    try {
-        if (!composite_pipeline_ready_) {
-            composite_pipeline_ = ComputePipeline(std::string(k_composite_shader));
-            composite_pipeline_ready_ = true;
-            CFW_LOG_INFO("DisplaySystem: Composite compute pipeline created");
-        }
-
-        composite_output_ = HardwareImage(width, height, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-        composite_width_ = width;
-        composite_height_ = height;
-        CFW_LOG_INFO("DisplaySystem: Composite output resized to {}x{}", width, height);
-    } catch (const std::exception& e) {
-        CFW_LOG_ERROR("DisplaySystem: Failed to create composite resources: {}", e.what());
-        composite_pipeline_ready_ = false;
-        return false;
-    }
-
-    return true;
-}
 
 void DisplaySystem::shutdown() {
     CFW_LOG_NOTICE("DisplaySystem: Shutting down...");
