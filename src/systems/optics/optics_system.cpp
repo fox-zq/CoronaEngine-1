@@ -101,7 +101,9 @@ namespace Corona::Systems
             hardware_->computeUniformBuffer = HardwareBuffer(sizeof(Hardware::ComputeUniformBufferObject),
                                                              BufferUsage::StorageBuffer);
 
-            hardware_->finalOutputImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
+            hardware_->finalOutputImage[0] = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
+                                                        ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->finalOutputImage[1] = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
                                                         ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
         }
         catch (const std::exception& e)
@@ -245,7 +247,7 @@ namespace Corona::Systems
                         hardware_->computePipeline["pushConsts.gbufferDepthImage"] = hardware_->rasterizerPipeline.
                             getDepthImage().storeDescriptor();
 
-                        hardware_->computePipeline["pushConsts.finalOutputImage"] = hardware_->finalOutputImage.
+                        hardware_->computePipeline["pushConsts.finalOutputImage"] = hardware_->finalOutputImage[hardware_->write_index].
                             storeDescriptor();
 
                         ktm::fvec3 sun_dir;
@@ -278,9 +280,10 @@ namespace Corona::Systems
                         hardware_->computePipeline["pushConsts.uniformBufferIndex"] = hardware_->uniformBuffer.
                             storeDescriptor();
 
-                        hardware_->executor << hardware_->rasterizerPipeline(1920, 1080)
+                        const int wi = hardware_->write_index;
+                        hardware_->executor[wi] << hardware_->rasterizerPipeline(1920, 1080)
                             << hardware_->computePipeline(1920 / 8, 1080 / 8, 1)
-                            << hardware_->executor.commit();
+                            << hardware_->executor[wi].commit();
 
                         if (camera->surface != nullptr)
                         {
@@ -288,13 +291,16 @@ namespace Corona::Systems
                             {
                                 event_bus->publish<Events::OpticsFrameReadyEvent>({
                                     camera->surface,
-                                    &hardware_->finalOutputImage,
-                                    &hardware_->executor,
+                                    &hardware_->finalOutputImage[wi],
+                                    &hardware_->executor[wi],
                                     frame_index,
                                     hardware_->gbufferSize.x,
                                     hardware_->gbufferSize.y});
                             }
                         }
+
+                        // Swap to the other buffer for the next frame
+                        hardware_->write_index = 1 - wi;
 
 #ifdef CORONA_ENABLE_VISION
                         // if (hardware_->displayers_.contains(reinterpret_cast<uint64_t>(camera->surface)))

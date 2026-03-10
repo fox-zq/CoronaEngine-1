@@ -69,6 +69,7 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
             }
 
             const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
+            std::lock_guard<std::mutex> lock(frame_mutex_);
             if (!displayers_.contains(surface_id)) {
                 CFW_LOG_INFO("DisplaySystem: Creating new displayer for surface {}", surface_id);
                 displayers_.emplace(surface_id, HardwareDisplayer(event.surface));
@@ -82,6 +83,7 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
             }
 
             const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
+            std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].optics;
             if (event.frame_index >= layer.frame_index) {
                 layer.image = event.image;
@@ -99,6 +101,7 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
             }
 
             const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
+            std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].ui;
             if (event.frame_index >= layer.frame_index) {
                 layer.image = event.image;
@@ -114,9 +117,16 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
 }
 
 void DisplaySystem::update() {
+    // Snapshot shared state under lock, then release before GPU work
+    std::unordered_map<uint64_t, SurfaceState> states_snapshot;
+    {
+        std::lock_guard<std::mutex> lock(frame_mutex_);
+        states_snapshot = surface_states_;
+    }
+
     for (auto& [surface_id, displayer] : displayers_) {
-        auto it = surface_states_.find(surface_id);
-        if (it == surface_states_.end()) {
+        auto it = states_snapshot.find(surface_id);
+        if (it == states_snapshot.end()) {
             continue;
         }
 
@@ -134,11 +144,41 @@ void DisplaySystem::update() {
     }
 }
 
+bool DisplaySystem::ensure_composite_resources(uint32_t width, uint32_t height) {
+    if (!composite_pipeline_ready_) {
+        try {
+            composite_pipeline_ = ComputePipeline(std::string(k_composite_shader));
+            composite_pipeline_ready_ = true;
+            CFW_LOG_INFO("DisplaySystem: Composite compute pipeline created");
+        } catch (const std::exception& e) {
+            CFW_LOG_ERROR("DisplaySystem: Failed to create composite pipeline: {}", e.what());
+            return false;
+        }
+    }
+
+    if (composite_width_ != width || composite_height_ != height || !composite_output_) {
+        composite_output_ = HardwareImage(width, height, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+        if (!composite_output_) {
+            CFW_LOG_ERROR("DisplaySystem: Failed to create composite output ({}x{})", width, height);
+            return false;
+        }
+        composite_width_ = width;
+        composite_height_ = height;
+        CFW_LOG_INFO("DisplaySystem: Composite output image created ({}x{})", width, height);
+    }
+
+    return true;
+}
+
 void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceState& state) {
     const uint32_t out_w = state.ui.width;
     const uint32_t out_h = state.ui.height;
 
     if (out_w == 0 || out_h == 0) {
+        return;
+    }
+
+    if (!ensure_composite_resources(out_w, out_h)) {
         return;
     }
 

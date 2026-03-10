@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace Corona::Systems
@@ -69,6 +70,10 @@ namespace Corona::Systems
         Kernel::EventId surface_changed_sub_id_ = 0;
         Kernel::EventId optics_frame_sub_id_ = 0;
         Kernel::EventId ui_frame_sub_id_ = 0;
+
+        // Protects displayers_ and surface_states_ against concurrent access
+        // from EventBus handlers (Optics thread, main thread) and update() (Display thread)
+        std::mutex frame_mutex_;
 
         std::unordered_map<uint64_t, HardwareDisplayer> displayers_;
         std::unordered_map<uint64_t, SurfaceState> surface_states_;

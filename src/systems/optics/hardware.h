@@ -8,7 +8,13 @@ struct Hardware {
     HardwareImage gbufferNormalImage;
     HardwareImage gbufferMotionVectorImage;
     HardwareImage gbufferDepthImage;
-    HardwareImage finalOutputImage;
+
+    // Double-buffered output: write_index is the buffer currently being rendered to,
+    // the other buffer holds the last completed frame for DisplaySystem to consume.
+    static constexpr int BUFFER_COUNT = 2;
+    HardwareImage finalOutputImage[BUFFER_COUNT];
+    HardwareExecutor executor[BUFFER_COUNT];
+    int write_index = 0;
 
     HardwareBuffer uniformBuffer;
     HardwareBuffer gbufferUniformBuffer;
@@ -17,7 +23,6 @@ struct Hardware {
     bool shaderHasInit = false;
     RasterizerPipeline rasterizerPipeline;
     ComputePipeline computePipeline;
-    HardwareExecutor executor;
 
     struct UniformBufferObject {
         // Light data (for shadow mapping, etc.)
