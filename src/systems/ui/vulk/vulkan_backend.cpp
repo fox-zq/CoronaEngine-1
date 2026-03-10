@@ -11,6 +11,7 @@
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
 #include <corona/kernel/event/i_event_bus.h>
+#include <corona/systems/script/corona_engine_api.h>
 
 namespace {
 struct ImGuiGpuVertex {
@@ -129,11 +130,11 @@ bool VulkanBackend::initialize() {
         return false;
     }
 
+    surface_ = native_handle;
+    Corona::API::set_default_surface(surface_);
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
-        event_bus->publish<Events::DisplaySurfaceChangedEvent>({native_handle});
+        event_bus->publish<Events::DisplaySurfaceChangedEvent>({surface_});
     }
-
-    displayer_ = HardwareDisplayer(native_handle);
 
     int w = 0;
     int h = 0;
@@ -178,7 +179,8 @@ void VulkanBackend::shutdown() {
     render_target_width_ = 0;
     render_target_height_ = 0;
 
-    displayer_ = HardwareDisplayer();
+    surface_ = nullptr;
+    frame_index_ = 0;
 
     initialized_ = false;
     CFW_LOG_INFO("VulkanBackend: shutdown");
@@ -418,11 +420,20 @@ void VulkanBackend::submit_frame(uint32_t fb_width,
 }
 
 void VulkanBackend::present_frame() {
-    if (!initialized_ || !frame_ready_ || !render_target_) {
+    if (!initialized_ || !frame_ready_ || !render_target_ || surface_ == nullptr) {
         return;
     }
 
-    displayer_.wait(executor_) << render_target_;
+    if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+        ++frame_index_;
+        event_bus->publish<Events::DisplayFrameReadyEvent>({
+            surface_,
+            &render_target_,
+            &executor_,
+            frame_index_,
+            Events::DisplayFrameSource::ui});
+    }
+
     executor_.cleanupDeferredResources();
 
     frame_ready_ = false;
@@ -546,3 +557,4 @@ bool VulkanBackend::ensure_font_texture() {
 }
 
 }  // namespace Corona::Systems
+

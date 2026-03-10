@@ -6,7 +6,9 @@
 #include <corona/kernel/system/system_base.h>
 #include <CabbageHardware.h>
 
+#include <cstdint>
 #include <memory>
+#include <unordered_map>
 
 namespace Corona::Systems
 {
@@ -62,8 +64,18 @@ namespace Corona::Systems
         void shutdown() override;
 
     private:
+        struct PendingFrame
+        {
+            void* image = nullptr;
+            void* executor = nullptr;
+            uint64_t frame_index = 0;
+            Events::DisplayFrameSource source = Events::DisplayFrameSource::ui;
+        };
+
         Kernel::EventId surface_changed_sub_id_ = 0;
+        Kernel::EventId frame_ready_sub_id_ = 0;
 
         std::unordered_map<uint64_t, HardwareDisplayer> displayers_;
+        std::unordered_map<uint64_t, PendingFrame> latest_frames_;
     };
 } // namespace Corona::Systems

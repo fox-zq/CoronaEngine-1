@@ -1,4 +1,5 @@
-﻿#include <corona/events/optics_system_events.h>
+﻿#include <corona/events/display_system_events.h>
+#include <corona/events/optics_system_events.h>
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
@@ -150,17 +151,17 @@ namespace Corona::Systems
         }
 
         static float frame_count = 0.0f;
+        static uint64_t frame_index = 0;
+
         float dt = delta_time();
         frame_count += dt;
+        ++frame_index;
 
         // 离屏渲染下不需要display，拆离到display线程去
-        optics_pipeline(frame_count);
-        // if (!hardware_->displayers_.empty())
-        // {
-        // }
+        optics_pipeline(frame_count, frame_index);
     }
 
-    void OpticsSystem::optics_pipeline(float frame_count) const
+    void OpticsSystem::optics_pipeline(float frame_count, uint64_t frame_index)
     {
         // CFW_LOG_DEBUG("OpticsSystem: Rendering pipeline temporarily disabled - waiting for new Storage API");
 
@@ -169,7 +170,6 @@ namespace Corona::Systems
         {
             for (auto vp_handle : scene.viewport_handles)
             {
-                CFW_LOG_INFO("OpticsSystem: Viewport {}", vp_handle);
                 if (auto viewport = SharedDataHub::instance().viewport_storage().acquire_read(vp_handle))
                 {
                     if (viewport->camera == 0)
@@ -281,6 +281,19 @@ namespace Corona::Systems
                         hardware_->executor << hardware_->rasterizerPipeline(1920, 1080)
                             << hardware_->computePipeline(1920 / 8, 1080 / 8, 1)
                             << hardware_->executor.commit();
+
+                        if (camera->surface != nullptr)
+                        {
+                            if (auto* event_bus = context()->event_bus())
+                            {
+                                event_bus->publish<Events::DisplayFrameReadyEvent>({
+                                    camera->surface,
+                                    &hardware_->finalOutputImage,
+                                    &hardware_->executor,
+                                    frame_index,
+                                    Events::DisplayFrameSource::optics});
+                            }
+                        }
 
 #ifdef CORONA_ENABLE_VISION
                         // if (hardware_->displayers_.contains(reinterpret_cast<uint64_t>(camera->surface)))

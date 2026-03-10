@@ -1,7 +1,4 @@
-//
-// Created by 25473 on 25-9-19.
-//
-
+#include <atomic>
 #include <CabbageHardware.h>
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
@@ -13,6 +10,11 @@
 #include <corona/utils/path_utils.h>
 
 #include "corona/resource/types/image.h"
+
+namespace
+{
+    std::atomic<void*> g_default_surface{nullptr};
+}
 
 // ########################
 //          Scene
@@ -1040,6 +1042,7 @@ Corona::API::Camera::Camera()
         accessor->forward = fwd_vec;
         accessor->world_up = up_vec;
         accessor->fov = fov;
+        accessor->surface = get_default_surface();
     } else {
         CFW_LOG_ERROR("[Camera] Failed to acquire write access to camera storage");
         SharedDataHub::instance().camera_storage().deallocate(handle_);
@@ -1070,6 +1073,7 @@ Corona::API::Camera::Camera(const std::array<float, 3>& position, const std::arr
         accessor->forward = fwd_vec;
         accessor->world_up = up_vec;
         accessor->fov = fov;
+        accessor->surface = get_default_surface();
     } else {
         CFW_LOG_ERROR("[Camera] Failed to acquire write access to camera storage");
         SharedDataHub::instance().camera_storage().deallocate(handle_);
@@ -1267,6 +1271,15 @@ void Corona::API::Viewport::set_camera(Camera* camera) {
         accessor->camera = camera_ ? camera_->get_handle() : 0;
     } else {
         CFW_LOG_ERROR("[Viewport::set_camera] Failed to acquire write access to viewport storage");
+        return;
+    }
+
+    if (camera_ != nullptr)
+    {
+        if (void* surface = get_default_surface(); surface != nullptr)
+        {
+            camera_->set_surface(surface);
+        }
     }
 }
 
@@ -1344,3 +1357,24 @@ void Corona::API::Viewport::save_screenshot(const std::string& path) const {
 std::uintptr_t Corona::API::Viewport::get_handle() const {
     return handle_;
 }
+
+namespace Corona::API
+{
+void set_default_surface(void* surface)
+{
+    g_default_surface.store(surface, std::memory_order_relaxed);
+
+    // 句柄到达时，补写到已存在的相机，避免“先有 camera 后有 surface”的空窗。
+    for (auto& camera : SharedDataHub::instance().camera_storage())
+    {
+        camera.surface = surface;
+    }
+}
+
+void* get_default_surface()
+{
+    return g_default_surface.load(std::memory_order_relaxed);
+}
+} // namespace Corona::API
+
+

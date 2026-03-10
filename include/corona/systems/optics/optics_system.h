@@ -6,6 +6,7 @@
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
 
+#include <cstdint>
 #include <memory>
 
 // 前向声明 Hardware 结构体
@@ -59,7 +60,7 @@ class OpticsSystem : public Kernel::SystemBase {
 
    private:
     // TODO: 添加光学系统私有成员
-    void optics_pipeline(float frame_count) const;
+    void optics_pipeline(float frame_count, uint64_t frame_index);
 
     std::unique_ptr<Hardware> hardware_;
 };

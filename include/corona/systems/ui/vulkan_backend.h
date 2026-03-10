@@ -53,14 +53,15 @@ class VulkanBackend {
     uint32_t render_target_height_ = 0;
 
     SDL_Window* window_ = nullptr;
+    void* surface_ = nullptr;
     HardwareImage render_target_;
     HardwareImage font_atlas_image_;
     RasterizerPipeline imgui_pipeline_;
 
     std::vector<uint8_t> clear_pixels_;
 
-    HardwareDisplayer displayer_;
     HardwareExecutor executor_;
+    uint64_t frame_index_ = 0;
 
     HardwareBuffer vertex_buffer_;
     HardwareBuffer index_buffer_;

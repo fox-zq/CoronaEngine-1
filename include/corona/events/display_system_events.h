@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 namespace Corona::Events
 {
     /**
@@ -33,6 +35,24 @@ namespace Corona::Events
     struct DisplaySurfaceChangedEvent
     {
         void* surface;
+    };
+
+    enum class DisplayFrameSource : uint8_t
+    {
+        ui = 0,
+        optics = 1
+    };
+
+    /**
+     * @brief 待显示帧事件（由 UI/Optics 发布，DisplaySystem 消费）
+     */
+    struct DisplayFrameReadyEvent
+    {
+        void* surface = nullptr;
+        void* image = nullptr;
+        void* executor = nullptr;
+        uint64_t frame_index = 0;
+        DisplayFrameSource source = DisplayFrameSource::ui;
     };
 
 } // namespace Corona::Events
