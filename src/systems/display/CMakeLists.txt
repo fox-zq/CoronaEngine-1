@@ -3,5 +3,8 @@
 # ==============================================================================
 
 corona_add_system(display
-    SOURCES display_system.cpp
+    SOURCES
+        display_system.cpp
+    DEPENDENCIES
+        CabbageHardware
 )

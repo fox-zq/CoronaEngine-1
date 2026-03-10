@@ -48,6 +48,4 @@ struct Hardware {
 
     // 渲染大小
     ktm::uvec2 gbufferSize{};
-
-    std::unordered_map<uint64_t, HardwareDisplayer> displayers_;
 };

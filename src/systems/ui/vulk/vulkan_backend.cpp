@@ -8,6 +8,10 @@
 #include <type_traits>
 #include <vector>
 
+#include <corona/events/display_system_events.h>
+#include <corona/kernel/core/kernel_context.h>
+#include <corona/kernel/event/i_event_bus.h>
+
 namespace {
 struct ImGuiGpuVertex {
     float pos[2]{};
@@ -123,6 +127,10 @@ bool VulkanBackend::initialize() {
     if (native_handle == nullptr) {
         CFW_LOG_ERROR("VulkanBackend: failed to get native window handle from SDL");
         return false;
+    }
+
+    if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+        event_bus->publish<Events::DisplaySurfaceChangedEvent>({native_handle});
     }
 
     displayer_ = HardwareDisplayer(native_handle);
@@ -402,9 +410,9 @@ void VulkanBackend::submit_frame(uint32_t fb_width,
     executor_ << imgui_pipeline_(static_cast<uint16_t>(fb_width), static_cast<uint16_t>(fb_height))
               << executor_.commit();
 
-    CFW_LOG_DEBUG(
-        "VulkanBackend: frame stats cmd_lists={}, total_draw_cmds={}, recorded_draw_cmds={}, fb={}x{}",
-        cmd_lists_count, total_draw_cmds, recorded_draw_cmds, fb_width, fb_height);
+    // CFW_LOG_DEBUG(
+    //     "VulkanBackend: frame stats cmd_lists={}, total_draw_cmds={}, recorded_draw_cmds={}, fb={}x{}",
+    //     cmd_lists_count, total_draw_cmds, recorded_draw_cmds, fb_width, fb_height);
 
     frame_ready_ = true;
 }
