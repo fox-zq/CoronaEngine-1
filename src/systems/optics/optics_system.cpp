@@ -40,7 +40,7 @@ namespace Corona::Systems
 {
     OpticsSystem::OpticsSystem()
     {
-        set_target_fps(120);
+        set_target_fps(60);
     }
 
     OpticsSystem::~OpticsSystem() = default;

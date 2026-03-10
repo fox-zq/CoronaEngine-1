@@ -116,7 +116,7 @@ void Engine::run() {
 
     // 主循环
     auto last_time = std::chrono::high_resolution_clock::now();
-    constexpr auto target_frame_duration = std::chrono::microseconds(8333);  // 120 FPS
+    constexpr auto target_frame_duration = std::chrono::microseconds(16666);  // 60 FPS
 
     while (!exit_requested_.load()) {
         auto frame_start_time = std::chrono::high_resolution_clock::now();
