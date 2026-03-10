@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <CabbageHardware.h>
 
 namespace Corona::Events
 {
@@ -49,8 +50,8 @@ namespace Corona::Events
     struct DisplayFrameReadyEvent
     {
         void* surface = nullptr;
-        void* image = nullptr;
-        void* executor = nullptr;
+        HardwareImage* image = nullptr;
+        HardwareExecutor* executor = nullptr;
         uint64_t frame_index = 0;
         DisplayFrameSource source = DisplayFrameSource::ui;
     };

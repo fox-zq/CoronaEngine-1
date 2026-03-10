@@ -66,8 +66,8 @@ namespace Corona::Systems
     private:
         struct PendingFrame
         {
-            void* image = nullptr;
-            void* executor = nullptr;
+            HardwareImage* image = nullptr;
+            HardwareExecutor* executor = nullptr;
             uint64_t frame_index = 0;
             Events::DisplayFrameSource source = Events::DisplayFrameSource::ui;
         };

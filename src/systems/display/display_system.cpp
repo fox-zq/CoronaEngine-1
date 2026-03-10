@@ -57,8 +57,8 @@ void DisplaySystem::update() {
             continue;
         }
 
-        auto* image = static_cast<HardwareImage*>(frame_it->second.image);
-        auto* executor = static_cast<HardwareExecutor*>(frame_it->second.executor);
+        auto* image = frame_it->second.image;
+        auto* executor = frame_it->second.executor;
         if (image == nullptr || executor == nullptr) {
             continue;
         }
