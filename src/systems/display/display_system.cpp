@@ -124,11 +124,11 @@ void DisplaySystem::update() {
         const bool has_optics = state.optics.image != nullptr && state.optics.executor != nullptr;
         const bool has_ui = state.ui.image != nullptr && state.ui.executor != nullptr;
 
-        if (has_optics && has_ui) {
+/*        if (has_optics && has_ui) {
             compose_and_present(displayer, state);
         } else if (has_optics) {
             displayer.wait(*state.optics.executor) << *state.optics.image;
-        } else if (has_ui) {
+        } else */if (has_ui) {
             displayer.wait(*state.ui.executor) << *state.ui.image;
         }
     }
