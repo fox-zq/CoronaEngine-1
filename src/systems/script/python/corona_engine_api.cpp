@@ -1207,7 +1207,7 @@ void Corona::API::Camera::set_surface(void* surface) {
     }
 
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
-        event_bus->publish<Events::DisplaySurfaceChangedEvent>({surface});
+        event_bus->publish<Events::DisplaySurfaceChangedEvent>({reinterpret_cast<uint64_t>(surface)});
     }
 }
 

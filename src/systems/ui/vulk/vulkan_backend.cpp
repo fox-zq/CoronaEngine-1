@@ -133,7 +133,7 @@ bool VulkanBackend::initialize() {
     surface_ = native_handle;
     Corona::API::set_default_surface(surface_);
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
-        event_bus->publish<Events::DisplaySurfaceChangedEvent>({surface_});
+        event_bus->publish<Events::DisplaySurfaceChangedEvent>({reinterpret_cast<uint64_t>(surface_)});
     }
 
     int w = 0;
@@ -435,9 +435,9 @@ void VulkanBackend::present_frame() {
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
         ++frame_index_;
         event_bus->publish<Events::UIFrameReadyEvent>({
-            surface_,
-            &render_target_[presented_index],
-            &executor_[presented_index],
+            reinterpret_cast<uint64_t>(surface_),
+            reinterpret_cast<uint64_t>(&render_target_[presented_index]),
+            reinterpret_cast<uint64_t>(&executor_[presented_index]),
             frame_index_,
             render_target_width_,
             render_target_height_});

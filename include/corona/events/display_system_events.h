@@ -35,7 +35,7 @@ namespace Corona::Events
      */
     struct DisplaySurfaceChangedEvent
     {
-        void* surface;
+        uint64_t surface_id = 0;
     };
 
     /**
@@ -43,9 +43,9 @@ namespace Corona::Events
      */
     struct OpticsFrameReadyEvent
     {
-        void* surface = nullptr;
-        HardwareImage* image = nullptr;
-        HardwareExecutor* executor = nullptr;
+        uint64_t surface_id = 0;
+        uint64_t image_id = 0;
+        uint64_t executor_id = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;
@@ -56,9 +56,9 @@ namespace Corona::Events
      */
     struct UIFrameReadyEvent
     {
-        void* surface = nullptr;
-        HardwareImage* image = nullptr;
-        HardwareExecutor* executor = nullptr;
+        uint64_t surface_id = 0;
+        uint64_t image_id = 0;
+        uint64_t executor_id = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;
