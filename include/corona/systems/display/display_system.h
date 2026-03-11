@@ -51,8 +51,8 @@ namespace Corona::Systems
     private:
         struct PendingLayer
         {
-            uint64_t image_id = 0;
-            uint64_t executor_id = 0;
+            HardwareImage* image = nullptr;
+            HardwareExecutor* executor = nullptr;
             uint64_t frame_index = 0;
             uint32_t width = 0;
             uint32_t height = 0;

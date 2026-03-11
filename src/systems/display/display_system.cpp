@@ -64,32 +64,30 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
 
     surface_changed_sub_id_ = event_bus->subscribe<Events::DisplaySurfaceChangedEvent>(
         [this](const Events::DisplaySurfaceChangedEvent& event) {
-            if (event.surface_id == 0) {
+            if (event.surface == nullptr) {
                 return;
             }
 
-            const auto surface_id = event.surface_id;
-            auto* surface = reinterpret_cast<void*>(surface_id);
+            const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
             std::lock_guard<std::mutex> lock(frame_mutex_);
             if (!displayers_.contains(surface_id)) {
                 CFW_LOG_INFO("DisplaySystem: Creating new displayer for surface {}", surface_id);
-                displayers_.emplace(surface_id, HardwareDisplayer(surface));
+                displayers_.emplace(surface_id, HardwareDisplayer(event.surface));
             }
         });
 
     optics_frame_sub_id_ = event_bus->subscribe<Events::OpticsFrameReadyEvent>(
         [this](const Events::OpticsFrameReadyEvent& event) {
-            if (event.surface_id == 0 || event.image_id == 0 || event.executor_id == 0) {
+            if (event.surface == nullptr || event.image == nullptr || event.executor == nullptr) {
                 return;
             }
 
-            const auto surface_id = event.surface_id;
-
+            const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
             std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].optics;
             if (event.frame_index >= layer.frame_index) {
-                layer.image_id = event.image_id;
-                layer.executor_id = event.executor_id;
+                layer.image = event.image;
+                layer.executor = event.executor;
                 layer.frame_index = event.frame_index;
                 layer.width = event.width;
                 layer.height = event.height;
@@ -98,17 +96,16 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
 
     ui_frame_sub_id_ = event_bus->subscribe<Events::UIFrameReadyEvent>(
         [this](const Events::UIFrameReadyEvent& event) {
-            if (event.surface_id == 0 || event.image_id == 0 || event.executor_id == 0) {
+            if (event.surface == nullptr || event.image == nullptr || event.executor == nullptr) {
                 return;
             }
 
-            const auto surface_id = event.surface_id;
-
+            const auto surface_id = reinterpret_cast<uint64_t>(event.surface);
             std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].ui;
             if (event.frame_index >= layer.frame_index) {
-                layer.image_id = event.image_id;
-                layer.executor_id = event.executor_id;
+                layer.image = event.image;
+                layer.executor = event.executor;
                 layer.frame_index = event.frame_index;
                 layer.width = event.width;
                 layer.height = event.height;
@@ -134,23 +131,15 @@ void DisplaySystem::update() {
         }
 
         auto& state = it->second;
-        const bool has_optics = state.optics.image_id != 0 && state.optics.executor_id != 0;
-        const bool has_ui = state.ui.image_id != 0 && state.ui.executor_id != 0;
+        const bool has_optics = state.optics.image != nullptr && state.optics.executor != nullptr;
+        const bool has_ui = state.ui.image != nullptr && state.ui.executor != nullptr;
 
         if (has_optics && has_ui) {
             compose_and_present(displayer, state);
         } else if (has_optics) {
-            auto* optics_image = reinterpret_cast<HardwareImage*>(state.optics.image_id);
-            auto* optics_executor = reinterpret_cast<HardwareExecutor*>(state.optics.executor_id);
-            if (optics_image != nullptr && optics_executor != nullptr) {
-                displayer.wait(*optics_executor) << *optics_image;
-            }
+            displayer.wait(*state.optics.executor) << *state.optics.image;
         } else if (has_ui) {
-            auto* ui_image = reinterpret_cast<HardwareImage*>(state.ui.image_id);
-            auto* ui_executor = reinterpret_cast<HardwareExecutor*>(state.ui.executor_id);
-            if (ui_image != nullptr && ui_executor != nullptr) {
-                displayer.wait(*ui_executor) << *ui_image;
-            }
+            displayer.wait(*state.ui.executor) << *state.ui.image;
         }
     }
 }
@@ -182,15 +171,6 @@ bool DisplaySystem::ensure_composite_resources(uint32_t width, uint32_t height) 
 }
 
 void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceState& state) {
-    auto* optics_image = reinterpret_cast<HardwareImage*>(state.optics.image_id);
-    auto* optics_executor = reinterpret_cast<HardwareExecutor*>(state.optics.executor_id);
-    auto* ui_image = reinterpret_cast<HardwareImage*>(state.ui.image_id);
-    auto* ui_executor = reinterpret_cast<HardwareExecutor*>(state.ui.executor_id);
-
-    if (optics_image == nullptr || optics_executor == nullptr || ui_image == nullptr || ui_executor == nullptr) {
-        return;
-    }
-
     const uint32_t out_w = state.ui.width;
     const uint32_t out_h = state.ui.height;
 
@@ -202,14 +182,14 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceSta
         return;
     }
 
-    composite_pipeline_["pushConsts.bgImage"] = optics_image->storeDescriptor();
-    composite_pipeline_["pushConsts.fgImage"] = ui_image->storeDescriptor();
+    composite_pipeline_["pushConsts.bgImage"] = state.optics.image->storeDescriptor();
+    composite_pipeline_["pushConsts.fgImage"] = state.ui.image->storeDescriptor();
     composite_pipeline_["pushConsts.outputImage"] = composite_output_.storeDescriptor();
     composite_pipeline_["pushConsts.outputWidth"] = out_w;
     composite_pipeline_["pushConsts.outputHeight"] = out_h;
 
-    compositor_executor_.wait(*optics_executor);
-    compositor_executor_.wait(*ui_executor);
+    compositor_executor_.wait(*state.optics.executor);
+    compositor_executor_.wait(*state.ui.executor);
 
     compositor_executor_ << composite_pipeline_(out_w / 8, out_h / 8, 1)
                          << compositor_executor_.commit();

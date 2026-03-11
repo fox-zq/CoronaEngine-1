@@ -290,9 +290,9 @@ namespace Corona::Systems
                             if (auto* event_bus = context()->event_bus())
                             {
                                 event_bus->publish<Events::OpticsFrameReadyEvent>({
-                                    reinterpret_cast<uint64_t>(camera->surface),
-                                    reinterpret_cast<uint64_t>(&hardware_->finalOutputImage[wi]),
-                                    reinterpret_cast<uint64_t>(&hardware_->executor[wi]),
+                                    camera->surface,
+                                    &hardware_->finalOutputImage[wi],
+                                    &hardware_->executor[wi],
                                     frame_index,
                                     hardware_->gbufferSize.x,
                                     hardware_->gbufferSize.y});
