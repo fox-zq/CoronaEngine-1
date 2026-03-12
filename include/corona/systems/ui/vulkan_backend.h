@@ -55,12 +55,8 @@ class VulkanBackend {
     SDL_Window* window_ = nullptr;
     void* surface_ = nullptr;
 
-    // Double-buffered render targets: write_index_ is the buffer being rendered to,
-    // the other buffer holds the last completed frame for DisplaySystem to consume.
-    static constexpr int BUFFER_COUNT = 2;
-    HardwareImage render_target_[BUFFER_COUNT];
-    HardwareExecutor executor_[BUFFER_COUNT];
-    int write_index_ = 0;
+    HardwareImage render_target_;
+    HardwareExecutor executor_;
 
     HardwareImage font_atlas_image_;
     RasterizerPipeline imgui_pipeline_;

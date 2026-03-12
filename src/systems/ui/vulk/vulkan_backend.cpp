@@ -170,20 +170,15 @@ void VulkanBackend::shutdown() {
         return;
     }
 
-    for (int i = 0; i < BUFFER_COUNT; ++i) {
-        executor_[i].waitForDeferredResources();
-    }
+    executor_.waitForDeferredResources();
 
     frame_ready_ = false;
     imgui_pipeline_ready_ = false;
     font_ready_ = false;
     rebuild_needed_ = false;
 
-    for (int i = 0; i < BUFFER_COUNT; ++i) {
-        render_target_[i] = HardwareImage();
-        executor_[i] = HardwareExecutor();
-    }
-    write_index_ = 0;
+    render_target_ = HardwareImage();
+    executor_ = HardwareExecutor();
     font_atlas_image_ = HardwareImage();
     imgui_pipeline_ = RasterizerPipeline();
 
@@ -213,15 +208,15 @@ void VulkanBackend::new_frame() {
         return;
     }
 
-    // GPU sync: wait for Display to finish consuming buffer[write_index_]
+    // GPU sync: wait for Display to finish consuming our image
     // before we clear and render new UI content into it.
     if (image_handle_ != 0) {
         if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
-            executor_[write_index_].wait(image_device->consumed_executors[write_index_]);
+            executor_.wait(image_device->consumed_executor);
         }
     }
 
-    executor_[write_index_].cleanupDeferredResources();
+    executor_.cleanupDeferredResources();
 }
 
 void VulkanBackend::render_frame(ImDrawData* draw_data) {
@@ -269,10 +264,10 @@ bool VulkanBackend::prepare_frame(ImDrawData* draw_data, uint32_t& fb_width, uin
     }
 
     if (!clear_pixels_.empty()) {
-        executor_[write_index_] << render_target_[write_index_].copyFrom(clear_pixels_.data());
+        executor_ << render_target_.copyFrom(clear_pixels_.data());
     }
 
-    imgui_pipeline_["out_color"] = render_target_[write_index_];
+    imgui_pipeline_["out_color"] = render_target_;
     return true;
 }
 
@@ -372,7 +367,7 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
 
             if (pcmd.UserCallback != nullptr) {
                 if (pcmd.UserCallback == ImDrawCallback_ResetRenderState) {
-                    imgui_pipeline_["out_color"] = render_target_[write_index_];
+                    imgui_pipeline_["out_color"] = render_target_;
                     continue;
                 }
                 pcmd.UserCallback(cmd_list, &pcmd);
@@ -439,8 +434,8 @@ void VulkanBackend::submit_frame(uint32_t fb_width,
                                  int cmd_lists_count,
                                  int total_draw_cmds,
                                  int recorded_draw_cmds) {
-    executor_[write_index_] << imgui_pipeline_(static_cast<uint16_t>(fb_width), static_cast<uint16_t>(fb_height))
-              << executor_[write_index_].commit();
+    executor_ << imgui_pipeline_(static_cast<uint16_t>(fb_width), static_cast<uint16_t>(fb_height))
+              << executor_.commit();
 
     // CFW_LOG_DEBUG(
     //     "VulkanBackend: frame stats cmd_lists={}, total_draw_cmds={}, recorded_draw_cmds={}, fb={}x{}",
@@ -450,15 +445,13 @@ void VulkanBackend::submit_frame(uint32_t fb_width,
 }
 
 void VulkanBackend::present_frame() {
-    if (!initialized_ || !frame_ready_ || !render_target_[write_index_] || surface_ == nullptr || image_handle_ == 0) {
+    if (!initialized_ || !frame_ready_ || !render_target_ || surface_ == nullptr || image_handle_ == 0) {
         return;
     }
 
-    const int presented_index = write_index_;
-
     if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
-        image_device->images[presented_index] = render_target_[presented_index];
-        image_device->executors[presented_index] = executor_[presented_index];
+        image_device->image = render_target_;
+        image_device->executor = executor_;
     } else {
         return;
     }
@@ -468,14 +461,10 @@ void VulkanBackend::present_frame() {
         event_bus->publish<Events::UIFrameReadyEvent>({
             surface_,
             image_handle_,
-            static_cast<uint32_t>(presented_index),
             frame_index_,
             render_target_width_,
             render_target_height_});
     }
-
-    // Swap to the other buffer for the next frame
-    write_index_ = 1 - write_index_;
 
     frame_ready_ = false;
 }
@@ -502,18 +491,16 @@ bool VulkanBackend::ensure_render_target(uint32_t width, uint32_t height) {
         return false;
     }
 
-    if (render_target_[0] && render_target_width_ == width && render_target_height_ == height) {
+    if (render_target_ && render_target_width_ == width && render_target_height_ == height) {
         return true;
     }
 
-    for (int i = 0; i < BUFFER_COUNT; ++i) {
-        HardwareImage new_target(width, height, ImageFormat::RGBA8_SRGB, ImageUsage::SampledImage);
-        if (!new_target) {
-            CFW_LOG_ERROR("VulkanBackend: create render target [{}] failed ({}x{})", i, width, height);
-            return false;
-        }
-        render_target_[i] = std::move(new_target);
+    HardwareImage new_target(width, height, ImageFormat::RGBA8_SRGB, ImageUsage::SampledImage);
+    if (!new_target) {
+        CFW_LOG_ERROR("VulkanBackend: create render target failed ({}x{})", width, height);
+        return false;
     }
+    render_target_ = std::move(new_target);
     render_target_width_ = width;
     render_target_height_ = height;
     clear_pixels_.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
@@ -583,7 +570,7 @@ bool VulkanBackend::ensure_font_texture() {
         return false;
     }
 
-    executor_[write_index_] << font_atlas_image_.copyFrom(pixels) << executor_[write_index_].commit();
+    executor_ << font_atlas_image_.copyFrom(pixels) << executor_.commit();
 
     const uint32_t descriptor = font_atlas_image_.storeDescriptor();
     if (descriptor == 0) {

@@ -45,7 +45,6 @@ namespace Corona::Events
     {
         void* surface = nullptr;
         std::uintptr_t image_handle = 0;
-        uint32_t buffer_index = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;
@@ -58,7 +57,6 @@ namespace Corona::Events
     {
         void* surface = nullptr;
         std::uintptr_t image_handle = 0;
-        uint32_t buffer_index = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;

@@ -159,13 +159,12 @@ struct SceneDevice {
 };
 
 struct ImageDevice {
-    static constexpr uint32_t buffer_count = 2;
-    HardwareImage images[buffer_count];
-    HardwareExecutor executors[buffer_count];
+    HardwareImage image;
+    HardwareExecutor executor;
 
-    /// Written by DisplaySystem after compositing finishes reading buffer[i].
-    /// Producers wait on this before reusing buffer[i] to prevent GPU read/write races.
-    HardwareExecutor consumed_executors[buffer_count];
+    /// Written by DisplaySystem after compositing finishes reading the image.
+    /// Producers wait on this before overwriting with new content to prevent GPU read/write races.
+    HardwareExecutor consumed_executor;
 };
 
 class SharedDataHub {

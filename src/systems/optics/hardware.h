@@ -9,12 +9,8 @@ struct Hardware {
     HardwareImage gbufferMotionVectorImage;
     HardwareImage gbufferDepthImage;
 
-    // Double-buffered output: write_index is the buffer currently being rendered to,
-    // the other buffer holds the last completed frame for DisplaySystem to consume.
-    static constexpr int BUFFER_COUNT = 2;
-    HardwareImage finalOutputImage[BUFFER_COUNT];
-    HardwareExecutor executor[BUFFER_COUNT];
-    int write_index = 0;
+    HardwareImage finalOutputImage;
+    HardwareExecutor executor;
 
     HardwareBuffer uniformBuffer;
     HardwareBuffer gbufferUniformBuffer;
