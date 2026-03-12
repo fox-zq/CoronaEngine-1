@@ -51,8 +51,8 @@ namespace Corona::Systems
     private:
         struct PendingLayer
         {
-            HardwareImage* image = nullptr;
-            HardwareExecutor* executor = nullptr;
+            std::uintptr_t image_handle = 0;
+            uint32_t buffer_index = 0;
             uint64_t frame_index = 0;
             uint32_t width = 0;
             uint32_t height = 0;
@@ -64,7 +64,12 @@ namespace Corona::Systems
             PendingLayer ui;
         };
 
-        void compose_and_present(HardwareDisplayer& displayer, SurfaceState& state);
+        void compose_and_present(HardwareDisplayer& displayer,
+                                 const SurfaceState& state,
+                                 HardwareImage& optics_image,
+                                 HardwareExecutor& optics_executor,
+                                 HardwareImage& ui_image,
+                                 HardwareExecutor& ui_executor);
         bool ensure_composite_resources(uint32_t width, uint32_t height);
 
         Kernel::EventId surface_changed_sub_id_ = 0;

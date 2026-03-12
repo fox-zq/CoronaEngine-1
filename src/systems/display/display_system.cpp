@@ -4,6 +4,7 @@
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
+#include <corona/shared_data_hub.h>
 #include <corona/systems/display/display_system.h>
 
 #include <algorithm>
@@ -78,7 +79,9 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
 
     optics_frame_sub_id_ = event_bus->subscribe<Events::OpticsFrameReadyEvent>(
         [this](const Events::OpticsFrameReadyEvent& event) {
-            if (event.surface == nullptr || event.image == nullptr || event.executor == nullptr) {
+            if (event.surface == nullptr ||
+                event.image_handle == 0 ||
+                event.buffer_index >= ImageDevice::buffer_count) {
                 return;
             }
 
@@ -86,8 +89,8 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
             std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].optics;
             if (event.frame_index >= layer.frame_index) {
-                layer.image = event.image;
-                layer.executor = event.executor;
+                layer.image_handle = event.image_handle;
+                layer.buffer_index = event.buffer_index;
                 layer.frame_index = event.frame_index;
                 layer.width = event.width;
                 layer.height = event.height;
@@ -96,7 +99,9 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
 
     ui_frame_sub_id_ = event_bus->subscribe<Events::UIFrameReadyEvent>(
         [this](const Events::UIFrameReadyEvent& event) {
-            if (event.surface == nullptr || event.image == nullptr || event.executor == nullptr) {
+            if (event.surface == nullptr ||
+                event.image_handle == 0 ||
+                event.buffer_index >= ImageDevice::buffer_count) {
                 return;
             }
 
@@ -104,8 +109,8 @@ bool DisplaySystem::initialize(Kernel::ISystemContext* ctx) {
             std::lock_guard<std::mutex> lock(frame_mutex_);
             auto& layer = surface_states_[surface_id].ui;
             if (event.frame_index >= layer.frame_index) {
-                layer.image = event.image;
-                layer.executor = event.executor;
+                layer.image_handle = event.image_handle;
+                layer.buffer_index = event.buffer_index;
                 layer.frame_index = event.frame_index;
                 layer.width = event.width;
                 layer.height = event.height;
@@ -131,15 +136,54 @@ void DisplaySystem::update() {
         }
 
         auto& state = it->second;
-        const bool has_optics = state.optics.image != nullptr && state.optics.executor != nullptr;
-        const bool has_ui = state.ui.image != nullptr && state.ui.executor != nullptr;
+        const bool has_optics = state.optics.image_handle != 0 &&
+                                state.optics.buffer_index < ImageDevice::buffer_count;
+        const bool has_ui = state.ui.image_handle != 0 &&
+                            state.ui.buffer_index < ImageDevice::buffer_count;
 
         if (has_optics && has_ui) {
-            compose_and_present(displayer, state);
+            auto optics_frame = SharedDataHub::instance().image_storage().acquire_write(state.optics.image_handle);
+            auto ui_frame = SharedDataHub::instance().image_storage().acquire_write(state.ui.image_handle);
+            if (!optics_frame || !ui_frame) {
+                continue;
+            }
+
+            auto& optics_image = optics_frame->images[state.optics.buffer_index];
+            auto& optics_executor = optics_frame->executors[state.optics.buffer_index];
+            auto& ui_image = ui_frame->images[state.ui.buffer_index];
+            auto& ui_executor = ui_frame->executors[state.ui.buffer_index];
+            if (!optics_image || !ui_image) {
+                continue;
+            }
+
+            compose_and_present(displayer,
+                                state,
+                                optics_image,
+                                optics_executor,
+                                ui_image,
+                                ui_executor);
         } else if (has_optics) {
-            displayer.wait(*state.optics.executor) << *state.optics.image;
+            auto optics_frame = SharedDataHub::instance().image_storage().acquire_write(state.optics.image_handle);
+            if (!optics_frame) {
+                continue;
+            }
+
+            auto& optics_image = optics_frame->images[state.optics.buffer_index];
+            auto& optics_executor = optics_frame->executors[state.optics.buffer_index];
+            if (optics_image) {
+                displayer.wait(optics_executor) << optics_image;
+            }
         } else if (has_ui) {
-            displayer.wait(*state.ui.executor) << *state.ui.image;
+            auto ui_frame = SharedDataHub::instance().image_storage().acquire_write(state.ui.image_handle);
+            if (!ui_frame) {
+                continue;
+            }
+
+            auto& ui_image = ui_frame->images[state.ui.buffer_index];
+            auto& ui_executor = ui_frame->executors[state.ui.buffer_index];
+            if (ui_image) {
+                displayer.wait(ui_executor) << ui_image;
+            }
         }
     }
 }
@@ -170,7 +214,12 @@ bool DisplaySystem::ensure_composite_resources(uint32_t width, uint32_t height) 
     return true;
 }
 
-void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceState& state) {
+void DisplaySystem::compose_and_present(HardwareDisplayer& displayer,
+                                        const SurfaceState& state,
+                                        HardwareImage& optics_image,
+                                        HardwareExecutor& optics_executor,
+                                        HardwareImage& ui_image,
+                                        HardwareExecutor& ui_executor) {
     const uint32_t out_w = state.ui.width;
     const uint32_t out_h = state.ui.height;
 
@@ -182,14 +231,14 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer, SurfaceSta
         return;
     }
 
-    composite_pipeline_["pushConsts.bgImage"] = state.optics.image->storeDescriptor();
-    composite_pipeline_["pushConsts.fgImage"] = state.ui.image->storeDescriptor();
+    composite_pipeline_["pushConsts.bgImage"] = optics_image.storeDescriptor();
+    composite_pipeline_["pushConsts.fgImage"] = ui_image.storeDescriptor();
     composite_pipeline_["pushConsts.outputImage"] = composite_output_.storeDescriptor();
     composite_pipeline_["pushConsts.outputWidth"] = out_w;
     composite_pipeline_["pushConsts.outputHeight"] = out_h;
 
-    compositor_executor_.wait(*state.optics.executor);
-    compositor_executor_.wait(*state.ui.executor);
+    compositor_executor_.wait(optics_executor);
+    compositor_executor_.wait(ui_executor);
 
     compositor_executor_ << composite_pipeline_(out_w / 8, out_h / 8, 1)
                          << compositor_executor_.commit();

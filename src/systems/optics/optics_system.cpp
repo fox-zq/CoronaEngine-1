@@ -7,6 +7,7 @@
 #include <corona/shared_data_hub.h>
 #include <corona/systems/optics/optics_system.h>
 
+#include <exception>
 #include <filesystem>
 
 #include "corona/resource/types/text.h"
@@ -45,41 +46,49 @@ namespace Corona::Systems
 
     OpticsSystem::~OpticsSystem() = default;
 
-    bool OpticsSystem::initialize(Kernel::ISystemContext* ctx)
+    bool OpticsSystem::initialize_vision_backend_if_enabled()
     {
-        {
 #ifdef CORONA_ENABLE_VISION
-            visionDevice.init_rtx();
-            vision::Global::instance().set_device(&visionDevice);
-            vision::Global::instance().set_scene_path("E:\\CoronaTestScenes\\test_vision\\render_scene\\kitchen");
-            auto str = "E:\\CoronaTestScenes\\test_vision\\render_scene\\kitchen\\vision_scene.json";
-            renderPipeline = vision::Importer::import_scene(str);
-            renderPipeline->init();
-            renderPipeline->prepare();
-            renderPipeline->display(1 / 30);
+        visionDevice.init_rtx();
+        vision::Global::instance().set_device(&visionDevice);
+        vision::Global::instance().set_scene_path("E:\\CoronaTestScenes\\test_vision\\render_scene\\kitchen");
+        auto str = "E:\\CoronaTestScenes\\test_vision\\render_scene\\kitchen\\vision_scene.json";
+        renderPipeline = vision::Importer::import_scene(str);
+        renderPipeline->init();
+        renderPipeline->prepare();
+        renderPipeline->display(1 / 30);
 
-            uint2 imageSize = renderPipeline->frame_buffer()->raytracing_resolution();
-            importedViewImage = HardwareImage(imageSize.x, imageSize.y, ImageFormat::RGBA32_FLOAT,
-                                              ImageUsage::StorageImage);
+        uint2 imageSize = renderPipeline->frame_buffer()->raytracing_resolution();
+        importedViewImage = HardwareImage(imageSize.x, imageSize.y, ImageFormat::RGBA32_FLOAT,
+                                          ImageUsage::StorageImage);
 
-            RegistrableBuffer<float4>* cudaViewBuffer = &renderPipeline->frame_buffer()->view_buffer();
-            uint64_t viewBufferHandleWin = visionDevice.export_handle(cudaViewBuffer->handle());
+        RegistrableBuffer<float4>* cudaViewBuffer = &renderPipeline->frame_buffer()->view_buffer();
+        uint64_t viewBufferHandleWin = visionDevice.export_handle(cudaViewBuffer->handle());
 
-            ExternalHandle handle;
-            handle.handle = reinterpret_cast<HANDLE>(viewBufferHandleWin);
-            importedViewBuffer = HardwareBuffer(handle, imageSize.x * imageSize.y, sizeof(float) * 4,
-                                                visionDevice.get_aligned_memory_size(cudaViewBuffer->handle()),
-                                                BufferUsage::StorageBuffer);
+        ExternalHandle handle;
+        handle.handle = reinterpret_cast<HANDLE>(viewBufferHandleWin);
+        importedViewBuffer = HardwareBuffer(handle, imageSize.x * imageSize.y, sizeof(float) * 4,
+                                            visionDevice.get_aligned_memory_size(cudaViewBuffer->handle()),
+                                            BufferUsage::StorageBuffer);
 #endif
-        }
+        return true;
+    }
 
-        CFW_LOG_NOTICE("OpticsSystem: Initializing...");
-
+    bool OpticsSystem::initialize_hardware_resources()
+    {
         try
         {
             hardware_ = std::make_unique<Hardware>();
+            image_handle_ = SharedDataHub::instance().image_storage().allocate();
+            if (auto accessor = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+                // Keep storage entry alive; per-frame image/executor values are updated after render submit.
+            } else {
+                CFW_LOG_ERROR("[OpticsSystem] Failed to acquire write access to image storage");
+                SharedDataHub::instance().image_storage().deallocate(image_handle_);
+                image_handle_ = 0;
+                return false;
+            }
 
-            // 修正：避免聚合初始化引发的赋值问题
             hardware_->gbufferSize.x = 1920;
             hardware_->gbufferSize.y = 1080;
 
@@ -102,16 +111,21 @@ namespace Corona::Systems
                                                              BufferUsage::StorageBuffer);
 
             hardware_->finalOutputImage[0] = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                        ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+                                                           ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
             hardware_->finalOutputImage[1] = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                        ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+                                                           ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
         }
-        catch (const std::exception& e)
+        catch (const std::exception&)
         {
-            CFW_LOG_CRITICAL("OpticsSystem: Failed to initialize hardware resources: {}", e.what());
+            CFW_LOG_CRITICAL("OpticsSystem: Failed to initialize hardware resources");
             return false;
         }
 
+        return true;
+    }
+
+    bool OpticsSystem::load_shader_texts(std::string& vert_source, std::string& frag_source, std::string& compute_source)
+    {
         auto vert_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.vert.glsl");
         auto frag_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.frag.glsl");
         auto compute_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.comp.glsl");
@@ -126,16 +140,58 @@ namespace Corona::Systems
             return false;
         }
 
+        vert_source = vert_code->text;
+        frag_source = frag_code->text;
+        compute_source = compute_code->text;
+        return true;
+    }
+
+    bool OpticsSystem::initialize_render_pipelines(const std::string& vert_source,
+                                                   const std::string& frag_source,
+                                                   const std::string& compute_source)
+    {
         try
         {
-            hardware_->rasterizerPipeline = RasterizerPipeline(vert_code->text, frag_code->text);
-            hardware_->computePipeline = ComputePipeline(compute_code->text);
+            hardware_->rasterizerPipeline = RasterizerPipeline(vert_source, frag_source);
+            hardware_->computePipeline = ComputePipeline(compute_source);
             hardware_->shaderHasInit = true;
             CFW_LOG_INFO("OpticsSystem: Shaders compiled successfully");
         }
-        catch (const std::exception& e)
+        catch (const std::exception&)
         {
-            CFW_LOG_CRITICAL("OpticsSystem: Failed to compile shaders: {}", e.what());
+            CFW_LOG_CRITICAL("OpticsSystem: Failed to compile shaders");
+            return false;
+        }
+
+        return true;
+    }
+
+    bool OpticsSystem::initialize(Kernel::ISystemContext* ctx)
+    {
+        (void)ctx;
+
+        if (!initialize_vision_backend_if_enabled())
+        {
+            return false;
+        }
+
+        CFW_LOG_NOTICE("OpticsSystem: Initializing...");
+
+        if (!initialize_hardware_resources())
+        {
+            return false;
+        }
+
+        std::string vert_source;
+        std::string frag_source;
+        std::string compute_source;
+        if (!load_shader_texts(vert_source, frag_source, compute_source))
+        {
+            return false;
+        }
+
+        if (!initialize_render_pipelines(vert_source, frag_source, compute_source))
+        {
             return false;
         }
 
@@ -159,7 +215,6 @@ namespace Corona::Systems
         frame_count += dt;
         ++frame_index;
 
-        // 离屏渲染下不需要display，拆离到display线程去
         optics_pipeline(frame_count, frame_index);
     }
 
@@ -247,7 +302,8 @@ namespace Corona::Systems
                         hardware_->computePipeline["pushConsts.gbufferDepthImage"] = hardware_->rasterizerPipeline.
                             getDepthImage().storeDescriptor();
 
-                        hardware_->computePipeline["pushConsts.finalOutputImage"] = hardware_->finalOutputImage[hardware_->write_index].
+                        hardware_->computePipeline["pushConsts.finalOutputImage"] = hardware_->finalOutputImage[
+                                hardware_->write_index].
                             storeDescriptor();
 
                         ktm::fvec3 sun_dir;
@@ -285,17 +341,27 @@ namespace Corona::Systems
                             << hardware_->computePipeline(1920 / 8, 1080 / 8, 1)
                             << hardware_->executor[wi].commit();
 
-                        if (camera->surface != nullptr)
+                        if (image_handle_ != 0)
                         {
-                            if (auto* event_bus = context()->event_bus())
+                            if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_))
                             {
-                                event_bus->publish<Events::OpticsFrameReadyEvent>({
-                                    camera->surface,
-                                    &hardware_->finalOutputImage[wi],
-                                    &hardware_->executor[wi],
-                                    frame_index,
-                                    hardware_->gbufferSize.x,
-                                    hardware_->gbufferSize.y});
+                                image_device->images[wi] = hardware_->finalOutputImage[wi];
+                                image_device->executors[wi] = hardware_->executor[wi];
+                            }
+
+                            if (camera->surface != nullptr)
+                            {
+                                if (auto* event_bus = context()->event_bus())
+                                {
+                                    event_bus->publish<Events::OpticsFrameReadyEvent>({
+                                        camera->surface,
+                                        image_handle_,
+                                        static_cast<uint32_t>(wi),
+                                        frame_index,
+                                        hardware_->gbufferSize.x,
+                                        hardware_->gbufferSize.y
+                                    });
+                                }
                             }
                         }
 
@@ -327,7 +393,13 @@ namespace Corona::Systems
     {
         CFW_LOG_NOTICE("OpticsSystem: Shutting down...");
 
+        if (image_handle_ != 0) {
+            SharedDataHub::instance().image_storage().deallocate(image_handle_);
+            image_handle_ = 0;
+        }
+
         hardware_.reset();
+
         CFW_LOG_INFO("OpticsSystem: Hardware resources released");
     }
 } // namespace Corona::Systems

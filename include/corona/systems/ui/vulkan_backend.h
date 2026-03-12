@@ -68,6 +68,7 @@ class VulkanBackend {
     std::vector<uint8_t> clear_pixels_;
 
     uint64_t frame_index_ = 0;
+    std::uintptr_t image_handle_ = 0;
 
     HardwareBuffer vertex_buffer_;
     HardwareBuffer index_buffer_;

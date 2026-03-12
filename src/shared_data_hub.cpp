@@ -48,4 +48,6 @@ const SharedDataHub::EnvironmentStorage& SharedDataHub::environment_storage() co
 SharedDataHub::SceneStorage& SharedDataHub::scene_storage() { return scene_storage_; }
 const SharedDataHub::SceneStorage& SharedDataHub::scene_storage() const { return scene_storage_; }
 
+SharedDataHub::ImageStorage& SharedDataHub::image_storage() { return image_storage_; }
+const SharedDataHub::ImageStorage& SharedDataHub::image_storage() const { return image_storage_; }
 }  // namespace Corona

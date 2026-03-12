@@ -158,6 +158,12 @@ struct SceneDevice {
     std::vector<std::uintptr_t> viewport_handles;
 };
 
+struct ImageDevice {
+    static constexpr uint32_t buffer_count = 2;
+    HardwareImage images[buffer_count];
+    HardwareExecutor executors[buffer_count];
+};
+
 class SharedDataHub {
    public:
     static SharedDataHub& instance();
@@ -187,6 +193,7 @@ class SharedDataHub {
     using ViewportStorage = Kernel::Utils::Storage<ViewportDevice, 128, 2>;
     using EnvironmentStorage = Kernel::Utils::Storage<EnvironmentDevice, 128, 2>;
     using SceneStorage = Kernel::Utils::Storage<SceneDevice, 128, 2>;
+    using ImageStorage = Kernel::Utils::Storage<ImageDevice, 128, 2>;
 
     ModelResourceStorage& model_resource_storage();
     const ModelResourceStorage& model_resource_storage() const;
@@ -227,6 +234,9 @@ class SharedDataHub {
     SceneStorage& scene_storage();
     const SceneStorage& scene_storage() const;
 
+    ImageStorage& image_storage();
+    const ImageStorage& image_storage() const;
+
    private:
     ModelResourceStorage model_resource_storage_;
     GeometryStorage geometry_storage_;
@@ -241,6 +251,7 @@ class SharedDataHub {
     CameraStorage camera_storage_;
     ViewportStorage viewport_storage_;
     SceneStorage scene_storage_;
+    ImageStorage image_storage_;
 };
 
 }  // namespace Corona

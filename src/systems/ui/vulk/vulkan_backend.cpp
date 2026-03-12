@@ -11,6 +11,7 @@
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
 #include <corona/kernel/event/i_event_bus.h>
+#include <corona/shared_data_hub.h>
 #include <corona/systems/script/corona_engine_api.h>
 
 namespace {
@@ -149,6 +150,16 @@ bool VulkanBackend::initialize() {
         rebuild_needed_ = true;
     }
 
+    image_handle_ = SharedDataHub::instance().image_storage().allocate();
+    if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+        // Keep storage entry alive; per-frame values are updated in present_frame().
+    } else {
+        CFW_LOG_ERROR("VulkanBackend: failed to acquire shared image storage handle");
+        SharedDataHub::instance().image_storage().deallocate(image_handle_);
+        image_handle_ = 0;
+        return false;
+    }
+
     initialized_ = true;
     CFW_LOG_INFO("VulkanBackend: initialized");
     return true;
@@ -187,6 +198,11 @@ void VulkanBackend::shutdown() {
 
     surface_ = nullptr;
     frame_index_ = 0;
+
+    if (image_handle_ != 0) {
+        SharedDataHub::instance().image_storage().deallocate(image_handle_);
+        image_handle_ = 0;
+    }
 
     initialized_ = false;
     CFW_LOG_INFO("VulkanBackend: shutdown");
@@ -426,18 +442,25 @@ void VulkanBackend::submit_frame(uint32_t fb_width,
 }
 
 void VulkanBackend::present_frame() {
-    if (!initialized_ || !frame_ready_ || !render_target_[write_index_] || surface_ == nullptr) {
+    if (!initialized_ || !frame_ready_ || !render_target_[write_index_] || surface_ == nullptr || image_handle_ == 0) {
         return;
     }
 
     const int presented_index = write_index_;
 
+    if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+        image_device->images[presented_index] = render_target_[presented_index];
+        image_device->executors[presented_index] = executor_[presented_index];
+    } else {
+        return;
+    }
+
     if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
         ++frame_index_;
         event_bus->publish<Events::UIFrameReadyEvent>({
             surface_,
-            &render_target_[presented_index],
-            &executor_[presented_index],
+            image_handle_,
+            static_cast<uint32_t>(presented_index),
             frame_index_,
             render_target_width_,
             render_target_height_});

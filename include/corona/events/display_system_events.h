@@ -44,8 +44,8 @@ namespace Corona::Events
     struct OpticsFrameReadyEvent
     {
         void* surface = nullptr;
-        HardwareImage* image = nullptr;
-        HardwareExecutor* executor = nullptr;
+        std::uintptr_t image_handle = 0;
+        uint32_t buffer_index = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;
@@ -57,8 +57,8 @@ namespace Corona::Events
     struct UIFrameReadyEvent
     {
         void* surface = nullptr;
-        HardwareImage* image = nullptr;
-        HardwareExecutor* executor = nullptr;
+        std::uintptr_t image_handle = 0;
+        uint32_t buffer_index = 0;
         uint64_t frame_index = 0;
         uint32_t width = 0;
         uint32_t height = 0;

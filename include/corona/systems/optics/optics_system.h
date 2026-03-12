@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 
 // 前向声明 Hardware 结构体
 struct Hardware;
@@ -59,10 +60,17 @@ class OpticsSystem : public Kernel::SystemBase {
     void shutdown() override;
 
    private:
-    // TODO: 添加光学系统私有成员
+    bool initialize_vision_backend_if_enabled();
+    bool initialize_hardware_resources();
+    bool load_shader_texts(std::string& vert_source, std::string& frag_source, std::string& compute_source);
+    bool initialize_render_pipelines(const std::string& vert_source,
+                                     const std::string& frag_source,
+                                     const std::string& compute_source);
+
     void optics_pipeline(float frame_count, uint64_t frame_index);
 
     std::unique_ptr<Hardware> hardware_;
+    std::uintptr_t image_handle_{};
 };
 
 }  // namespace Corona::Systems
