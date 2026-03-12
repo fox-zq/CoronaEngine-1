@@ -285,7 +285,7 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer,
         compositor_executor_.wait(*ui_executor);
     }
 
-    compositor_executor_ << composite_pipeline_(output_width / 8, output_height / 8, 1)
+    compositor_executor_ << composite_pipeline_((output_width + 7) / 8, (output_height + 7) / 8, 1)
                          << compositor_executor_.commit();
 
     // After commit, producer images are no longer read — displayer only reads composite_output_
