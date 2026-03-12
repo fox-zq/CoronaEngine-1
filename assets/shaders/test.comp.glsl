@@ -488,5 +488,5 @@ void main()
         renderResult = getAtmosphericSky(rayOrigin, rayDir,pushConsts.sun_dir,20.0f);
     }
 
-	imageStore(inputImageRGBA16[pushConsts.finalOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(0.5f, 0.0f, 0.0f, 1.0f));
+	imageStore(inputImageRGBA16[pushConsts.finalOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(renderResult, 1.0f));
 }
