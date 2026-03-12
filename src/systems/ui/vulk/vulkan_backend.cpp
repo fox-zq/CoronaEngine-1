@@ -213,6 +213,14 @@ void VulkanBackend::new_frame() {
         return;
     }
 
+    // GPU sync: wait for Display to finish consuming buffer[write_index_]
+    // before we clear and render new UI content into it.
+    if (image_handle_ != 0) {
+        if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+            executor_[write_index_].wait(image_device->consumed_executors[write_index_]);
+        }
+    }
+
     executor_[write_index_].cleanupDeferredResources();
 }
 

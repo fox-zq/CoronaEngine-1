@@ -337,6 +337,15 @@ namespace Corona::Systems
                             storeDescriptor();
 
                         const int wi = hardware_->write_index;
+
+                        // GPU sync: wait for Display to finish consuming buffer[wi]
+                        // before we overwrite it with new rendering output.
+                        if (image_handle_ != 0) {
+                            if (auto consumed_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+                                hardware_->executor[wi].wait(consumed_device->consumed_executors[wi]);
+                            }
+                        }
+
                         hardware_->executor[wi] << hardware_->rasterizerPipeline(1920, 1080)
                             << hardware_->computePipeline(1920 / 8, 1080 / 8, 1)
                             << hardware_->executor[wi].commit();

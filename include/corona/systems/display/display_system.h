@@ -10,6 +10,7 @@
 #include <memory>
 #include <mutex>
 #include <unordered_map>
+#include <vector>
 
 namespace Corona::Systems
 {
@@ -65,11 +66,12 @@ namespace Corona::Systems
         };
 
         void compose_and_present(HardwareDisplayer& displayer,
-                                 const SurfaceState& state,
+                                 uint32_t output_width,
+                                 uint32_t output_height,
                                  HardwareImage& optics_image,
-                                 HardwareExecutor& optics_executor,
+                                 HardwareExecutor* optics_executor,
                                  HardwareImage& ui_image,
-                                 HardwareExecutor& ui_executor);
+                                 HardwareExecutor* ui_executor);
         bool ensure_composite_resources(uint32_t width, uint32_t height);
 
         Kernel::EventId surface_changed_sub_id_ = 0;
@@ -82,11 +84,14 @@ namespace Corona::Systems
 
         std::unordered_map<uint64_t, HardwareDisplayer> displayers_;
         std::unordered_map<uint64_t, SurfaceState> surface_states_;
+        std::vector<void*> pending_surfaces_;  ///< Surfaces awaiting displayer creation (deferred to update thread)
 
         // Compositing resources
         ComputePipeline composite_pipeline_;
         HardwareExecutor compositor_executor_;
         HardwareImage composite_output_;
+        HardwareImage transparent_storage_;  ///< 1x1 transparent StorageImage fallback (missing Optics bg)
+        HardwareImage transparent_sampled_;  ///< 1x1 transparent SampledImage fallback (missing UI fg)
         uint32_t composite_width_ = 0;
         uint32_t composite_height_ = 0;
         bool composite_pipeline_ready_ = false;
