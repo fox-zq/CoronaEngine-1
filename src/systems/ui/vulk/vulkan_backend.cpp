@@ -187,7 +187,6 @@ void VulkanBackend::shutdown() {
     vertex_buffer_capacity_ = 0;
     index_buffer_capacity_ = 0;
 
-    clear_pixels_.clear();
     render_target_width_ = 0;
     render_target_height_ = 0;
 
@@ -261,10 +260,6 @@ bool VulkanBackend::prepare_frame(ImDrawData* draw_data, uint32_t& fb_width, uin
 
     if (!ensure_imgui_pipeline() || !ensure_font_texture()) {
         return false;
-    }
-
-    if (!clear_pixels_.empty()) {
-        executor_ << render_target_.copyFrom(clear_pixels_.data());
     }
 
     imgui_pipeline_["out_color"] = render_target_;
@@ -500,10 +495,10 @@ bool VulkanBackend::ensure_render_target(uint32_t width, uint32_t height) {
         CFW_LOG_ERROR("VulkanBackend: create render target failed ({}x{})", width, height);
         return false;
     }
+    new_target.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     render_target_ = std::move(new_target);
     render_target_width_ = width;
     render_target_height_ = height;
-    clear_pixels_.assign(static_cast<size_t>(width) * static_cast<size_t>(height) * 4u, 0u);
     frame_ready_ = false;
 
     return true;

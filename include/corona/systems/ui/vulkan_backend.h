@@ -61,8 +61,6 @@ class VulkanBackend {
     HardwareImage font_atlas_image_;
     RasterizerPipeline imgui_pipeline_;
 
-    std::vector<uint8_t> clear_pixels_;
-
     uint64_t frame_index_ = 0;
     std::uintptr_t image_handle_ = 0;
 
