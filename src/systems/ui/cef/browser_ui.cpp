@@ -452,6 +452,9 @@ std::vector<int> BrowserRenderer::render_browser_tabs(ImGuiID dock_space_id,
             tabs_to_close.push_back(tab_id);
             continue;
         }
+        if (tab->minimized) {
+            continue;
+        }
 
         render_single_tab(tab_id, dock_space_id, active_tab_id, url_input_active_tab, io);
     }

@@ -51,6 +51,7 @@ namespace Corona::Systems::UI
         bool dock_initialized = false;  // 是否已初始化 docking
 
         bool open = true;
+        bool minimized = false;  // 新增：是否最小化
         bool needs_resize = false;
         bool buffer_dirty = false;
         bool has_focus = false;
@@ -77,6 +78,11 @@ namespace Corona::Systems::UI
         void remove_tab(int tab_id);
         void update_texture(int tab_id);
         void resize_tab(int tab_id, int width, int height);
+
+         // 隐藏标签页（最小化）
+        bool hide_tab(int tab_id, bool if_close=false);
+        // 显示标签页（恢复）
+        bool show_tab(int tab_id);
 
         //void set_vulkan_backend(VulkanBackend* backend);
         //VulkanBackend* get_vulkan_backend() const;

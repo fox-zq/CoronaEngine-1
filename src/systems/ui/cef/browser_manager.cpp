@@ -34,6 +34,44 @@ BrowserManager& BrowserManager::instance() {
     return instance;
 }
 
+bool BrowserManager::hide_tab(int tab_id, bool if_close) {
+    auto it = tabs_.find(tab_id);
+    if (it == tabs_.end()) {
+        CFW_LOG_WARNING("Attempted to hide non-existent tab: ID={}", tab_id);
+        return false;
+    }
+
+    BrowserTab* tab = it->second.get();
+    tab->minimized = true;
+    if (if_close) {
+        tab->open = true;
+    }
+
+    CFW_LOG_INFO("Browser tab hidden: ID={}", tab_id);
+    return true;
+}
+
+bool BrowserManager::show_tab(int tab_id) {
+    auto it = tabs_.find(tab_id);
+    if (it == tabs_.end()) {
+        CFW_LOG_WARNING("Attempted to show non-existent tab: ID={}", tab_id);
+        return false;
+    }
+
+    BrowserTab* tab = it->second.get();
+
+    tab->minimized = false;
+
+    // 触发重绘
+    if (tab->client && tab->client->GetBrowser()) {
+        tab->client->GetBrowser()->GetHost()->WasResized();
+    }
+
+    CFW_LOG_INFO("Browser tab shown: ID={}", tab_id);
+    return true;
+}
+
+// 修改主 create_tab 方法
 int BrowserManager::create_tab(const std::string& url, const std::string& path,
                                const std::string& docking_pos,
                                int dock_width, int dock_height,
@@ -48,6 +86,8 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     tab->dock_height = dock_height;
     tab->dock_fixed = dock_fixed;
     tab->dock_initialized = false;
+    tab->minimized = false;
+    tab->open = true;  // 新标签页默认显示
 
     // 如果有指定的dock大小，使用它，否则使用默认大小
     if (dock_width > 0 && dock_height > 0) {
@@ -61,7 +101,8 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     tab->name = "Browser " + path;
 
     CFW_LOG_INFO("Loading Path: {}", path);
-    // URL Processing (保持不变)
+
+    // URL Processing
     std::string full_url = convert_local_path_to_url(url);
     if (!path.empty()) {
         std::string clean_fragment = path;
@@ -82,7 +123,7 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     tab->client = new OffscreenCefClient();
     tab->client->SetTab(tab.get());
 
-    // Create browser texture (CabbageHardware)
+    // Create browser texture
     tab->texture_id = create_browser_texture(tab->width, tab->height);
 
     // Create Offscreen Browser
@@ -95,7 +136,8 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
     browser_settings.local_storage = STATE_ENABLED;
     browser_settings.webgl = STATE_ENABLED;
 
-    CefBrowserHost::CreateBrowser(window_info, CefRefPtr<CefClient>(tab->client), full_url, browser_settings, nullptr, nullptr);
+    CefBrowserHost::CreateBrowser(window_info, CefRefPtr<CefClient>(tab->client),
+                                  full_url, browser_settings, nullptr, nullptr);
 
     tabs_[id] = std::move(tab);
     return id;
