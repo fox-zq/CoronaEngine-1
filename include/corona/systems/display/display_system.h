@@ -65,8 +65,7 @@ namespace Corona::Systems
         };
 
         void compose_and_present(HardwareDisplayer& displayer,
-                                 uint32_t output_width,
-                                 uint32_t output_height,
+                                 SurfaceState& state,
                                  HardwareImage& optics_image,
                                  HardwareExecutor* optics_executor,
                                  HardwareImage& ui_image,
