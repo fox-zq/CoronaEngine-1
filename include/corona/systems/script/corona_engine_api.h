@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace Corona {
 class Model;
@@ -306,6 +307,8 @@ class Scene {
     Environment* environment_{nullptr};
     std::vector<Actor*> actors_;
     std::vector<Viewport*> viewports_;
+    std::unordered_set<const Actor*> actors_index_;
+    std::unordered_set<const Viewport*> viewports_index_;
 };
 
 // ============================================================================

@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <atomic>
+#include <iterator>
 #include <CabbageHardware.h>
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
@@ -42,10 +44,15 @@ void Corona::API::Scene::set_environment(Environment* env) {
         return;
     }
 
-    environment_ = env;
+    const auto environment_handle = env->get_handle();
+    if (environment_handle == 0) {
+        CFW_LOG_WARNING("[Scene::set_environment] Invalid environment handle (0)");
+        return;
+    }
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        accessor->environment = env->get_handle();
+        accessor->environment = environment_handle;
+        environment_ = env;
     } else {
         CFW_LOG_ERROR("[Scene::set_environment] Failed to acquire write access to scene storage");
     }
@@ -62,10 +69,14 @@ bool Corona::API::Scene::has_environment() const {
 void Corona::API::Scene::remove_environment() {
     if (handle_ == 0) return;
 
-    environment_ = nullptr;
+    auto* previous_environment = environment_;
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
         accessor->environment = 0;
+        environment_ = nullptr;
+    } else {
+        environment_ = previous_environment;
+        CFW_LOG_ERROR("[Scene::remove_environment] Failed to acquire write access to scene storage, rolled back local environment removal");
     }
 }
 
@@ -80,18 +91,26 @@ void Corona::API::Scene::add_actor(Actor* actor) {
         return;
     }
 
-    auto it = std::ranges::find(actors_, actor);
-    if (it != actors_.end()) {
-        CFW_LOG_WARNING("[Scene::add_actor] Actor already exists in scene, handle: {}", actor->get_handle());
+    const auto actor_handle = actor->get_handle();
+    if (actor_handle == 0) {
+        CFW_LOG_WARNING("[Scene::add_actor] Invalid actor handle (0)");
+        return;
+    }
+
+    const auto actor_insert_result = actors_index_.insert(actor);
+    if (!actor_insert_result.second) {
+        CFW_LOG_WARNING("[Scene::add_actor] Actor already exists in scene, handle: {}", actor_handle);
         return;
     }
 
     actors_.push_back(actor);
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        accessor->actor_handles.push_back(actor->get_handle());
+        accessor->actor_handles.push_back(actor_handle);
     } else {
-        CFW_LOG_ERROR("[Scene::add_actor] Failed to acquire write access to scene storage");
+        actors_.pop_back();
+        actors_index_.erase(actor);
+        CFW_LOG_ERROR("[Scene::add_actor] Failed to acquire write access to scene storage, rolled back local actor insertion");
     }
 }
 
@@ -103,13 +122,35 @@ void Corona::API::Scene::remove_actor(Actor* actor) {
         return;
     }
 
-    auto removed = std::erase(actors_, actor);
-    if (removed == 0) {
+    auto actor_it = std::find(actors_.begin(), actors_.end(), actor);
+    const bool existed_in_vector = actor_it != actors_.end();
+    const std::size_t actor_pos = existed_in_vector
+                                      ? static_cast<std::size_t>(std::distance(actors_.begin(), actor_it))
+                                      : 0;
+    const bool existed_in_index = actors_index_.contains(actor);
+
+    if (!existed_in_vector && !existed_in_index) {
         CFW_LOG_WARNING("[Scene::remove_actor] Actor not found in scene, handle: {}", actor->get_handle());
+        return;
+    }
+
+    if (existed_in_vector) {
+        actors_.erase(actor_it);
+    }
+    if (existed_in_index) {
+        actors_index_.erase(actor);
     }
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
         std::erase(accessor->actor_handles, actor->get_handle());
+    } else {
+        if (existed_in_vector) {
+            actors_.insert(std::next(actors_.begin(), static_cast<std::vector<Actor*>::difference_type>(actor_pos)), actor);
+        }
+        if (existed_in_index) {
+            actors_index_.insert(actor);
+        }
+        CFW_LOG_ERROR("[Scene::remove_actor] Failed to acquire write access to scene storage, rolled back local actor removal");
     }
 }
 
@@ -118,10 +159,18 @@ void Corona::API::Scene::clear_actors() {
 
     CFW_LOG_INFO("[Scene::clear_actors] Clearing {} actors", actors_.size());
 
+    const auto actors_backup = actors_;
+    const auto actors_index_backup = actors_index_;
+
     actors_.clear();
+    actors_index_.clear();
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
         accessor->actor_handles.clear();
+    } else {
+        actors_ = actors_backup;
+        actors_index_ = actors_index_backup;
+        CFW_LOG_ERROR("[Scene::clear_actors] Failed to acquire write access to scene storage, rolled back local actor clear");
     }
 }
 
@@ -131,7 +180,7 @@ std::size_t Corona::API::Scene::actor_count() const {
 
 bool Corona::API::Scene::has_actor(const Actor* actor) const {
     if (actor == nullptr) return false;
-    return std::ranges::find(actors_, actor) != actors_.end();
+    return actors_index_.contains(actor);
 }
 
 void Corona::API::Scene::add_viewport(Viewport* viewport) {
@@ -145,18 +194,27 @@ void Corona::API::Scene::add_viewport(Viewport* viewport) {
         return;
     }
 
-    auto it = std::ranges::find(viewports_, viewport);
-    if (it != viewports_.end()) {
-        CFW_LOG_WARNING("[Scene::add_viewport] Viewport already exists in scene");
+    const auto viewport_handle = viewport->get_handle();
+    if (viewport_handle == 0) {
+        CFW_LOG_WARNING("[Scene::add_viewport] Invalid viewport handle (0)");
+        return;
+    }
+
+    const auto viewport_insert_result = viewports_index_.insert(viewport);
+    if (!viewport_insert_result.second) {
+        CFW_LOG_WARNING("[Scene::add_viewport] Viewport already exists in scene, handle: {}", viewport_handle);
         return;
     }
 
     viewports_.push_back(viewport);
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        accessor->viewport_handles.push_back(viewport->get_handle());
+        accessor->viewport_handles.push_back(viewport_handle);
     } else {
-        CFW_LOG_ERROR("[Scene::add_viewport] Failed to acquire write access to scene storage");
+        // Roll back local state to keep Scene cache and shared storage consistent.
+        viewports_.pop_back();
+        viewports_index_.erase(viewport);
+        CFW_LOG_ERROR("[Scene::add_viewport] Failed to acquire write access to scene storage, rolled back local viewport insertion");
     }
 }
 
@@ -168,14 +226,35 @@ void Corona::API::Scene::remove_viewport(Viewport* viewport) {
         return;
     }
 
-    auto removed = std::erase(viewports_, viewport);
-    if (removed == 0) {
+    auto viewport_it = std::find(viewports_.begin(), viewports_.end(), viewport);
+    const bool existed_in_vector = viewport_it != viewports_.end();
+    const std::size_t viewport_pos = existed_in_vector
+                                         ? static_cast<std::size_t>(std::distance(viewports_.begin(), viewport_it))
+                                         : 0;
+    const bool existed_in_index = viewports_index_.contains(viewport);
+
+    if (!existed_in_vector && !existed_in_index) {
         CFW_LOG_WARNING("[Scene::remove_viewport] Viewport not found in scene");
         return;
     }
 
+    if (existed_in_vector) {
+        viewports_.erase(viewport_it);
+    }
+    if (existed_in_index) {
+        viewports_index_.erase(viewport);
+    }
+
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
         std::erase(accessor->viewport_handles, viewport->get_handle());
+    } else {
+        if (existed_in_vector) {
+            viewports_.insert(std::next(viewports_.begin(), static_cast<std::vector<Viewport*>::difference_type>(viewport_pos)), viewport);
+        }
+        if (existed_in_index) {
+            viewports_index_.insert(viewport);
+        }
+        CFW_LOG_ERROR("[Scene::remove_viewport] Failed to acquire write access to scene storage, rolled back local viewport removal");
     }
 }
 
@@ -184,10 +263,18 @@ void Corona::API::Scene::clear_viewports() {
 
     CFW_LOG_INFO("[Scene::clear_viewports] Clearing {} viewports", viewports_.size());
 
+    const auto viewports_backup = viewports_;
+    const auto viewports_index_backup = viewports_index_;
+
     viewports_.clear();
+    viewports_index_.clear();
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
         accessor->viewport_handles.clear();
+    } else {
+        viewports_ = viewports_backup;
+        viewports_index_ = viewports_index_backup;
+        CFW_LOG_ERROR("[Scene::clear_viewports] Failed to acquire write access to scene storage, rolled back local viewport clear");
     }
 }
 
@@ -197,7 +284,7 @@ std::size_t Corona::API::Scene::viewport_count() const {
 
 bool Corona::API::Scene::has_viewport(const Viewport* viewport) const {
     if (viewport == nullptr) return false;
-    return std::ranges::find(viewports_, viewport) != viewports_.end();
+    return viewports_index_.contains(viewport);
 }
 
 // ########################
@@ -246,7 +333,7 @@ void Corona::API::Environment::set_sun_direction(const std::array<float, 3>& dir
 
 void Corona::API::Environment::set_floor_grid(bool enabled) const {
     // TODO: Implement floor grid rendering control
-    CFW_LOG_WARNING("[Corona::API::Environment::set_floor_grid] Not implemented yet: {}",
+    CFW_LOG_WARNING("[Environment::set_floor_grid] Not implemented yet: {}",
                     enabled ? "enabled" : "disabled");
 }
 
@@ -261,7 +348,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     // 使用 utf8_to_path 确保 UTF-8 编码的路径在 Windows 上正确转换
     auto model_id = Resource::ResourceManager::get_instance().import_sync(Utils::utf8_to_path(model_path));
     if (model_id == 0) {
-        CFW_LOG_CRITICAL("[Geometry] Failed to load model: {}", model_path);
+        CFW_LOG_CRITICAL("[Geometry::Geometry] Failed to load model: {}", model_path);
         return;
     }
 
@@ -269,7 +356,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     if (auto handle = SharedDataHub::instance().model_resource_storage().acquire_write(model_resource_handle_)) {
         handle->model_id = model_id;
     } else {
-        CFW_LOG_ERROR("[Geometry] Failed to acquire write access to model resource storage");
+        CFW_LOG_ERROR("[Geometry::Geometry] Failed to acquire write access to model resource storage");
         SharedDataHub::instance().model_resource_storage().deallocate(model_resource_handle_);
         model_resource_handle_ = 0;
         return;
@@ -279,7 +366,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
 
     auto scene = Resource::ResourceManager::get_instance().acquire_read<Resource::Scene>(model_id);
     if (!scene) {
-        CFW_LOG_ERROR("[Geometry] Failed to acquire read access to scene resource");
+        CFW_LOG_ERROR("[Geometry::Geometry] Failed to acquire read access to scene resource");
         SharedDataHub::instance().model_resource_storage().deallocate(model_resource_handle_);
         SharedDataHub::instance().model_transform_storage().deallocate(transform_handle_);
         model_resource_handle_ = 0;
@@ -288,7 +375,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     }
 
     if (scene->data.meshes.empty()) {
-        CFW_LOG_WARNING("[Geometry] Scene has no meshes, checking nodes for mesh references...");
+        CFW_LOG_WARNING("[Geometry::Geometry] Scene has no meshes, checking nodes for mesh references...");
         for (std::uint32_t i = 0; i < scene->data.nodes.size(); ++i) {
             const auto& node = scene->data.nodes[i];
             CFW_LOG_DEBUG("  - Node {}: mesh_index={}", i, node.mesh_index);
@@ -296,14 +383,14 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
     }
 
     // 输出模型的基础变换数据
-    CFW_LOG_INFO("[Geometry] Model loaded from: {}", model_path);
-    CFW_LOG_INFO("[Geometry] Scene contains {} nodes, {} meshes, {} materials",
+    CFW_LOG_INFO("[Geometry::Geometry] Model loaded from: {}", model_path);
+    CFW_LOG_INFO("[Geometry::Geometry] Scene contains {} nodes, {} meshes, {} materials",
                  scene->data.nodes.size(), scene->data.meshes.size(), scene->data.materials.size());
 
     if (!scene->data.nodes.empty()) {
         const auto& root_node = scene->data.nodes[0];
         const auto& t = root_node.transform;
-        CFW_LOG_INFO("[Geometry] Root Node: '{}' | Pos({:.3f}, {:.3f}, {:.3f}) | Rot({:.3f}, {:.3f}, {:.3f}) | Scale({:.3f}, {:.3f}, {:.3f})",
+        CFW_LOG_INFO("[Geometry::Geometry] Root Node: '{}' | Pos({:.3f}, {:.3f}, {:.3f}) | Rot({:.3f}, {:.3f}, {:.3f}) | Scale({:.3f}, {:.3f}, {:.3f})",
                      scene->get_node_name(0),
                      t.position[0], t.position[1], t.position[2],
                      t.rotation[0], t.rotation[1], t.rotation[2],
@@ -312,7 +399,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
 
     // 输出网格的归一化信息（如果有）
     if (!scene->data.meshes.empty()) {
-        CFW_LOG_INFO("[Geometry] Mesh Normalization Data:");
+        CFW_LOG_INFO("[Geometry::Geometry] Mesh Normalization Data:");
         for (std::uint32_t i = 0; i < scene->data.meshes.size(); ++i) {
             const auto& mesh = scene->data.meshes[i];
             if (mesh.is_normalized) {
@@ -353,7 +440,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         HardwareImage texture(placeholder_info);
         HardwareExecutor temp_executor;
         temp_executor << texture.copyFrom(white_pixel) << temp_executor.commit();
-        CFW_LOG_INFO("[Geometry] Created shared default white placeholder texture (1x1)");
+        CFW_LOG_INFO("[Geometry::Geometry] Created shared default white placeholder texture (1x1)");
         return texture;
     }();
 
@@ -374,7 +461,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             mesh.material_index < scene->data.materials.size()) {
             const auto& material = scene->data.materials[mesh.material_index];
             dev.materialColor = material.base_color;
-            CFW_LOG_DEBUG("[Geometry] Mesh {} using material color: ({}, {}, {}, {})",
+            CFW_LOG_DEBUG("[Geometry::Geometry] Mesh {} using material color: ({}, {}, {}, {})",
                           mesh_idx, dev.materialColor[0], dev.materialColor[1],
                           dev.materialColor[2], dev.materialColor[3]);
         }
@@ -385,7 +472,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         if (mesh.material_index != Resource::InvalidIndex &&
             mesh.material_index < scene->data.materials.size()) {
             auto texture_id = scene->data.materials[mesh.material_index].albedo_texture;
-            CFW_LOG_DEBUG("[Geometry] Mesh {} material {} texture_id: {}, InvalidTextureId: {}",
+            CFW_LOG_DEBUG("[Geometry::Geometry] Mesh {} material {} texture_id: {}, InvalidTextureId: {}",
                           mesh_idx, mesh.material_index, texture_id, Resource::InvalidTextureId);
 
             if (texture_id != Resource::InvalidTextureId) {
@@ -394,7 +481,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                     const int tex_width = texture_data->get_width();
                     const int tex_height = texture_data->get_height();
                     const int tex_channels = texture_data->get_channels();
-                    CFW_LOG_DEBUG("[Geometry] Mesh {} texture info: {}x{} channels={}",
+                    CFW_LOG_DEBUG("[Geometry::Geometry] Mesh {} texture info: {}x{} channels={}",
                                   mesh_idx, tex_width, tex_height, tex_channels);
 
                     if (tex_width > 0 && tex_height > 0 && tex_channels > 0) {
@@ -419,7 +506,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                             } else if (compressed.format == Resource::CompressedData::Format::ASTC_4x4) {
                                 create_info.format = ImageFormat::ASTC_4x4_SRGB;
                             } else {
-                                CFW_LOG_WARNING("[Geometry] Unsupported compressed format, falling back to RGBA8");
+                                CFW_LOG_WARNING("[Geometry::Geometry] Unsupported compressed format, falling back to RGBA8");
                                 // 如果遇到未知格式，应该使用非压缩路径而非猜测
                             }
 
@@ -469,7 +556,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
                                 }
                                 upload.data_ptr = upload.rgba_data.data();
                             } else {
-                                CFW_LOG_WARNING("[Geometry] Unsupported texture channel count: {}", tex_channels);
+                                CFW_LOG_WARNING("[Geometry::Geometry] Unsupported texture channel count: {}", tex_channels);
                             }
 
                             if (upload.data_ptr != nullptr) {
@@ -494,7 +581,7 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
 
     // 第二阶段：批量上传所有纹理（减少GPU命令提交次数）
     if (!pending_uploads.empty()) {
-        CFW_LOG_INFO("[Geometry] Batch uploading {} textures...", pending_uploads.size());
+        CFW_LOG_INFO("[Geometry::Geometry] Batch uploading {} textures...", pending_uploads.size());
 
         // 分批提交，每批最多处理一定数量的纹理，避免单次命令过大
         constexpr size_t kBatchSize = 32;
@@ -513,11 +600,11 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
             // 强制等待每一批上传完成，防止短时间内提交过多 CommandBuffer 导致 Device Lost (TDR) 或内存问题
             batch_executor.waitForDeferredResources();
 
-            CFW_LOG_DEBUG("[Geometry] Uploaded texture batch {}-{}/{}",
+            CFW_LOG_DEBUG("[Geometry::Geometry] Uploaded texture batch {}-{}/{}",
                           batch_start, batch_end - 1, pending_uploads.size());
         }
 
-        CFW_LOG_INFO("[Geometry] Texture batch upload complete");
+        CFW_LOG_INFO("[Geometry::Geometry] Texture batch upload complete");
     }
 
     handle_ = SharedDataHub::instance().geometry_storage().allocate();
@@ -525,10 +612,10 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         handle->transform_handle = transform_handle_;
         handle->model_resource_handle = model_resource_handle_;
         handle->mesh_handles = std::move(mesh_devices);
-        CFW_LOG_INFO("[Geometry] Successfully created geometry with {} meshes from: {}",
+        CFW_LOG_INFO("[Geometry::Geometry] Successfully created geometry with {} meshes from: {}",
                      handle->mesh_handles.size(), model_path);
     } else {
-        CFW_LOG_CRITICAL("[Geometry] Failed to acquire write access to geometry storage");
+        CFW_LOG_CRITICAL("[Geometry::Geometry] Failed to acquire write access to geometry storage");
         // 清理已分配的资源
         SharedDataHub::instance().model_transform_storage().deallocate(transform_handle_);
         SharedDataHub::instance().model_resource_storage().deallocate(model_resource_handle_);
@@ -677,7 +764,7 @@ Corona::API::Optics::Optics(Geometry& geo)
     if (auto accessor = SharedDataHub::instance().optics_storage().acquire_write(handle_)) {
         accessor->geometry_handle = geo.get_handle();
     } else {
-        CFW_LOG_ERROR("[Optics] Failed to acquire write access to optics storage");
+        CFW_LOG_ERROR("[Optics::Optics] Failed to acquire write access to optics storage");
         SharedDataHub::instance().optics_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -726,14 +813,14 @@ Corona::API::Mechanics::Mechanics(Geometry& geo)
                     min_xyz.y = min[1];
                     min_xyz.z = min[2];
                 } else {
-                    CFW_LOG_WARNING("[Mechanics] Failed to acquire scene resource; using default AABB");
+                    CFW_LOG_WARNING("[Mechanics::Mechanics] Failed to acquire scene resource; using default AABB");
                 }
             }
         } else {
-            CFW_LOG_WARNING("[Mechanics] Failed to read model resource; using default AABB");
+            CFW_LOG_WARNING("[Mechanics::Mechanics] Failed to read model resource; using default AABB");
         }
     } else {
-        CFW_LOG_WARNING("[Mechanics] Failed to read geometry; using default AABB");
+        CFW_LOG_WARNING("[Mechanics::Mechanics] Failed to read geometry; using default AABB");
     }
 
     // 创建 MechanicsDevice
@@ -743,7 +830,7 @@ Corona::API::Mechanics::Mechanics(Geometry& geo)
         accessor->max_xyz = max_xyz;
         accessor->min_xyz = min_xyz;
     } else {
-        CFW_LOG_ERROR("[Mechanics] Failed to acquire write access to mechanics storage");
+        CFW_LOG_ERROR("[Mechanics::Mechanics] Failed to acquire write access to mechanics storage");
         SharedDataHub::instance().mechanics_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -772,7 +859,7 @@ Corona::API::Acoustics::Acoustics(Geometry& geo)
     if (auto accessor = SharedDataHub::instance().acoustics_storage().acquire_write(handle_)) {
         accessor->geometry_handle = geo.get_handle();
     } else {
-        CFW_LOG_ERROR("[Acoustics] Failed to acquire write access to acoustics storage");
+        CFW_LOG_ERROR("[Acoustics::Acoustics] Failed to acquire write access to acoustics storage");
         SharedDataHub::instance().acoustics_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1044,7 +1131,7 @@ Corona::API::Camera::Camera()
         accessor->fov = fov;
         accessor->surface = get_default_surface();
     } else {
-        CFW_LOG_ERROR("[Camera] Failed to acquire write access to camera storage");
+        CFW_LOG_ERROR("[Camera::Camera] Failed to acquire write access to camera storage");
         SharedDataHub::instance().camera_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1075,7 +1162,7 @@ Corona::API::Camera::Camera(const std::array<float, 3>& position, const std::arr
         accessor->fov = fov;
         accessor->surface = get_default_surface();
     } else {
-        CFW_LOG_ERROR("[Camera] Failed to acquire write access to camera storage");
+        CFW_LOG_ERROR("[Camera::Camera] Failed to acquire write access to camera storage");
         SharedDataHub::instance().camera_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1234,7 +1321,7 @@ Corona::API::Viewport::Viewport()
     if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
         accessor->camera = 0;  // 初始无 Camera
     } else {
-        CFW_LOG_ERROR("[Viewport] Failed to acquire write access to viewport storage");
+        CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
         SharedDataHub::instance().viewport_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1246,7 +1333,7 @@ Corona::API::Viewport::Viewport(int width, int height, bool light_field)
     if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
         accessor->camera = 0;  // 初始无 Camera
     } else {
-        CFW_LOG_ERROR("[Viewport] Failed to acquire write access to viewport storage");
+        CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
         SharedDataHub::instance().viewport_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1341,17 +1428,17 @@ void Corona::API::Viewport::set_size(int width, int height) {
 
 void Corona::API::Viewport::set_viewport_rect(int x, int y, int width, int height) {
     // TODO: Implement viewport rectangle settings
-    CFW_LOG_WARNING("[Corona::API::Viewport::set_viewport_rect] Not implemented yet");
+    CFW_LOG_WARNING("[Viewport::set_viewport_rect] Not implemented yet");
 }
 
 void Corona::API::Viewport::pick_actor_at_pixel(int x, int y) const {
     // TODO: Implement pixel picking for actor selection
-    CFW_LOG_WARNING("[Corona::API::Viewport::pick_actor_at_pixel] Not implemented yet");
+    CFW_LOG_WARNING("[Viewport::pick_actor_at_pixel] Not implemented yet");
 }
 
 void Corona::API::Viewport::save_screenshot(const std::string& path) const {
     // TODO: Implement screenshot functionality
-    CFW_LOG_WARNING("[Corona::API::Viewport::save_screenshot] Not implemented yet: {}", path);
+    CFW_LOG_WARNING("[Viewport::save_screenshot] Not implemented yet: {}", path);
 }
 
 std::uintptr_t Corona::API::Viewport::get_handle() const {
