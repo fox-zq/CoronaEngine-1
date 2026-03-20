@@ -298,7 +298,7 @@ Corona::API::Environment::Environment()
             accessor->sun_position.x = 1.0f;
             accessor->sun_position.y = 1.0f;
             accessor->sun_position.z = 1.0f;
-            // accessor->floor_grid_enabled = true;
+            accessor->floor_grid_enabled = 1;
 
             CFW_LOG_INFO("[Environment::Environment] Created {} handle", handle_);
         }
@@ -322,19 +322,22 @@ void Corona::API::Environment::set_sun_direction(const std::array<float, 3>& dir
         accessor->sun_position.x = direction[0];
         accessor->sun_position.y = direction[1];
         accessor->sun_position.z = direction[2];
-
-        // CFW_LOG_INFO("[Environment::set_sun_direction] Sun direction set to: ({}, {}, {})",
-        //              direction[0], direction[1], direction[2]);
-
     } else {
         CFW_LOG_ERROR("[Environment::set_sun_direction] Failed to acquire write access to environment storage");
     }
 }
 
 void Corona::API::Environment::set_floor_grid(bool enabled) const {
-    // TODO: Implement floor grid rendering control
-    CFW_LOG_WARNING("[Environment::set_floor_grid] Not implemented yet: {}",
-                    enabled ? "enabled" : "disabled");
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Environment::set_floor_grid] Invalid environment handle");
+        return;
+    }
+
+    if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+        accessor->floor_grid_enabled = enabled ? 1u : 0u;
+    } else {
+        CFW_LOG_ERROR("[Environment::set_floor_grid] Failed to acquire write access to environment storage");
+    }
 }
 
 std::uintptr_t Corona::API::Environment::get_handle() const {
@@ -1195,6 +1198,9 @@ void Corona::API::Camera::set(const std::array<float, 3>& position, const std::a
     up_vec.x = world_up[0];
     up_vec.y = world_up[1];
     up_vec.z = world_up[2];
+
+    CFW_LOG_INFO("[Camera::set] Updating camera (handle {}) - Position: ({:.2f}, {:.2f}, {:.2f}), Forward: ({:.2f}, {:.2f}, {:.2f}), World Up: ({:.2f}, {:.2f}, {:.2f}), FOV: {:.1f}",
+                 handle_, pos_vec.x, pos_vec.y, pos_vec.z, fwd_vec.x, fwd_vec.y, fwd_vec.z, up_vec.x, up_vec.y, up_vec.z, fov);
 
     if (auto accessor = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
         accessor->position = pos_vec;

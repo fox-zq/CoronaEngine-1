@@ -9,6 +9,7 @@
 
 #include <exception>
 #include <filesystem>
+#include <cstdint>
 
 #include "corona/resource/types/text.h"
 #include "hardware.h"
@@ -307,16 +308,19 @@ namespace Corona::Systems
                         sun_dir.x = 1.0f;
                         sun_dir.y = 1.0f;
                         sun_dir.z = 1.0f;
+                        std::uint32_t floor_grid_enabled = 1;
                         if (scene.environment != 0)
                         {
                             if (auto env = SharedDataHub::instance().environment_storage().acquire_read(
                                 scene.environment))
                             {
                                 sun_dir = env->sun_position;
+                                floor_grid_enabled = env->floor_grid_enabled;
                             }
                         }
 
                         hardware_->computePipeline["pushConsts.sun_dir"] = ktm::normalize(sun_dir);
+                        hardware_->computePipeline["pushConsts.floor_grid_enabled"] = floor_grid_enabled;
                         {
                             // 调整为黄昏颜色 (Dusk)
                             static const ktm::fvec3 lightColor{

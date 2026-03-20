@@ -35,6 +35,7 @@ layout(push_constant) uniform PushConsts
     uint mutiviewImageIndex;
 
     uint time;
+    uint floor_grid_enabled;
 } pushConsts;
 
 
@@ -443,6 +444,13 @@ vec3 FilmicToneMappingExpr(vec3 x)
     return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
+float grid_line(float coord, float scale)
+{
+    float v = coord * scale;
+    float d = min(fract(v), 1.0f - fract(v));
+    return 1.0f - smoothstep(0.0f, 0.02f, d);
+}
+
 
 void main()
 {
@@ -486,6 +494,26 @@ void main()
         vec3 rayDir = normalize(fwd + up * cam_local_point.y + right * cam_local_point.x);
 
         renderResult = getAtmosphericSky(rayOrigin, rayDir,pushConsts.sun_dir,20.0f);
+
+        if (pushConsts.floor_grid_enabled != 0u)
+        {
+            vec3 scene_ray_origin = uniformBufferObjects[pushConsts.uniformBufferIndex].eyePosition;
+            vec3 scene_ray_dir = normalize(fwd + up * cam_local_point.y + right * cam_local_point.x);
+
+            if (abs(scene_ray_dir.y) > 1e-5f)
+            {
+                float t = -scene_ray_origin.y / scene_ray_dir.y;
+                if (t > 0.0f)
+                {
+                    vec3 hit = scene_ray_origin + scene_ray_dir * t;
+                    float minor = max(grid_line(hit.x, 1.0f), grid_line(hit.z, 1.0f));
+                    float major = max(grid_line(hit.x, 0.2f), grid_line(hit.z, 0.2f));
+                    float grid_alpha = clamp(minor * 0.35f + major * 0.65f, 0.0f, 1.0f);
+                    vec3 grid_color = mix(vec3(0.15f), vec3(0.30f), major);
+                    renderResult = mix(renderResult, grid_color, grid_alpha * 0.75f);
+                }
+            }
+        }
     }
 
 	imageStore(inputImageRGBA16[pushConsts.finalOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(renderResult, 1.0f));

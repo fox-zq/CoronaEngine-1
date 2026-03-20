@@ -2,6 +2,7 @@
 #include <corona/kernel/utils/storage.h>
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -150,6 +151,7 @@ struct ViewportDevice {
 
 struct EnvironmentDevice {
     ktm::fvec3 sun_position;
+    std::uint32_t floor_grid_enabled{1};
 };
 
 struct SceneDevice {
