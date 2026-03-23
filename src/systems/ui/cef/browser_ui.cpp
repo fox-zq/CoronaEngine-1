@@ -249,137 +249,69 @@ void BrowserRenderer::setup_window_transform(BrowserTab* tab,
     }
 }
 
-void BrowserRenderer::handle_browser_mouse_events(const BrowserTab* tab,
+void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
                                                   int tab_id,
                                                   int& active_tab_id,
                                                   int& url_input_active_tab,
                                                   const ImGuiIO* io) {
-    bool browser_hovered = ImGui::IsItemHovered();
-    bool browser_active = (active_tab_id == tab_id);
+    const bool is_hovered = ImGui::IsItemHovered();
+    const bool is_active = (active_tab_id == tab_id);
+    const ImVec2 mouse_pos = ImGui::GetMousePos();
+    const ImVec2 item_pos = ImGui::GetItemRectMin();  // 这是窗口在屏幕上的起点
 
-    if (!browser_hovered && mouse_state.is_mouse_down() && browser_active) {
-        if (tab->client && tab->client->GetBrowser()) {
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 item_pos = ImGui::GetItemRectMin();
+    auto browser = tab->client ? tab->client->GetBrowser() : nullptr;
+    if (!browser) return;
 
-            CefMouseEvent mouse_event = MouseUtils::create_mouse_event(mouse_pos, item_pos);
+    // 1. 处理点击事件 (按下/释放)
+    auto process_button = [&](ImGuiMouseButton imgui_btn, CefBrowserHost::MouseButtonType cef_btn) {
+        if (is_hovered) {
+            if (ImGui::IsMouseClicked(imgui_btn)) {
+                active_tab_id = tab_id;
+                url_input_active_tab = -1;
+                browser->GetHost()->SetFocus(true);
 
-            if (mouse_event.x >= 0 && mouse_event.x < tab->width &&
-                mouse_event.y >= 0 && mouse_event.y < tab->height) {
-                tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(
-                    mouse_event, MBT_LEFT, true, mouse_state.get_click_count());
+                int clicks = (imgui_btn == ImGuiMouseButton_Left) ? mouse_state.handle_mouse_click(mouse_pos, SDL_GetTicks()) : 1;
+
+                if (imgui_btn == ImGuiMouseButton_Left) mouse_state.set_mouse_down(true);
+
+                MouseUtils::send_mouse_click(browser, mouse_pos, item_pos, cef_btn, false, clicks);
             }
         }
-        mouse_state.set_mouse_down(false);
-        mouse_state.set_dragging(false);
-    }
 
-    // 处理鼠标左键点击
-    if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        active_tab_id = tab_id;
-        url_input_active_tab = -1;
-
-        ImVec2 current_pos = ImGui::GetMousePos();
-        ImVec2 item_pos = ImGui::GetItemRectMin();
-        Uint32 current_time = SDL_GetTicks();
-
-        int click_count = mouse_state.handle_mouse_click(current_pos, current_time);
-        mouse_state.set_mouse_down(true);
-
-        if (tab->client && tab->client->GetBrowser()) {
-            tab->client->GetBrowser()->GetHost()->SetFocus(true);
-
-            MouseUtils::send_mouse_click(
-                tab->client->GetBrowser(), current_pos, item_pos,
-                MBT_LEFT, false, click_count);
-        }
-    }
-
-    // 处理鼠标右键点击 - 关键修改
-    if (browser_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
-        active_tab_id = tab_id;
-        url_input_active_tab = -1;
-
-        ImVec2 current_pos = ImGui::GetMousePos();
-        ImVec2 item_pos = ImGui::GetItemRectMin();
-
-        if (tab->client && tab->client->GetBrowser()) {
-            tab->client->GetBrowser()->GetHost()->SetFocus(true);
-
-            // 发送鼠标右键按下事件
-            MouseUtils::send_mouse_click(
-                tab->client->GetBrowser(), current_pos, item_pos,
-                MBT_RIGHT, false, 1);
-        }
-    }
-
-    // 处理鼠标右键释放
-    if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-        if (tab->client && tab->client->GetBrowser()) {
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 item_pos = ImGui::GetItemRectMin();
-
-            MouseUtils::send_mouse_click(
-                tab->client->GetBrowser(), mouse_pos, item_pos,
-                MBT_RIGHT, true, mouse_state.get_click_count());
-        }
-    }
-
-    // 处理鼠标左键释放
-    if (browser_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        if (mouse_state.is_mouse_down()) {
-            if (tab->client && tab->client->GetBrowser()) {
-                ImVec2 mouse_pos = ImGui::GetMousePos();
-                ImVec2 item_pos = ImGui::GetItemRectMin();
-
-                MouseUtils::send_mouse_click(
-                    tab->client->GetBrowser(), mouse_pos, item_pos,
-                    MBT_LEFT, true, mouse_state.get_click_count());
-            }
-
-            mouse_state.set_mouse_down(false);
-            mouse_state.set_dragging(false);
-        }
-    }
-
-    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && mouse_state.is_mouse_down() && browser_active) {
-        if (tab->client && tab->client->GetBrowser()) {
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 item_pos = ImGui::GetItemRectMin();
-
-            CefMouseEvent mouse_event = MouseUtils::create_mouse_event(mouse_pos, item_pos);
-
-            if (mouse_event.x >= 0 && mouse_event.x < tab->width &&
-                mouse_event.y >= 0 && mouse_event.y < tab->height) {
-                tab->client->GetBrowser()->GetHost()->SendMouseClickEvent(
-                    mouse_event, MBT_LEFT, true, mouse_state.get_click_count());
-            }
-        }
-        mouse_state.set_mouse_down(false);
-        mouse_state.set_dragging(false);
-    }
-
-    if (browser_hovered) {
-        if (CefRefPtr<CefBrowser> browser = tab->client ? tab->client->GetBrowser() : nullptr) {
-            ImVec2 mouse_pos = ImGui::GetMousePos();
-            ImVec2 item_pos = ImGui::GetItemRectMin();
-
-            MouseUtils::send_mouse_move(browser, mouse_pos, item_pos, false);
-
-            if (mouse_state.is_mouse_down()) {
-                ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
-                float drag_distance = drag_delta.x * drag_delta.x + drag_delta.y * drag_delta.y;
-
-                if (drag_distance > 4.0f) {
-                    mouse_state.set_dragging(true);
+        // 释放事件：如果之前按下了，即使鼠标移出窗口也应该发送释放信号（防止粘滞）
+        if (ImGui::IsMouseReleased(imgui_btn)) {
+            bool was_down = (imgui_btn == ImGuiMouseButton_Left && mouse_state.is_mouse_down());
+            // 如果是在内部释放，或者之前处于按下状态在外部释放
+            if (is_hovered || (was_down && is_active)) {
+                MouseUtils::send_mouse_click(browser, mouse_pos, item_pos, cef_btn, true, 1);
+                if (imgui_btn == ImGuiMouseButton_Left) {
+                    mouse_state.set_mouse_down(false);
+                    mouse_state.set_dragging(false);
                 }
             }
+        }
+    };
 
-            float wheel = io->MouseWheel;
-            if (wheel != 0) {
-                MouseUtils::send_mouse_wheel(browser, mouse_pos, item_pos, wheel);
+    process_button(ImGuiMouseButton_Left, MBT_LEFT);
+    process_button(ImGuiMouseButton_Right, MBT_RIGHT);
+    process_button(ImGuiMouseButton_Middle, MBT_MIDDLE);
+
+    // 2. 处理移动事件
+    if (is_hovered || mouse_state.is_mouse_down()) {
+        MouseUtils::send_mouse_move(browser, mouse_pos, item_pos, !is_hovered);
+
+        // 处理拖拽状态更新
+        if (mouse_state.is_mouse_down()) {
+            ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+            if (drag_delta.x * drag_delta.x + drag_delta.y * drag_delta.y > 4.0f) {
+                mouse_state.set_dragging(true);
             }
         }
+    }
+
+    // 3. 处理滚轮
+    if (is_hovered && io->MouseWheel != 0) {
+        MouseUtils::send_mouse_wheel(browser, mouse_pos, item_pos, io->MouseWheel);
     }
 }
 
@@ -411,7 +343,7 @@ void BrowserRenderer::render_single_tab(int tab_id,
     setup_window_transform(tab, dock_space_id, is_main_tab);
 
     if (ImGui::Begin(window_id.c_str(), &tab->open, browser_window_flags)) {
-        ImGui::PushItemWidth(-200);
+     /*   ImGui::PushItemWidth(-200);
         ImGui::SameLine();
         ImGui::PopItemWidth();
         ImGui::SameLine();
@@ -421,7 +353,7 @@ void BrowserRenderer::render_single_tab(int tab_id,
             if (tab->client && tab->client->GetBrowser()) {
                 tab->client->GetBrowser()->Reload();
             }
-        }
+        }*/
 
         ImVec2 avail_size = ImGui::GetContentRegionAvail();
         int new_width = static_cast<int>(avail_size.x);

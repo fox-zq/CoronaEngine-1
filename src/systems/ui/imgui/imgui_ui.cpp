@@ -35,6 +35,7 @@ namespace Corona::Systems::UI
         SDL_ShowWindow(window);
         SDL_StartTextInput(window);
         SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "1");
+        BrowserManager::instance().set_main_window(window);
 
         vulkan_backend = std::make_unique<VulkanBackend>(window);
         if (!vulkan_backend->initialize()) 
@@ -151,7 +152,7 @@ namespace Corona::Systems::UI
         ImGui::PopStyleColor(3);
 
         ImGuiID dock_space_id = ImGui::GetID("MyDockSpace");
-        ImGui::DockSpace(dock_space_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
+        ImGui::DockSpace(dock_space_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_AutoHideTabBar);
 
         dockspace_active_ = true;
 

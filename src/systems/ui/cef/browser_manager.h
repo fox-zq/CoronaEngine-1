@@ -93,9 +93,12 @@ namespace Corona::Systems::UI
         void update();
         void close_all_tabs();
 
+        //设置主窗口指针
+        void set_main_window(SDL_Window* window) { main_window_ = window; }
+
     private:
         BrowserManager() = default;
-
+        SDL_Window* main_window_ = nullptr;
         ImTextureID create_browser_texture(int width, int height);
         void destroy_tab_texture(BrowserTab* tab);
 

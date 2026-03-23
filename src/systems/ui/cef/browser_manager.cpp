@@ -128,7 +128,21 @@ int BrowserManager::create_tab(const std::string& url, const std::string& path,
 
     // Create Offscreen Browser
     CefWindowInfo window_info;
-    window_info.SetAsWindowless(GetDesktopWindow());
+    HWND hwnd = NULL;
+    if (main_window_) {
+        // SDL3 获取原生 Windows 句柄的标准方法
+        hwnd = (HWND)SDL_GetPointerProperty(
+            SDL_GetWindowProperties(main_window_),
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER,
+            NULL);
+    }
+    // 如果拿到了 HWND 就用 HWND，否则退回到桌面（不推荐）
+    if (hwnd) {
+        window_info.SetAsWindowless(hwnd);
+    } else {
+        CFW_LOG_WARNING("Main window handle not found, falling back to Desktop Window.");
+        window_info.SetAsWindowless(GetDesktopWindow());
+    }
 
     CefBrowserSettings browser_settings;
     browser_settings.windowless_frame_rate = 60;
