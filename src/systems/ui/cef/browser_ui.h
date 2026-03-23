@@ -76,7 +76,7 @@ class BrowserRenderer {
                                 ImGuiID dock_space_id,
                                 bool is_main_tab);
 
-    void handle_browser_mouse_events(const BrowserTab* tab,
+    void handle_browser_mouse_events(BrowserTab* tab,
                                      int tab_id,
                                      int& active_tab_id,
                                      int& url_input_active_tab,

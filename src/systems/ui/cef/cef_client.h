@@ -34,6 +34,7 @@ class OffscreenRenderHandler : public CefRenderHandler {
     void OnPaint(CefRefPtr<CefBrowser> browser, PaintElementType type,
                  const RectList& dirty_rects, const void* buffer,
                  int width, int height) override;
+    bool GetScreenPoint(CefRefPtr<CefBrowser> browser, int viewX, int viewY, int& screenX, int& screenY);
 
     IMPLEMENT_REFCOUNTING(OffscreenRenderHandler);
 };

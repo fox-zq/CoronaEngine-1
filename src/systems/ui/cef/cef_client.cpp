@@ -163,6 +163,17 @@ void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElement
     }
 }
 
+bool OffscreenRenderHandler::GetScreenPoint(CefRefPtr<CefBrowser> browser, int viewX, int viewY, int& screenX, int& screenY) {
+    if (!tab) return false;
+    
+    // 将局部坐标转换成屏幕绝对坐标
+    POINT mouse_pt;
+    GetCursorPos(&mouse_pt);
+    screenX = mouse_pt.x;
+    screenY = mouse_pt.y;
+    return true;
+}
+
 // ============================================================================
 // OffscreenCefClient 实现
 // ============================================================================

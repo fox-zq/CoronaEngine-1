@@ -194,13 +194,11 @@ void send_mouse_wheel(CefRefPtr<CefBrowser> browser, const ImVec2& mouse_pos,
                       const ImVec2& item_pos, float wheel_delta) {
     if (!browser) return;
 
-    ImGuiIO& io = ImGui::GetIO();
-    bool is_left_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-    bool is_right_down = ImGui::IsMouseDown(ImGuiMouseButton_Right);
-    uint32_t modifiers = get_modifiers(is_left_down, is_right_down);
-
+    uint32_t modifiers = get_modifiers(ImGui::IsMouseDown(0), ImGui::IsMouseDown(1));
     CefMouseEvent mouse_event = create_mouse_event(mouse_pos, item_pos, modifiers);
-    browser->GetHost()->SendMouseWheelEvent(mouse_event, 0, static_cast<int>(wheel_delta * 100));
+
+    // Windows 标准滚轮增量通常是 120
+    browser->GetHost()->SendMouseWheelEvent(mouse_event, 0, static_cast<int>(wheel_delta * 120));
 }
 
 }  // namespace MouseUtils
