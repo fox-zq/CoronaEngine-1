@@ -2,6 +2,8 @@
 
 #include <corona/kernel/utils/storage.h>
 
+#include <string>
+
 namespace Corona {
 class Model;
 }
@@ -27,6 +29,15 @@ struct EngineToOpticsDemoEvent {
  */
 struct OpticsToEngineDemoEvent {
     float delta_time;
+};
+
+/**
+ * @brief Screenshot request (published by Camera/Viewport API, consumed by OpticsSystem)
+ */
+struct ScreenshotRequestEvent
+{
+    void* surface = nullptr;
+    std::string file_path;
 };
 
 }  // namespace Corona::Events

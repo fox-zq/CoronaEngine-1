@@ -3,6 +3,7 @@
 #include <iterator>
 #include <CabbageHardware.h>
 #include <corona/events/display_system_events.h>
+#include <corona/events/optics_system_events.h>
 #include <corona/kernel/core/kernel_context.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/resource/resource_manager.h>
@@ -1199,9 +1200,6 @@ void Corona::API::Camera::set(const std::array<float, 3>& position, const std::a
     up_vec.y = world_up[1];
     up_vec.z = world_up[2];
 
-    CFW_LOG_INFO("[Camera::set] Updating camera (handle {}) - Position: ({:.2f}, {:.2f}, {:.2f}), Forward: ({:.2f}, {:.2f}, {:.2f}), World Up: ({:.2f}, {:.2f}, {:.2f}), FOV: {:.1f}",
-                 handle_, pos_vec.x, pos_vec.y, pos_vec.z, fwd_vec.x, fwd_vec.y, fwd_vec.z, up_vec.x, up_vec.y, up_vec.z, fov);
-
     if (auto accessor = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
         accessor->position = pos_vec;
         accessor->forward = fwd_vec;
@@ -1304,6 +1302,28 @@ void Corona::API::Camera::set_surface(void* surface) {
     }
 }
 
+void Corona::API::Camera::save_screenshot(const std::string& path) const {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Camera::save_screenshot] Invalid camera handle");
+        return;
+    }
+
+    void* surface = nullptr;
+    if (auto accessor = SharedDataHub::instance().camera_storage().acquire_read(handle_)) {
+        surface = accessor->surface;
+    }
+
+    if (surface == nullptr) {
+        CFW_LOG_WARNING("[Camera::save_screenshot] Camera has no associated surface");
+        return;
+    }
+
+    if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+        event_bus->publish<Events::ScreenshotRequestEvent>({surface, path});
+        CFW_LOG_INFO("[Camera::save_screenshot] Screenshot request queued: {}", path);
+    }
+}
+
 // ########################
 //      ImageEffects
 // ########################
@@ -1312,7 +1332,7 @@ Corona::API::ImageEffects::ImageEffects()
 }
 
 Corona::API::ImageEffects::~ImageEffects() {
-    if (handle_ != 0) {
+    if (handle_ != 0) { 
         // Corona::SharedDataHub::instance().image_effects_storage().deallocate(handle_);
         handle_ = 0;
     }
@@ -1325,7 +1345,7 @@ Corona::API::Viewport::Viewport()
     : handle_(0) {
     handle_ = SharedDataHub::instance().viewport_storage().allocate();
     if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = 0;  // 初始无 Camera
+        accessor->camera = 0;
     } else {
         CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
         SharedDataHub::instance().viewport_storage().deallocate(handle_);
@@ -1337,7 +1357,7 @@ Corona::API::Viewport::Viewport(int width, int height, bool light_field)
     : handle_(0), width_(width), height_(height) {
     handle_ = SharedDataHub::instance().viewport_storage().allocate();
     if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = 0;  // 初始无 Camera
+        accessor->camera = 0;
     } else {
         CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
         SharedDataHub::instance().viewport_storage().deallocate(handle_);

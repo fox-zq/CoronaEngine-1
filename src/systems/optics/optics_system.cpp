@@ -4,12 +4,15 @@
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/resource/resource_manager.h>
+#include <corona/resource/types/image.h>
 #include <corona/shared_data_hub.h>
 #include <corona/systems/optics/optics_system.h>
 
 #include <exception>
 #include <filesystem>
+#include <cmath>
 #include <cstdint>
+#include <vector>
 
 #include "corona/resource/types/text.h"
 #include "hardware.h"
@@ -197,6 +200,18 @@ namespace Corona::Systems
         CFW_LOG_WARNING("OpticsSystem: Shader compilation temporarily disabled - waiting for Resource API update");
         hardware_->shaderHasInit = true;
 
+        if (auto* event_bus = ctx->event_bus())
+        {
+            screenshot_request_sub_id_ = event_bus->subscribe<Events::ScreenshotRequestEvent>(
+                [this](const Events::ScreenshotRequestEvent& event) {
+                    if (event.surface == nullptr || event.file_path.empty()) {
+                        return;
+                    }
+                    std::lock_guard<std::mutex> lock(screenshot_mutex_);
+                    pending_screenshots_.push_back({event.surface, event.file_path});
+                });
+        }
+
         return true;
     }
 
@@ -359,6 +374,8 @@ namespace Corona::Systems
 
                             if (camera->surface != nullptr)
                             {
+                                process_pending_screenshots(camera->surface);
+
                                 if (auto* event_bus = context()->event_bus())
                                 {
                                     event_bus->publish<Events::OpticsFrameReadyEvent>({
@@ -393,9 +410,105 @@ namespace Corona::Systems
         }
     }
 
+    namespace {
+
+    // Convert IEEE 754 half-precision float (16-bit) to single-precision float.
+    float half_to_float(uint16_t h) {
+        const uint32_t sign     = (h >> 15) & 0x1;
+        const uint32_t exponent = (h >> 10) & 0x1F;
+        const uint32_t mantissa = h & 0x3FF;
+
+        float result;
+        if (exponent == 0) {
+            result = std::ldexp(static_cast<float>(mantissa), -24);  // denorm or zero
+        } else if (exponent == 31) {
+            result = (mantissa == 0) ? INFINITY : NAN;
+        } else {
+            result = std::ldexp(static_cast<float>(mantissa | 0x400), static_cast<int>(exponent) - 25);
+        }
+        return sign ? -result : result;
+    }
+
+    }  // namespace
+
+    void OpticsSystem::process_pending_screenshots(void* surface)
+    {
+        std::vector<PendingScreenshot> matched;
+        {
+            std::lock_guard<std::mutex> lock(screenshot_mutex_);
+            auto it = std::remove_if(pending_screenshots_.begin(), pending_screenshots_.end(),
+                [surface](const PendingScreenshot& req) { return req.surface == surface; });
+            matched.assign(std::make_move_iterator(it), std::make_move_iterator(pending_screenshots_.end()));
+            pending_screenshots_.erase(it, pending_screenshots_.end());
+        }
+
+        if (matched.empty()) {
+            return;
+        }
+
+        const uint32_t w = hardware_->gbufferSize.x;
+        const uint32_t h = hardware_->gbufferSize.y;
+        if (w == 0 || h == 0) {
+            CFW_LOG_WARNING("OpticsSystem: Cannot take screenshot - zero render dimensions");
+            return;
+        }
+
+        // GPU readback: copy finalOutputImage to staging buffer
+        const uint64_t pixel_count = static_cast<uint64_t>(w) * h;
+        const uint64_t buffer_size = pixel_count * 8;  // RGBA16F = 4 channels * 2 bytes
+
+        HardwareBuffer staging_buffer(static_cast<uint32_t>(buffer_size), BufferUsage::StorageBuffer);
+        if (!staging_buffer) {
+            CFW_LOG_ERROR("OpticsSystem: Failed to create staging buffer for screenshot");
+            return;
+        }
+
+        hardware_->executor << hardware_->finalOutputImage.copyTo(staging_buffer)
+                            << hardware_->executor.commit();
+
+        std::vector<uint16_t> half_data(pixel_count * 4);
+        if (!staging_buffer.copyToData(half_data.data(), buffer_size)) {
+            CFW_LOG_ERROR("OpticsSystem: Failed to read rendered data from GPU");
+            return;
+        }
+
+        // Convert RGBA16F to RGBA8
+        std::vector<uint8_t> rgba8(pixel_count * 4);
+        for (uint64_t i = 0; i < pixel_count * 4; ++i) {
+            float v = half_to_float(half_data[i]);
+            v = std::fmax(0.0f, std::fmin(1.0f, v));
+            rgba8[i] = static_cast<uint8_t>(v * 255.0f + 0.5f);
+        }
+
+        // Export each matched request using CoronaResource
+        for (const auto& req : matched) {
+            std::filesystem::path file_path(req.file_path);
+            auto image = std::make_shared<Resource::Image>(file_path);
+            image->set_data(rgba8.data(), static_cast<int>(w), static_cast<int>(h), 4);
+
+            auto rid = Resource::IResource::generate_uid(file_path);
+            auto& manager = Resource::ResourceManager::get_instance();
+            manager.add_resource(rid, image);
+
+            if (manager.export_sync(rid, file_path)) {
+                CFW_LOG_INFO("OpticsSystem: Screenshot saved to {}", req.file_path);
+            } else {
+                CFW_LOG_ERROR("OpticsSystem: Failed to save screenshot to {}", req.file_path);
+            }
+        }
+    }
+
     void OpticsSystem::shutdown()
     {
         CFW_LOG_NOTICE("OpticsSystem: Shutting down...");
+
+        if (auto* event_bus = context()->event_bus())
+        {
+            if (screenshot_request_sub_id_ != 0)
+            {
+                event_bus->unsubscribe(screenshot_request_sub_id_);
+            }
+        }
 
         if (image_handle_ != 0) {
             SharedDataHub::instance().image_storage().deallocate(image_handle_);

@@ -8,7 +8,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 // 前向声明 Hardware 结构体
 struct Hardware;
@@ -68,9 +70,19 @@ class OpticsSystem : public Kernel::SystemBase {
                                      const std::string& compute_source);
 
     void optics_pipeline(float frame_count, uint64_t frame_index);
+    void process_pending_screenshots(void* surface);
 
     std::unique_ptr<Hardware> hardware_;
     std::uintptr_t image_handle_{};
+
+    struct PendingScreenshot
+    {
+        void* surface = nullptr;
+        std::string file_path;
+    };
+    std::vector<PendingScreenshot> pending_screenshots_;
+    std::mutex screenshot_mutex_;
+    Kernel::EventId screenshot_request_sub_id_ = 0;
 };
 
 }  // namespace Corona::Systems

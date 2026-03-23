@@ -183,6 +183,7 @@ class Camera {
     void set(const std::array<float, 3>& position, const std::array<float, 3>& forward,
              const std::array<float, 3>& world_up, float fov);
     void set_surface(void* surface);
+    void save_screenshot(const std::string& path) const;
 
     [[nodiscard]] std::array<float, 3> get_position() const;
     [[nodiscard]] std::array<float, 3> get_forward() const;
