@@ -80,7 +80,8 @@ class OffscreenCefClient : public CefClient,
                            public CefLoadHandler,
                            public CefRequestHandler,
                            public CefRenderHandler,
-                           public CefDisplayHandler {
+                           public CefDisplayHandler,
+                           public CefContextMenuHandler {
    public:
     OffscreenCefClient();
 
@@ -94,6 +95,7 @@ class OffscreenCefClient : public CefClient,
     CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
     CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
     CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+    CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
 
     // CefRequestHandler
     bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
@@ -134,11 +136,27 @@ class OffscreenCefClient : public CefClient,
                                   CefProcessId source_process,
                                   CefRefPtr<CefProcessMessage> message) override;
 
+    void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                             CefRefPtr<CefFrame> frame,
+                             CefRefPtr<CefContextMenuParams> params,
+                             CefRefPtr<CefMenuModel> model) override;
+
+    bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                              CefRefPtr<CefFrame> frame,
+                              CefRefPtr<CefContextMenuParams> params,
+                              int command_id,
+                              CefContextMenuHandler::EventFlags event_flags) override;
+
+    void OnContextMenuDismissed(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame) override;
+
    private:
     CefRefPtr<CefBrowser> browser_;
     CefRefPtr<OffscreenRenderHandler> render_handler_;
     CefRefPtr<CefMessageRouterBrowserSide> browser_side_router_;
     BrowserSideJSHandler* js_handler_;
+
+    static constexpr int MENU_ID_REFRESH = 1001;
 
     IMPLEMENT_REFCOUNTING(OffscreenCefClient);
 };

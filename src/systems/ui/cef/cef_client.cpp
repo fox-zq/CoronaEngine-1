@@ -309,6 +309,56 @@ bool OffscreenCefClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
 }
 
 // ============================================================================
+// CefContextMenuHandler 实现
+// ============================================================================
+
+void OffscreenCefClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                                             CefRefPtr<CefFrame> frame,
+                                             CefRefPtr<CefContextMenuParams> params,
+                                             CefRefPtr<CefMenuModel> model) {
+    CEF_REQUIRE_UI_THREAD();
+
+    if (!model || !frame) {
+        return;
+    }
+
+    // 清空现有菜单项（可选，如果只想保留自定义菜单）
+    model->Clear();
+
+    // 添加刷新菜单项
+    model->AddItem(MENU_ID_REFRESH, "刷新页面");
+
+}
+
+bool OffscreenCefClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                                              CefRefPtr<CefFrame> frame,
+                                              CefRefPtr<CefContextMenuParams> params,
+                                              int command_id,
+                                              CefContextMenuHandler::EventFlags event_flags) {
+    CEF_REQUIRE_UI_THREAD();
+
+    if (!browser || !frame) {
+        return false;
+    }
+
+    switch (command_id) {
+        case MENU_ID_REFRESH:
+            // 刷新当前页面
+            browser->Reload();
+            CFW_LOG_INFO("Browser refresh triggered via context menu");
+            return true;
+        default:
+            return false;
+    }
+}
+
+void OffscreenCefClient::OnContextMenuDismissed(CefRefPtr<CefBrowser> browser,
+                                                CefRefPtr<CefFrame> frame) {
+    CEF_REQUIRE_UI_THREAD();
+    // 菜单关闭时的清理工作（可选）
+}
+
+// ============================================================================
 // CefAppConfig 实现
 // ============================================================================
 
