@@ -2,6 +2,7 @@
 
 #include <corona/kernel/core/i_logger.h>
 
+#include <algorithm>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -151,6 +152,13 @@ void OffscreenRenderHandler::OnPaint(CefRefPtr<CefBrowser> browser, PaintElement
         std::lock_guard<std::mutex> lock(tab->mutex);
         tab->pixel_buffer.resize(bufferSize);
         std::memcpy(tab->pixel_buffer.data(), buffer, bufferSize);
+
+        // CEF outputs BGRA on Windows; convert to RGBA for Vulkan RGBA8 textures.
+        auto* pixels = tab->pixel_buffer.data();
+        for (size_t i = 0; i < bufferSize; i += 4) {
+            std::swap(pixels[i], pixels[i + 2]);
+        }
+
         tab->buffer_dirty = true;
     }
 }

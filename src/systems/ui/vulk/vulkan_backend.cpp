@@ -76,7 +76,8 @@ void main()
     float inside = inside_x * inside_y;
 
     vec4 tex_color = texture(textures[nonuniformEXT(pushConsts.texture_index)], frag_uv);
-    out_color = frag_color * tex_color * inside;
+    vec4 linear_vert_color = vec4(pow(frag_color.rgb, vec3(2.2)), frag_color.a);
+    out_color = linear_vert_color * tex_color * inside;
 }
 )GLSL";
 

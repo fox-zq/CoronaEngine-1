@@ -115,6 +115,8 @@ void BindAll(nanobind::module_& m) {
         .def("set", &Camera::set,
              nb::arg("position"), nb::arg("forward"), nb::arg("world_up"), nb::arg("fov"),
              "Set all camera parameters at once")
+        .def("save_screenshot", &Camera::save_screenshot, nb::arg("path"),
+             "Save a screenshot from this camera's perspective to file")
         .def("set_surface", [](Camera& self, std::uintptr_t surface) { self.set_surface(reinterpret_cast<void*>(surface)); }, nb::arg("surface"), "Set render surface (pass window ID as integer)")
         .def("get_position", &Camera::get_position, "Get camera position [x, y, z]")
         .def("get_forward", &Camera::get_forward, "Get camera forward direction [x, y, z]")
@@ -232,13 +234,8 @@ void BindAll(nanobind::module_& m) {
         .def_ro("timestamp", &Corona::Kernel::LogEntry::timestamp,
                 "Timestamp in nanoseconds since epoch");
 
-    m.def("drain_logs",
-          []() -> std::vector<Corona::Kernel::LogEntry> {
-              return Corona::Kernel::CoronaLogger::drain_logs();
-          },
-          "Drain all pending log entries from the engine log queue");
+    m.def("drain_logs", []() -> std::vector<Corona::Kernel::LogEntry> { return Corona::Kernel::CoronaLogger::drain_logs(); }, "Drain all pending log entries from the engine log queue");
 
-    
     m.def("send_log", [](const std::string& level, const std::string& message) {
               if (level == "TRACE") {
                   PY_LOG_TRACE("{}", message.c_str());
