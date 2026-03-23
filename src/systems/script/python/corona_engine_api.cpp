@@ -1463,8 +1463,12 @@ void Corona::API::Viewport::pick_actor_at_pixel(int x, int y) const {
 }
 
 void Corona::API::Viewport::save_screenshot(const std::string& path) const {
-    // TODO: Implement screenshot functionality
-    CFW_LOG_WARNING("[Viewport::save_screenshot] Not implemented yet: {}", path);
+    if (camera_ == nullptr) {
+        CFW_LOG_WARNING("[Viewport::save_screenshot] No camera attached to viewport");
+        return;
+    }
+
+    camera_->save_screenshot(path);
 }
 
 std::uintptr_t Corona::API::Viewport::get_handle() const {

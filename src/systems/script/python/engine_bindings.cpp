@@ -164,7 +164,7 @@ void BindAll(nanobind::module_& m) {
              nb::arg("x"), nb::arg("y"),
              "Pick actor at pixel coordinates")
         .def("save_screenshot", &Viewport::save_screenshot, nb::arg("path"),
-             "Save screenshot to file");
+             "Save a screenshot from this viewport's camera to file");
 
     // ============================================================================
     // Environment: 环境类
