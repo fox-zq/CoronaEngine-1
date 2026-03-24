@@ -1,7 +1,6 @@
 ﻿#pragma once
 
 #include <cef_app.h>
-#include <corona/systems/script/engine_scripts.h>
 #include <nanobind/nanobind.h>
 
 #include "browser_manager.h"

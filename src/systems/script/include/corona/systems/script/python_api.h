@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <Python.h>
 #include <corona/systems/script/python_hotfix.h>

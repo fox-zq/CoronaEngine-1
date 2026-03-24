@@ -35,6 +35,10 @@ target_include_directories(corona_script_system PUBLIC
     ${nanobind_SOURCE_DIR}/include
 )
 
+target_include_directories(corona_script_system PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Add Python library directories
 target_link_directories(corona_script_system PUBLIC
     ${Python_LIBRARY_DIRS}
