@@ -253,11 +253,14 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
                                                   int tab_id,
                                                   int& active_tab_id,
                                                   int& url_input_active_tab,
-                                                  const ImGuiIO* io) {
+                                                  const ImGuiIO* io,
+                                                  bool is_dragging) {
+    if (is_dragging) return;  // 拖拽期间不处理浏览器鼠标事件
+
     const bool is_hovered = ImGui::IsItemHovered();
     const bool is_active = (active_tab_id == tab_id);
     const ImVec2 mouse_pos = ImGui::GetMousePos();
-    const ImVec2 item_pos = ImGui::GetItemRectMin();  // 这是窗口在屏幕上的起点
+    const ImVec2 item_pos = ImGui::GetItemRectMin();  // 窗口内容区域起点
 
     auto browser = tab->client ? tab->client->GetBrowser() : nullptr;
     if (!browser) return;
@@ -278,10 +281,8 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
             }
         }
 
-        // 释放事件：如果之前按下了，即使鼠标移出窗口也应该发送释放信号（防止粘滞）
         if (ImGui::IsMouseReleased(imgui_btn)) {
             bool was_down = (imgui_btn == ImGuiMouseButton_Left && mouse_state.is_mouse_down());
-            // 如果是在内部释放，或者之前处于按下状态在外部释放
             if (is_hovered || (was_down && is_active)) {
                 MouseUtils::send_mouse_click(browser, mouse_pos, item_pos, cef_btn, true, 1);
                 if (imgui_btn == ImGuiMouseButton_Left) {
@@ -300,7 +301,6 @@ void BrowserRenderer::handle_browser_mouse_events(BrowserTab* tab,
     if (is_hovered || mouse_state.is_mouse_down()) {
         MouseUtils::send_mouse_move(browser, mouse_pos, item_pos, !is_hovered);
 
-        // 处理拖拽状态更新
         if (mouse_state.is_mouse_down()) {
             ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
             if (drag_delta.x * drag_delta.x + drag_delta.y * drag_delta.y > 4.0f) {
@@ -321,51 +321,114 @@ void BrowserRenderer::render_single_tab(int tab_id,
                                         int& url_input_active_tab,
                                         ImGuiIO* io) {
     auto* tab = BrowserManager::instance().get_tab(tab_id);
-    if (!tab || !tab->open) {
-        return;
-    }
+    if (!tab || !tab->open) return;
 
     BrowserManager::instance().update_texture(tab_id);
 
     std::string window_id = tab->name + "##" + std::to_string(tab_id);
 
+    // 窗口标志：始终加上 NoMove（禁止移动）
     ImGuiWindowFlags browser_window_flags = ImGuiWindowFlags_NoTitleBar |
                                             ImGuiWindowFlags_NoScrollbar |
                                             ImGuiWindowFlags_NoNavInputs |
-                                            ImGuiWindowFlags_NoNavFocus;
+                                            ImGuiWindowFlags_NoNavFocus |
+                                            ImGuiWindowFlags_NoMove;  // 强制禁止移动
 
     bool is_main_tab = (tab->docking_pos == "main");
-
     if (is_main_tab) {
-        browser_window_flags |= ImGuiWindowFlags_NoMove;
+        browser_window_flags |= ImGuiWindowFlags_NoMove;  // 主窗口始终禁止
     }
 
     setup_window_transform(tab, dock_space_id, is_main_tab);
 
     if (ImGui::Begin(window_id.c_str(), &tab->open, browser_window_flags)) {
-     /*   ImGui::PushItemWidth(-200);
-        ImGui::SameLine();
-        ImGui::PopItemWidth();
-        ImGui::SameLine();
-
-        ImGui::SameLine();
-        if (ImGui::Button("Refresh")) {
-            if (tab->client && tab->client->GetBrowser()) {
-                tab->client->GetBrowser()->Reload();
-            }
-        }*/
+        ImVec2 window_pos = ImGui::GetWindowPos();
+        ImVec2 content_min = ImGui::GetWindowContentRegionMin();
+        ImVec2 cef_origin = ImVec2(window_pos.x + content_min.x, window_pos.y + content_min.y);
 
         ImVec2 avail_size = ImGui::GetContentRegionAvail();
         int new_width = static_cast<int>(avail_size.x);
         int new_height = static_cast<int>(avail_size.y);
-
         if (new_width > 0 && new_height > 0 &&
             (new_width != tab->width || new_height != tab->height)) {
             BrowserManager::instance().resize_tab(tab_id, new_width, new_height);
         }
 
+        // ----------------- 拖拽区域检测与启动窗口移动 -----------------
+        if (!is_main_tab) {
+            bool in_drag_region = false;
+
+            // 检测鼠标是否在拖拽区域内（若为空则全区域可拖拽）
+            {
+                std::lock_guard<std::mutex> lock(tab->drag_mutex);
+               
+                for (const auto& region : tab->drag_regions) {
+                    ImRect abs_region(
+                        cef_origin.x + region.x,
+                        cef_origin.y + region.y,
+                        cef_origin.x + region.x + region.width,
+                        cef_origin.y + region.y + region.height);
+                    if (abs_region.Contains(io->MousePos)) {
+                        in_drag_region = true;
+                        break;
+                    }
+                }
+            }
+
+            // 光标样式
+            if (in_drag_region) {
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            }
+
+            // 拖拽启动逻辑（区分点击与拖拽）
+            if (in_drag_region && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !tab->dragging_window) {
+                tab->drag_pending = true;
+                tab->drag_pending_start_pos = io->MousePos;
+            }
+
+            // 待拖拽状态，检查移动距离
+            if (tab->drag_pending && !tab->dragging_window) {
+                ImVec2 delta(io->MousePos.x - tab->drag_pending_start_pos.x,
+                             io->MousePos.y - tab->drag_pending_start_pos.y);
+                float distance = sqrtf(delta.x * delta.x + delta.y * delta.y);
+                if (distance > 5.0f) {  // 拖拽阈值
+                    tab->dragging_window = true;
+                    tab->drag_pending = false;
+
+                    ImGuiWindow* window = ImGui::GetCurrentWindow();
+
+                    // 如果窗口已停靠，先分离
+                    if (window->DockNode) {
+                        ImGuiContext* g = ImGui::GetCurrentContext();
+                        ImGui::DockContextProcessUndockWindow(g, window);
+                        window = ImGui::GetCurrentWindow();  // 分离后窗口可能重建
+                    }
+
+                    // 临时移除 NoMove 标志，使窗口可移动
+                    window->Flags &= ~ImGuiWindowFlags_NoMove;
+
+                    // 启动 ImGui 内置窗口移动（会显示停靠预览）
+                    ImGui::StartMouseMovingWindow(window);
+                } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                    tab->drag_pending = false;  // 视为点击
+                }
+            }
+
+            // 拖拽结束：重置状态（下一帧窗口会重新加上 NoMove）
+            if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+                tab->dragging_window = false;
+                tab->drag_pending = false;
+            }
+        }
+        // -------------------------------------------------------------
+
+        // 渲染浏览器纹理
         if (is_valid_texture_id(tab->texture_id)) {
             ImGui::Image(tab->texture_id, avail_size);
+        }
+
+        // 仅当未拖拽时传递鼠标事件给浏览器
+        if (!tab->dragging_window) {
             handle_browser_mouse_events(tab, tab_id, active_tab_id, url_input_active_tab, io);
         }
     }

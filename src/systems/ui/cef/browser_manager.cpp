@@ -206,4 +206,12 @@ void BrowserManager::close_all_tabs() {
     }
 }
 
+void BrowserManager::set_tab_drag_regions(int tab_id, const std::vector<DragRegion>& regions) {
+    auto it = tabs_.find(tab_id);
+    if (it != tabs_.end()) {
+        std::lock_guard<std::mutex> lock(it->second->drag_mutex);
+        it->second->drag_regions = regions;
+    }
+}
+
 }  // namespace Corona::Systems::UI

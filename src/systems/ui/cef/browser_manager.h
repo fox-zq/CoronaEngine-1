@@ -27,6 +27,10 @@ namespace Corona::Systems::UI
         return texture_id != k_invalid_texture_id;
     }
 
+    struct DragRegion {
+        float x, y, width, height;
+    };
+
     // ============================================================================
     // 浏览器标签页数据结构
     // ============================================================================
@@ -59,6 +63,14 @@ namespace Corona::Systems::UI
         char url_buffer[1024] = "";
         std::vector<uint8_t> pixel_buffer;
         std::mutex mutex;  // 保护 pixel_buffer 和 buffer_dirty
+
+
+        std::vector<DragRegion> drag_regions;
+        bool drag_pending = false;
+        ImVec2 drag_pending_start_pos;
+        bool dragging_window = false;
+        std::mutex drag_mutex;  // 确保线程安全
+
     };
 
     // ============================================================================
@@ -95,6 +107,7 @@ namespace Corona::Systems::UI
 
         //设置主窗口指针
         void set_main_window(SDL_Window* window) { main_window_ = window; }
+        void set_tab_drag_regions(int tab_id, const std::vector<DragRegion>& regions);
 
     private:
         BrowserManager() = default;
