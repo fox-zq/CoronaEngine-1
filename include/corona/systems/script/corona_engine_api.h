@@ -11,7 +11,7 @@ namespace Corona {
 class Model;
 
 namespace API {
- // ============================================================================
+// ============================================================================
 // UI 侧可设置当前默认显示 surface（例如 SDL 原生窗口句柄）。
 // ============================================================================
 void set_default_surface(void* surface);
@@ -190,13 +190,12 @@ class Camera {
     [[nodiscard]] std::array<float, 3> get_world_up() const;
     [[nodiscard]] float get_fov() const;
 
-        // ========== 标准六视图（保留当前 fov）==========
-        void set_view_front(float distance = 5.0f);   // 正视图：从 -Z 朝 +Z 看
-        void set_view_back(float distance = 5.0f);    // 后视图：从 +Z 朝 -Z 看
-        void set_view_left(float distance = 5.0f);    // 左视图：从 -X 朝 +X 看
-        void set_view_right(float distance = 5.0f);   // 右视图：从 +X 朝 -X 看
-        void set_view_top(float distance = 5.0f);     // 俯视图：从 +Y 朝 -Y 看
-        void set_view_bottom(float distance = 5.0f);  // 仰视图：从 -Y 朝 +Y 看
+    void set_view_front(float distance = 5.0f);
+    void set_view_back(float distance = 5.0f);
+    void set_view_left(float distance = 5.0f);
+    void set_view_right(float distance = 5.0f);
+    void set_view_top(float distance = 5.0f);
+    void set_view_bottom(float distance = 5.0f);
 
    private:
     friend class Viewport;

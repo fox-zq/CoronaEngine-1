@@ -232,15 +232,6 @@ struct MechanicsWorldAABB {
     ktm::fvec3 center_world;          //世界AABB中心
 };
 
-// 物理参数（文件局部）
-float g_fixed_dt          = 1.0f / 60.0f;
-ktm::fvec3 g_gravity      = make_fvec3(0.0f, 0.0f, -9.8f);
-float g_restitution       = 0.8f;
-float g_floor_restitution = 0.6f;
-float g_default_damping   = 0.99f;
-float g_default_mass      = 1.0f;
-float g_floor_z           = 0.0f;
-
 }  // anonymous namespace
 
 namespace Corona::Systems {
@@ -260,20 +251,13 @@ void MechanicsSystem::shutdown() {
 
 
 void MechanicsSystem::update_physics() {
-    //获取物理参数
-    const float fixed_dt          = g_fixed_dt;              //固定时间步长      场景参数
-    const ktm::fvec3 gravity      = g_gravity;               //重力向量         场景参数
-    const float restitution       = g_restitution;           //物体间反弹系数    物体参数
-    const float floor_restitution = g_floor_restitution;     //地板反弹系数      场景参数
-    const float default_damping   = g_default_damping;       //全局阻尼         场景参数
-    const float default_mass      = g_default_mass;          //质量            物体参数
-    const float floor_z           = g_floor_z;               //地板高度         场景参数
-    const float floor_eps         = 0.01f;                   //地板碰撞容差（防止抖动）
+    const float floor_eps = 0.01f;  //地板碰撞容差（防止抖动）
 
     //存储物体的速度质量阻尼
     std::unordered_map<std::uintptr_t, ktm::fvec3> handle_to_velocity; // 物体句柄→速度
     std::unordered_map<std::uintptr_t, float> handle_to_mass;         // 物体句柄→质量
     std::unordered_map<std::uintptr_t, float> handle_to_damping;      // 物体句柄→阻尼
+    std::unordered_map<std::uintptr_t, float> handle_to_restitution;  // 物体句柄→反弹系数
 
 
     auto& mechanics_storage = SharedDataHub::instance().mechanics_storage();
@@ -282,13 +266,29 @@ void MechanicsSystem::update_physics() {
     auto& scene_storage = SharedDataHub::instance().scene_storage();
     auto& actor_storage = SharedDataHub::instance().actor_storage();
     auto& profile_storage = SharedDataHub::instance().profile_storage();
+    auto& environment_storage = SharedDataHub::instance().environment_storage();
 
+    // 场景级物理参数（从第一个有效 EnvironmentDevice 读取，缺省使用默认值）
+    float fixed_dt          = 1.0f / 60.0f;
+    ktm::fvec3 gravity      = make_fvec3(0.0f, 0.0f, -9.8f);
+    float floor_restitution = 0.6f;
+    float floor_z           = 0.0f;
 
     std::vector<std::uintptr_t> mechanics_handles;
     mechanics_handles.reserve(64);
 
     //遍历所有场景所有物体
     for (const auto& scene : scene_storage) {
+        // 从场景的 EnvironmentDevice 读取物理参数
+        if (scene.environment != 0) {
+            if (auto env = environment_storage.acquire_read(scene.environment)) {
+                gravity           = env->gravity;
+                floor_z           = env->floor_z;
+                floor_restitution = env->floor_restitution;
+                fixed_dt          = env->fixed_dt;
+            }
+        }
+
         for (auto actor_handle : scene.actor_handles) {
             if (auto actor = actor_storage.acquire_read(actor_handle)) {
                 for (auto profile_handle : actor->profile_handles) {
@@ -296,10 +296,18 @@ void MechanicsSystem::update_physics() {
                         //过滤有效物理物体
                         if (profile->mechanics_handle != 0) {
                             mechanics_handles.push_back(profile->mechanics_handle);
-                            //初始化速度质量阻尼
+                            //初始化速度
                             handle_to_velocity[profile->mechanics_handle] = make_fvec3(0.0f, 0.0f, 0.0f);
-                            handle_to_mass[profile->mechanics_handle] = default_mass;
-                            handle_to_damping[profile->mechanics_handle] = default_damping;
+                            // 从 MechanicsDevice 读取物体级参数
+                            if (auto m_acc = mechanics_storage.acquire_read(profile->mechanics_handle)) {
+                                handle_to_mass[profile->mechanics_handle]        = m_acc->mass;
+                                handle_to_damping[profile->mechanics_handle]     = m_acc->damping;
+                                handle_to_restitution[profile->mechanics_handle] = m_acc->restitution;
+                            } else {
+                                handle_to_mass[profile->mechanics_handle]        = 1.0f;
+                                handle_to_damping[profile->mechanics_handle]     = 0.99f;
+                                handle_to_restitution[profile->mechanics_handle] = 0.8f;
+                            }
                         }
                     }
                 }
@@ -567,6 +575,9 @@ void MechanicsSystem::update_physics() {
         //计算速度在法线上的投影
         float vel_a_normal = ktm::dot(vel_a, normal);
         float vel_b_normal = ktm::dot(vel_b, normal);
+
+        //取两物体反弹系数的平均值
+        float restitution = (handle_to_restitution[ha] + handle_to_restitution[hb]) * 0.5f;
 
         //冲量计算
         float j = (-(1 + restitution) * (vel_a_normal - vel_b_normal)) / (1/mass_a + 1/mass_b);

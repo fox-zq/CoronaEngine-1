@@ -80,6 +80,11 @@ struct MechanicsDevice {
     std::uintptr_t geometry_handle{};
     ktm::fvec3 max_xyz;
     ktm::fvec3 min_xyz;
+
+    // 物体级物理参数
+    float mass{1.0f};
+    float restitution{0.8f};
+    float damping{0.99f};
 };
 
 struct AcousticsDevice {
@@ -152,6 +157,12 @@ struct ViewportDevice {
 struct EnvironmentDevice {
     ktm::fvec3 sun_position;
     std::uint32_t floor_grid_enabled{1};
+
+    // 物理场景参数
+    ktm::fvec3 gravity{0.0f, 0.0f, -9.8f};
+    float floor_z{0.0f};
+    float floor_restitution{0.6f};
+    float fixed_dt{1.0f / 60.0f};
 };
 
 struct SceneDevice {
