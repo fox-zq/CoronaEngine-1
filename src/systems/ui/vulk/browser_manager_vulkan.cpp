@@ -70,11 +70,11 @@ void BrowserManager::update_texture(int tab_id) {
         return;
     }
 
-    constexpr size_t rgba_bytes_per_pixel = 4;
+    constexpr size_t kRgbaBytesPerPixel = 4;
     const size_t expected_size =
         static_cast<size_t>(image_it->second.width) *
         static_cast<size_t>(image_it->second.height) *
-        rgba_bytes_per_pixel;
+        kRgbaBytesPerPixel;
 
     if (pixels.size() >= expected_size) {
         texture_executor_ << image_it->second.image.copyFrom(pixels.data())

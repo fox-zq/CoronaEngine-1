@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <include/cef_browser.h>
 #include <include/internal/cef_types.h>
 
@@ -80,7 +81,8 @@ class BrowserRenderer {
                                      int tab_id,
                                      int& active_tab_id,
                                      int& url_input_active_tab,
-                                     const ImGuiIO* io);
+                                     const ImGuiIO* io,
+                                     bool is_dragging = false);
 };
 
 }  // namespace Corona::Systems::UI

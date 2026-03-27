@@ -21,7 +21,7 @@ struct ImGuiGpuVertex {
     float color[4]{};
 };
 
-static constexpr const char* k_imgui_vertex_shader = R"GLSL(
+static constexpr const char* kImguiVertexShader = R"GLSL(
 #version 460
 
 // Keep offsets in sync with CPU-side push constant writes.
@@ -48,7 +48,7 @@ void main()
 }
 )GLSL";
 
-static constexpr const char* k_imgui_fragment_shader = R"GLSL(
+static constexpr const char* kImguiFragmentShader = R"GLSL(
 #version 460
 #extension GL_EXT_nonuniform_qualifier : enable
 
@@ -82,11 +82,11 @@ void main()
 )GLSL";
 
 inline ktm::fvec4 unpack_imgui_color(const ImU32 color) {
-    constexpr float inv_255 = 1.0f / 255.0f;
-    const float r = static_cast<float>((color >> IM_COL32_R_SHIFT) & 0xFFu) * inv_255;
-    const float g = static_cast<float>((color >> IM_COL32_G_SHIFT) & 0xFFu) * inv_255;
-    const float b = static_cast<float>((color >> IM_COL32_B_SHIFT) & 0xFFu) * inv_255;
-    const float a = static_cast<float>((color >> IM_COL32_A_SHIFT) & 0xFFu) * inv_255;
+    constexpr float kInv255 = 1.0f / 255.0f;
+    const float r = static_cast<float>((color >> IM_COL32_R_SHIFT) & 0xFFu) * kInv255;
+    const float g = static_cast<float>((color >> IM_COL32_G_SHIFT) & 0xFFu) * kInv255;
+    const float b = static_cast<float>((color >> IM_COL32_B_SHIFT) & 0xFFu) * kInv255;
+    const float a = static_cast<float>((color >> IM_COL32_A_SHIFT) & 0xFFu) * kInv255;
     return ktm::fvec4(r, g, b, a);
 }
 
@@ -512,8 +512,8 @@ bool VulkanBackend::ensure_imgui_pipeline() {
 
     try {
         imgui_pipeline_ = RasterizerPipeline(
-            std::string(k_imgui_vertex_shader),
-            std::string(k_imgui_fragment_shader));
+            std::string(kImguiVertexShader),
+            std::string(kImguiFragmentShader));
         imgui_pipeline_.setDepthEnabled(false);
         imgui_pipeline_ready_ = (imgui_pipeline_.getRasterizerPipelineID() != 0);
 

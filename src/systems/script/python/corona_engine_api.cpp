@@ -1284,6 +1284,61 @@ std::uintptr_t Corona::API::Camera::get_handle() const {
     return handle_;
 }
 
+
+void Corona::API::Camera::set_view_front(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_front] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {0.0f, 0.0f, -distance};
+        w->forward  = {0.0f, 0.0f, 1.0f};
+        w->world_up = {0.0f, 1.0f, 0.0f};
+    }
+}
+
+void Corona::API::Camera::set_view_back(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_back] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {0.0f, 0.0f, distance};
+        w->forward  = {0.0f, 0.0f, -1.0f};
+        w->world_up = {0.0f, 1.0f, 0.0f};
+    }
+}
+
+void Corona::API::Camera::set_view_left(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_left] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {-distance, 0.0f, 0.0f};
+        w->forward  = {1.0f, 0.0f, 0.0f};
+        w->world_up = {0.0f, 1.0f, 0.0f};
+    }
+}
+
+void Corona::API::Camera::set_view_right(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_right] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {distance, 0.0f, 0.0f};
+        w->forward  = {-1.0f, 0.0f, 0.0f};
+        w->world_up = {0.0f, 1.0f, 0.0f};
+    }
+}
+
+void Corona::API::Camera::set_view_top(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_top] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {0.0f, distance, 0.0f};
+        w->forward  = {0.0f, -1.0f, 0.0f};
+        w->world_up = {0.0f, 0.0f, 1.0f};
+    }
+}
+
+void Corona::API::Camera::set_view_bottom(float distance) {
+    if (handle_ == 0) { CFW_LOG_WARNING("[Camera::set_view_bottom] Invalid camera handle"); return; }
+    if (auto w = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        w->position = {0.0f, -distance, 0.0f};
+        w->forward  = {0.0f, 1.0f, 0.0f};
+        w->world_up = {0.0f, 0.0f, -1.0f};
+    }
+}
+
 void Corona::API::Camera::set_surface(void* surface) {
     if (handle_ == 0) {
         CFW_LOG_WARNING("[Camera::set_surface] Invalid camera handle");

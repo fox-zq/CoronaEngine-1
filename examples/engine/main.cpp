@@ -1,6 +1,5 @@
 #include <corona/engine.h>
 #include <corona/kernel/core/i_logger.h>
-#include <corona/systems/script/python_api.h>
 
 #include <csignal>
 
