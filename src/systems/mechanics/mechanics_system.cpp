@@ -3,6 +3,7 @@
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
+#include <corona/systems/mechanics/mechanics_system.h>
 #include <set>
 #include <algorithm>
 #include <array>
@@ -17,10 +18,7 @@
 #include "corona/shared_data_hub.h"
 #include "ktm/ktm.h"
 
-
-namespace Corona::Kernel {
-class ISystemContext;
-}
+namespace {
 
 
 constexpr ktm::fvec3 make_fvec3(float x, float y, float z) {
@@ -234,90 +232,20 @@ struct MechanicsWorldAABB {
     ktm::fvec3 center_world;          //世界AABB中心
 };
 
+// 物理参数（文件局部）
+float g_fixed_dt          = 1.0f / 60.0f;
+ktm::fvec3 g_gravity      = make_fvec3(0.0f, 0.0f, -9.8f);
+float g_restitution       = 0.8f;
+float g_floor_restitution = 0.6f;
+float g_default_damping   = 0.99f;
+float g_default_mass      = 1.0f;
+float g_floor_z           = 0.0f;
+
+}  // anonymous namespace
 
 namespace Corona::Systems {
 
-class MechanicsSystem final {
-public:
-    //构造/析构
-    MechanicsSystem() = default;
-    ~MechanicsSystem() = default;
-
-
-    static MechanicsSystem* get_instance() {
-
-        static std::unique_ptr<MechanicsSystem> instance = std::make_unique<MechanicsSystem>();
-        return instance.get();
-    }
-
-
-    bool initialize(Corona::Kernel::ISystemContext* ctx);
-    void update();
-    void shutdown();
-
-    //物理参数get/set接口
-
-    float get_fixed_dt() const { return kFixedDt; }
-
-    //设置更新时间步长（必须>0）
-
-    void set_fixed_dt(float fixed_dt) { if (fixed_dt > 0.0f) kFixedDt = fixed_dt; }
-
-    //获取重力向量
-
-    ktm::fvec3 get_gravity() const { return kGravity; }
-    // 设置重力向量（限制Z轴不能为正，避免重力向上）
-    void set_gravity(const ktm::fvec3& gravity) { if (gravity.z > 0) return; kGravity = gravity; }
-    //获取物体间反弹系数 反弹系数（0~1）
-    float get_restitution() const { return kRestitution; }
-
-    //设置物体间反弹系数限制0~1
-
-    void set_restitution(float restitution) { if (restitution >= 0.0f && restitution <= 1.0f) kRestitution = restitution; }
-
-    //地板反弹系数（0~1）
-
-    float get_floor_restitution() const { return kFloorRestitution; }
-
-    //设置地板反弹系数（限制0~1）
-
-    void set_floor_restitution(float floor_restitution) { if (floor_restitution >= 0.0f && floor_restitution <= 1.0f) kFloorRestitution = floor_restitution; }
-
-    //获取全局阻尼（空气阻力）
-
-    float get_damping() const { return kDefaultDamping; }
-
-    //设置全局阻尼（限制0~1）
-
-    void set_damping(float damping) { if (damping >= 0.0f && damping <= 1.0f) kDefaultDamping = damping; }
-
-    //获取物体默认质量
-
-    float get_default_mass() const { return kDefaultMass; }
-
-
-    void set_default_mass(float default_mass) { if (default_mass > 0.0f) kDefaultMass = default_mass; }
-
-
-    float get_floor_z() const { return kFloorZ; }
-
-
-    void set_floor_z(float floor_z) { kFloorZ = floor_z; }
-
-private:
-    //物理更新函数
-    void update_physics();
-
-    //物理参数
-    float kFixedDt = 1.0f / 60.0f;       //物理更新固定时间步长
-    ktm::fvec3 kGravity = make_fvec3(0.0f, 0.0f, -9.8f); // 默认重力（9.8m）
-    float kRestitution = 0.8f;           //物体间反弹系数
-    float kFloorRestitution = 0.6f;      //地板反弹系数
-    float kDefaultDamping = 0.99f;       //阻尼
-    float kDefaultMass = 1.0f;           //物体默认质量（
-    float kFloorZ = 0.0f;                //地板Z轴高度（默认0）
-};
-bool MechanicsSystem::initialize(Corona::Kernel::ISystemContext* ctx) {
+bool MechanicsSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("MechanicsSystem: Initializing...");
     return true;
 }
@@ -333,13 +261,13 @@ void MechanicsSystem::shutdown() {
 
 void MechanicsSystem::update_physics() {
     //获取物理参数
-    const float fixed_dt          = get_fixed_dt();          //固定时间步长      场景参数
-    const ktm::fvec3 gravity      = get_gravity();           //重力向量         场景参数
-    const float restitution       = get_restitution();       //物体间反弹系数    物体参数
-    const float floor_restitution = get_floor_restitution(); //地板反弹系数      场景参数
-    const float default_damping   = get_damping();           //全局阻尼         场景参数
-    const float default_mass      = get_default_mass();      //质量            物体参数
-    const float floor_z           = get_floor_z();           //地板高度         场景参数
+    const float fixed_dt          = g_fixed_dt;              //固定时间步长      场景参数
+    const ktm::fvec3 gravity      = g_gravity;               //重力向量         场景参数
+    const float restitution       = g_restitution;           //物体间反弹系数    物体参数
+    const float floor_restitution = g_floor_restitution;     //地板反弹系数      场景参数
+    const float default_damping   = g_default_damping;       //全局阻尼         场景参数
+    const float default_mass      = g_default_mass;          //质量            物体参数
+    const float floor_z           = g_floor_z;               //地板高度         场景参数
     const float floor_eps         = 0.01f;                   //地板碰撞容差（防止抖动）
 
     //存储物体的速度质量阻尼
