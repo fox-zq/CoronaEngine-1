@@ -40,7 +40,19 @@ void BindAll(nanobind::module_& m) {
     // ============================================================================
     nb::class_<Mechanics>(m, "Mechanics")
         .def(nb::init<Geometry&>(), nb::arg("geometry"),
-             "Create a Mechanics component attached to a Geometry");
+             "Create a Mechanics component attached to a Geometry")
+        .def("set_mass", &Mechanics::set_mass, nb::arg("mass"),
+             "Set object mass")
+        .def("get_mass", &Mechanics::get_mass,
+             "Get object mass")
+        .def("set_restitution", &Mechanics::set_restitution, nb::arg("restitution"),
+             "Set object restitution (bounciness)")
+        .def("get_restitution", &Mechanics::get_restitution,
+             "Get object restitution")
+        .def("set_damping", &Mechanics::set_damping, nb::arg("damping"),
+             "Set velocity damping factor")
+        .def("get_damping", &Mechanics::get_damping,
+             "Get velocity damping factor");
 
     // ============================================================================
     // Optics: 光学/渲染组件
@@ -180,7 +192,23 @@ void BindAll(nanobind::module_& m) {
         .def("set_sun_direction", &Environment::set_sun_direction, nb::arg("direction"),
              "Set sun light direction [x, y, z]")
         .def("set_floor_grid", &Environment::set_floor_grid, nb::arg("enabled"),
-             "Enable or disable floor grid rendering");
+             "Enable or disable floor grid rendering")
+        .def("set_gravity", &Environment::set_gravity, nb::arg("gravity"),
+             "Set gravity vector [x, y, z]")
+        .def("get_gravity", &Environment::get_gravity,
+             "Get gravity vector [x, y, z]")
+        .def("set_floor_z", &Environment::set_floor_z, nb::arg("z"),
+             "Set floor plane Z height")
+        .def("get_floor_z", &Environment::get_floor_z,
+             "Get floor plane Z height")
+        .def("set_floor_restitution", &Environment::set_floor_restitution, nb::arg("restitution"),
+             "Set floor restitution (bounciness)")
+        .def("get_floor_restitution", &Environment::get_floor_restitution,
+             "Get floor restitution")
+        .def("set_fixed_dt", &Environment::set_fixed_dt, nb::arg("dt"),
+             "Set physics fixed time step")
+        .def("get_fixed_dt", &Environment::get_fixed_dt,
+             "Get physics fixed time step");
 
     // ============================================================================
     // Scene: 场景类

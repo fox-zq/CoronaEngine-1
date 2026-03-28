@@ -345,6 +345,80 @@ std::uintptr_t Corona::API::Environment::get_handle() const {
     return handle_;
 }
 
+void Corona::API::Environment::set_gravity(const std::array<float, 3>& gravity) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Environment::set_gravity] Invalid environment handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+        accessor->gravity.x = gravity[0];
+        accessor->gravity.y = gravity[1];
+        accessor->gravity.z = gravity[2];
+    }
+}
+
+std::array<float, 3> Corona::API::Environment::get_gravity() const {
+    if (handle_ == 0) return {0.0f, 0.0f, -9.8f};
+    if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
+        return {accessor->gravity.x, accessor->gravity.y, accessor->gravity.z};
+    }
+    return {0.0f, 0.0f, -9.8f};
+}
+
+void Corona::API::Environment::set_floor_z(float z) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Environment::set_floor_z] Invalid environment handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+        accessor->floor_z = z;
+    }
+}
+
+float Corona::API::Environment::get_floor_z() const {
+    if (handle_ == 0) return 0.0f;
+    if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
+        return accessor->floor_z;
+    }
+    return 0.0f;
+}
+
+void Corona::API::Environment::set_floor_restitution(float restitution) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Environment::set_floor_restitution] Invalid environment handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+        accessor->floor_restitution = restitution;
+    }
+}
+
+float Corona::API::Environment::get_floor_restitution() const {
+    if (handle_ == 0) return 0.6f;
+    if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
+        return accessor->floor_restitution;
+    }
+    return 0.6f;
+}
+
+void Corona::API::Environment::set_fixed_dt(float dt) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Environment::set_fixed_dt] Invalid environment handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
+        accessor->fixed_dt = dt;
+    }
+}
+
+float Corona::API::Environment::get_fixed_dt() const {
+    if (handle_ == 0) return 1.0f / 60.0f;
+    if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
+        return accessor->fixed_dt;
+    }
+    return 1.0f / 60.0f;
+}
+
 // ########################
 //         Geometry
 // ########################
@@ -852,6 +926,60 @@ std::uintptr_t Corona::API::Mechanics::get_handle() const {
 
 Corona::API::Geometry* Corona::API::Mechanics::get_geometry() const {
     return geometry_;
+}
+
+void Corona::API::Mechanics::set_mass(float mass) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Mechanics::set_mass] Invalid mechanics handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().acquire_write(handle_)) {
+        accessor->mass = mass;
+    }
+}
+
+float Corona::API::Mechanics::get_mass() const {
+    if (handle_ == 0) return 1.0f;
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().try_acquire_read(handle_)) {
+        return accessor->mass;
+    }
+    return 1.0f;
+}
+
+void Corona::API::Mechanics::set_restitution(float restitution) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Mechanics::set_restitution] Invalid mechanics handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().acquire_write(handle_)) {
+        accessor->restitution = restitution;
+    }
+}
+
+float Corona::API::Mechanics::get_restitution() const {
+    if (handle_ == 0) return 0.8f;
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().try_acquire_read(handle_)) {
+        return accessor->restitution;
+    }
+    return 0.8f;
+}
+
+void Corona::API::Mechanics::set_damping(float damping) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Mechanics::set_damping] Invalid mechanics handle");
+        return;
+    }
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().acquire_write(handle_)) {
+        accessor->damping = damping;
+    }
+}
+
+float Corona::API::Mechanics::get_damping() const {
+    if (handle_ == 0) return 0.99f;
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().try_acquire_read(handle_)) {
+        return accessor->damping;
+    }
+    return 0.99f;
 }
 
 // ########################

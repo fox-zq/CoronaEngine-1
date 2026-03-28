@@ -63,6 +63,13 @@ class Mechanics {
     explicit Mechanics(Geometry& geo);
     ~Mechanics();
 
+    void set_mass(float mass);
+    [[nodiscard]] float get_mass() const;
+    void set_restitution(float restitution);
+    [[nodiscard]] float get_restitution() const;
+    void set_damping(float damping);
+    [[nodiscard]] float get_damping() const;
+
    private:
     friend class Actor;
 
@@ -270,6 +277,15 @@ class Environment {
 
     void set_sun_direction(const std::array<float, 3>& direction);
     void set_floor_grid(bool enabled) const;
+
+    void set_gravity(const std::array<float, 3>& gravity);
+    [[nodiscard]] std::array<float, 3> get_gravity() const;
+    void set_floor_z(float z);
+    [[nodiscard]] float get_floor_z() const;
+    void set_floor_restitution(float restitution);
+    [[nodiscard]] float get_floor_restitution() const;
+    void set_fixed_dt(float dt);
+    [[nodiscard]] float get_fixed_dt() const;
 
    private:
     friend class Scene;
