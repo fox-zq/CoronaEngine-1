@@ -19,7 +19,7 @@ endif()
 
 option(CORONA_AUTO_INSTALL_PY_DEPS "Auto-install missing Python packages during configure" ON)
 option(BUILD_SHARED_LIBS "Build as shared libraries (default OFF for static)" OFF)
-option(BUILD_CORONA_EDITOR "Build Corona editor" OFF)
+option(BUILD_CORONA_EDITOR "Build Corona editor" ON)
 option(BUILD_CORONA_RUNTIME "Build Corona runtime" ON)
 option(BUILD_CORONA_TESTING "Build Corona test suite" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_CORONA_EXAMPLES "Build example programs" ${PROJECT_IS_TOP_LEVEL})
