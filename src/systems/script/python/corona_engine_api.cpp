@@ -358,27 +358,27 @@ void Corona::API::Environment::set_gravity(const std::array<float, 3>& gravity) 
 }
 
 std::array<float, 3> Corona::API::Environment::get_gravity() const {
-    if (handle_ == 0) return {0.0f, 0.0f, -9.8f};
+    if (handle_ == 0) return {0.0f, -9.8f, 0.0f};
     if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
         return {accessor->gravity.x, accessor->gravity.y, accessor->gravity.z};
     }
-    return {0.0f, 0.0f, -9.8f};
+    return {0.0f, -9.8f, 0.0f};
 }
 
-void Corona::API::Environment::set_floor_z(float z) {
+void Corona::API::Environment::set_floor_y(float y) {
     if (handle_ == 0) {
-        CFW_LOG_WARNING("[Environment::set_floor_z] Invalid environment handle");
+        CFW_LOG_WARNING("[Environment::set_floor_y] Invalid environment handle");
         return;
     }
     if (auto accessor = SharedDataHub::instance().environment_storage().acquire_write(handle_)) {
-        accessor->floor_z = z;
+        accessor->floor_y = y;
     }
 }
 
-float Corona::API::Environment::get_floor_z() const {
+float Corona::API::Environment::get_floor_y() const {
     if (handle_ == 0) return 0.0f;
     if (auto accessor = SharedDataHub::instance().environment_storage().try_acquire_read(handle_)) {
-        return accessor->floor_z;
+        return accessor->floor_y;
     }
     return 0.0f;
 }

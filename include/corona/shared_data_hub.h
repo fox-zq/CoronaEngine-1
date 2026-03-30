@@ -159,8 +159,8 @@ struct EnvironmentDevice {
     std::uint32_t floor_grid_enabled{1};
 
     // 物理场景参数
-    ktm::fvec3 gravity{0.0f, 0.0f, -9.8f};
-    float floor_z{0.0f};
+    ktm::fvec3 gravity{0.0f, -9.8f, 0.0f};
+    float floor_y{0.0f};
     float floor_restitution{0.6f};
     float fixed_dt{1.0f / 60.0f};
 };

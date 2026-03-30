@@ -280,8 +280,8 @@ class Environment {
 
     void set_gravity(const std::array<float, 3>& gravity);
     [[nodiscard]] std::array<float, 3> get_gravity() const;
-    void set_floor_z(float z);
-    [[nodiscard]] float get_floor_z() const;
+    void set_floor_y(float y);
+    [[nodiscard]] float get_floor_y() const;
     void set_floor_restitution(float restitution);
     [[nodiscard]] float get_floor_restitution() const;
     void set_fixed_dt(float dt);

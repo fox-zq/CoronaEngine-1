@@ -270,9 +270,9 @@ void MechanicsSystem::update_physics() {
 
     // 场景级物理参数（从第一个有效 EnvironmentDevice 读取，缺省使用默认值）
     float fixed_dt          = 1.0f / 60.0f;
-    ktm::fvec3 gravity      = make_fvec3(0.0f, 0.0f, -9.8f);
+    ktm::fvec3 gravity      = make_fvec3(0.0f, -9.8f, 0.0f);
     float floor_restitution = 0.6f;
-    float floor_z           = 0.0f;
+    float floor_y           = 0.0f;
 
     std::vector<std::uintptr_t> mechanics_handles;
     mechanics_handles.reserve(64);
@@ -283,18 +283,20 @@ void MechanicsSystem::update_physics() {
         if (scene.environment != 0) {
             if (auto env = environment_storage.acquire_read(scene.environment)) {
                 gravity           = env->gravity;
-                floor_z           = env->floor_z;
+                floor_y           = env->floor_y;
                 floor_restitution = env->floor_restitution;
                 fixed_dt          = env->fixed_dt;
             }
         }
 
         for (auto actor_handle : scene.actor_handles) {
+            CFW_LOG_INFO("MechanicsSystem: Processing actor handle {}", actor_handle);
             if (auto actor = actor_storage.acquire_read(actor_handle)) {
                 for (auto profile_handle : actor->profile_handles) {
                     if (auto profile = profile_storage.acquire_read(profile_handle)) {
                         //过滤有效物理物体
                         if (profile->mechanics_handle != 0) {
+                            CFW_LOG_INFO("MechanicsSystem: Processing mechanics handle {}", profile->mechanics_handle);
                             mechanics_handles.push_back(profile->mechanics_handle);
                             //初始化速度
                             handle_to_velocity[profile->mechanics_handle] = make_fvec3(0.0f, 0.0f, 0.0f);
@@ -321,8 +323,11 @@ void MechanicsSystem::update_physics() {
 
     //无物理物体时直接返回
     if (mechanics_handles.size() < 1) {
+        CFW_LOG_TRACE("MechanicsSystem: No physics objects found.");
         return;
     }
+
+    CFW_LOG_TRACE("MechanicsSystem: {} physics objects found.", mechanics_handles.size());
 
     // 速度更新 重力+阻尼+位置更新+地板碰撞检测
     for (std::uintptr_t h : mechanics_handles) {
@@ -351,14 +356,14 @@ void MechanicsSystem::update_physics() {
         tx_acc->position.z += handle_to_velocity[h].z * fixed_dt;
 
         //地板碰撞检测与响应
-        if (tx_acc->position.z < floor_z - floor_eps) {
+        if (tx_acc->position.y < floor_y - floor_eps) {
             // 修正位置：防止穿透地板
-            tx_acc->position.z = floor_z;
-            // 速度反弹（Z轴反向*地板反弹系数）
-            handle_to_velocity[h].z = -handle_to_velocity[h].z * floor_restitution;
+            tx_acc->position.y = floor_y;
+            // 速度反弹（Y轴反向*地板反弹系数）
+            handle_to_velocity[h].y = -handle_to_velocity[h].y * floor_restitution;
             // 速度过小0（防止抖动）
-            if (std::abs(handle_to_velocity[h].z) < floor_eps * 10) {
-                handle_to_velocity[h].z = 0.0f;
+            if (std::abs(handle_to_velocity[h].y) < floor_eps * 10) {
+                handle_to_velocity[h].y = 0.0f;
             }
         }
     }
@@ -429,7 +434,7 @@ void MechanicsSystem::update_physics() {
     for (const auto& e : mechanics_data) {
         root_min.x = std::min(root_min.x, e.min_world.x);
         root_min.y = std::min(root_min.y, e.min_world.y);
-        root_min.z = std::max(root_min.z, floor_z); // 根节点Z轴下限不低于地板
+        root_min.y = std::max(root_min.y, floor_y); // 根节点Y轴下限不低于地板
         root_max.x = std::max(root_max.x, e.max_world.x);
         root_max.y = std::max(root_max.y, e.max_world.y);
         root_max.z = std::max(root_max.z, e.max_world.z);
@@ -532,9 +537,9 @@ void MechanicsSystem::update_physics() {
             a.max_world.z -= push_vec_a.z;
 
             //修复后检测是否穿透地板
-            if (txa->position.z < floor_z - floor_eps) {
-                txa->position.z = floor_z;
-                handle_to_velocity[ha].z = std::max(0.0f, handle_to_velocity[ha].z);
+            if (txa->position.y < floor_y - floor_eps) {
+                txa->position.y = floor_y;
+                handle_to_velocity[ha].y = std::max(0.0f, handle_to_velocity[ha].y);
             }
         }
 
@@ -562,9 +567,9 @@ void MechanicsSystem::update_physics() {
             b.max_world.z += push_vec_b.z;
 
             //修复后检测是否穿透地板
-            if (txb->position.z < floor_z - floor_eps) {
-                txb->position.z = floor_z;
-                handle_to_velocity[hb].z = std::max(0.0f, handle_to_velocity[hb].z);
+            if (txb->position.y < floor_y - floor_eps) {
+                txb->position.y = floor_y;
+                handle_to_velocity[hb].y = std::max(0.0f, handle_to_velocity[hb].y);
             }
         }
 

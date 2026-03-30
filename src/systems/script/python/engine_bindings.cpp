@@ -197,10 +197,10 @@ void BindAll(nanobind::module_& m) {
              "Set gravity vector [x, y, z]")
         .def("get_gravity", &Environment::get_gravity,
              "Get gravity vector [x, y, z]")
-        .def("set_floor_z", &Environment::set_floor_z, nb::arg("z"),
-             "Set floor plane Z height")
-        .def("get_floor_z", &Environment::get_floor_z,
-             "Get floor plane Z height")
+        .def("set_floor_y", &Environment::set_floor_y, nb::arg("y"),
+             "Set floor plane Y height")
+        .def("get_floor_y", &Environment::get_floor_y,
+             "Get floor plane Y height")
         .def("set_floor_restitution", &Environment::set_floor_restitution, nb::arg("restitution"),
              "Set floor restitution (bounciness)")
         .def("get_floor_restitution", &Environment::get_floor_restitution,
