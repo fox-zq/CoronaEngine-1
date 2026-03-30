@@ -290,13 +290,11 @@ void MechanicsSystem::update_physics() {
         }
 
         for (auto actor_handle : scene.actor_handles) {
-            CFW_LOG_INFO("MechanicsSystem: Processing actor handle {}", actor_handle);
             if (auto actor = actor_storage.acquire_read(actor_handle)) {
                 for (auto profile_handle : actor->profile_handles) {
                     if (auto profile = profile_storage.acquire_read(profile_handle)) {
                         //过滤有效物理物体
                         if (profile->mechanics_handle != 0) {
-                            CFW_LOG_INFO("MechanicsSystem: Processing mechanics handle {}", profile->mechanics_handle);
                             mechanics_handles.push_back(profile->mechanics_handle);
                             //初始化速度
                             handle_to_velocity[profile->mechanics_handle] = make_fvec3(0.0f, 0.0f, 0.0f);
