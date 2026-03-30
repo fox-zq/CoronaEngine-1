@@ -1,4 +1,4 @@
-#include <corona/kernel/core/i_logger.h>
+﻿#include <corona/kernel/core/i_logger.h>
 #include <corona/systems/ui/vulkan_backend.h>
 
 #include <algorithm>
@@ -20,66 +20,6 @@ struct ImGuiGpuVertex {
     float uv[2]{};
     float color[4]{};
 };
-
-static constexpr const char* kImguiVertexShader = R"GLSL(
-#version 460
-
-// Keep offsets in sync with CPU-side push constant writes.
-layout(push_constant) uniform PushConsts
-{
-    layout(offset = 0) vec2 scale;
-    layout(offset = 8) vec2 translate;
-    layout(offset = 16) vec4 clip_rect;
-    layout(offset = 32) uint texture_index;
-} pushConsts;
-
-layout(location = 0) in vec2 in_pos;
-layout(location = 1) in vec2 in_uv;
-layout(location = 2) in vec4 in_color;
-
-layout(location = 0) out vec2 frag_uv;
-layout(location = 1) out vec4 frag_color;
-
-void main()
-{
-    frag_uv = in_uv;
-    frag_color = in_color;
-    gl_Position = vec4(in_pos * pushConsts.scale + pushConsts.translate, 0.0, 1.0);
-}
-)GLSL";
-
-static constexpr const char* kImguiFragmentShader = R"GLSL(
-#version 460
-#extension GL_EXT_nonuniform_qualifier : enable
-
-// Keep offsets in sync with CPU-side push constant writes.
-layout(push_constant) uniform PushConsts
-{
-    layout(offset = 0) vec2 scale;
-    layout(offset = 8) vec2 translate;
-    layout(offset = 16) vec4 clip_rect;
-    layout(offset = 32) uint texture_index;
-} pushConsts;
-
-layout(set = 0, binding = 0) uniform sampler2D textures[];
-
-layout(location = 0) in vec2 frag_uv;
-layout(location = 1) in vec4 frag_color;
-
-layout(location = 0) out vec4 out_color;
-
-void main()
-{
-    vec2 p = gl_FragCoord.xy;
-    float inside_x = step(pushConsts.clip_rect.x, p.x) * (1.0 - step(pushConsts.clip_rect.z, p.x));
-    float inside_y = step(pushConsts.clip_rect.y, p.y) * (1.0 - step(pushConsts.clip_rect.w, p.y));
-    float inside = inside_x * inside_y;
-
-    vec4 tex_color = texture(textures[nonuniformEXT(pushConsts.texture_index)], frag_uv);
-    vec4 linear_vert_color = vec4(pow(frag_color.rgb, vec3(2.2)), frag_color.a);
-    out_color = linear_vert_color * tex_color * inside;
-}
-)GLSL";
 
 inline ktm::fvec4 unpack_imgui_color(const ImU32 color) {
     constexpr float kInv255 = 1.0f / 255.0f;
@@ -181,7 +121,7 @@ void VulkanBackend::shutdown() {
     render_target_ = HardwareImage();
     executor_ = HardwareExecutor();
     font_atlas_image_ = HardwareImage();
-    imgui_pipeline_ = RasterizerPipeline();
+    imgui_pipeline_ = RasterizerPipeline<imgui_vert_glsl, imgui_frag_glsl>();
 
     vertex_buffer_ = HardwareBuffer();
     index_buffer_ = HardwareBuffer();
@@ -263,7 +203,7 @@ bool VulkanBackend::prepare_frame(ImDrawData* draw_data, uint32_t& fb_width, uin
         return false;
     }
 
-    imgui_pipeline_["out_color"] = render_target_;
+    imgui_pipeline_.out_color = render_target_;
     return true;
 }
 
@@ -363,7 +303,7 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
 
             if (pcmd.UserCallback != nullptr) {
                 if (pcmd.UserCallback == ImDrawCallback_ResetRenderState) {
-                    imgui_pipeline_["out_color"] = render_target_;
+                    imgui_pipeline_.out_color = render_target_;
                     continue;
                 }
                 pcmd.UserCallback(cmd_list, &pcmd);
@@ -389,10 +329,11 @@ bool VulkanBackend::record_draw_lists(ImDrawData* draw_data,
                 texture_index = font_atlas_image_.storeDescriptor();
             }
 
-            imgui_pipeline_["pushConsts.scale"] = scale;
-            imgui_pipeline_["pushConsts.translate"] = translate;
-            imgui_pipeline_["pushConsts.clip_rect"] = ktm::fvec4(clip_min.x, clip_min.y, clip_max.x, clip_max.y);
-            imgui_pipeline_["pushConsts.texture_index"] = texture_index;
+            imgui_pipeline_.pushConsts.scale = scale;
+            imgui_pipeline_.pushConsts.translate = translate;
+            imgui_pipeline_[imgui_frag_glsl::pushConsts::clip_rect] = ktm::fvec4(
+                clip_min.x, clip_min.y, clip_max.x, clip_max.y);
+            imgui_pipeline_[imgui_frag_glsl::pushConsts::texture_index] = texture_index;
 
             const int32_t scissor_x = static_cast<int32_t>(std::floor(clip_min.x));
             const int32_t scissor_y = static_cast<int32_t>(std::floor(clip_min.y));
@@ -510,22 +451,14 @@ bool VulkanBackend::ensure_imgui_pipeline() {
         return true;
     }
 
-    try {
-        imgui_pipeline_ = RasterizerPipeline(
-            std::string(kImguiVertexShader),
-            std::string(kImguiFragmentShader));
-        imgui_pipeline_.setDepthEnabled(false);
-        imgui_pipeline_ready_ = (imgui_pipeline_.getRasterizerPipelineID() != 0);
+    imgui_pipeline_.setDepthEnabled(false);
+    imgui_pipeline_ready_ = (imgui_pipeline_.getRasterizerPipelineID() != 0);
 
-        if (imgui_pipeline_ready_) {
-            CFW_LOG_INFO("VulkanBackend: imgui pipeline created, pipeline_id={}",
-                         imgui_pipeline_.getRasterizerPipelineID());
-        } else {
-            CFW_LOG_ERROR("VulkanBackend: imgui pipeline creation returned invalid pipeline id");
-        }
-    } catch (const std::exception& e) {
-        CFW_LOG_ERROR("VulkanBackend: create imgui rasterizer pipeline failed: {}", e.what());
-        imgui_pipeline_ready_ = false;
+    if (imgui_pipeline_ready_) {
+        CFW_LOG_INFO("VulkanBackend: typed imgui pipeline created, pipeline_id={}",
+                     imgui_pipeline_.getRasterizerPipelineID());
+    } else {
+        CFW_LOG_ERROR("VulkanBackend: typed imgui pipeline creation returned invalid pipeline id");
     }
 
     return imgui_pipeline_ready_;

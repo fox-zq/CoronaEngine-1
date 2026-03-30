@@ -1,10 +1,12 @@
-#pragma once
+﻿#pragma once
 
 #include <corona/events/display_system_events.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
+#include <corona/shader_include.h>
 #include <CabbageHardware.h>
+#include GLSL(../../../../assets/shaders/composite.comp.glsl)
 
 #include <cstdint>
 #include <memory>
@@ -85,7 +87,7 @@ namespace Corona::Systems
         std::vector<void*> pending_surfaces_;  ///< Surfaces awaiting displayer creation (deferred to update thread)
 
         // Compositing resources
-        ComputePipeline composite_pipeline_;
+        ComputePipeline<composite_comp_glsl> composite_pipeline_;
         HardwareExecutor compositor_executor_;
         HardwareImage composite_output_;
         HardwareImage transparent_storage_;  ///< 1x1 transparent StorageImage fallback (missing Optics bg)

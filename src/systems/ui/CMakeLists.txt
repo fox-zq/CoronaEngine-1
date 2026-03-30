@@ -22,6 +22,10 @@ file(GLOB IMGUI_SYSTEM_SOURCES
     sdl/sdl_utils.cpp
 )
 
+list(APPEND IMGUI_SYSTEM_SOURCES
+    ${PROJECT_SOURCE_DIR}/include/corona/systems/ui/vulkan_backend.h
+)
+
 
 corona_add_system(imgui
     SOURCES ${IMGUI_SYSTEM_SOURCES}
@@ -51,3 +55,7 @@ corona_add_system(imgui
 )
 
 target_compile_definitions(corona_imgui_system PUBLIC VK_NO_PROTOTYPES)
+
+helicon_compile_shaders(corona_imgui_system
+    OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated_shaders"
+)

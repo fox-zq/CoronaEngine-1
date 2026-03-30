@@ -8,85 +8,6 @@
 #include <corona/systems/display/display_system.h>
 
 #include <algorithm>
-#include <string>
-
-namespace {
-
-// Alpha compositing compute shader: blends UI (foreground) over Optics (background)
-// using standard Porter-Duff Source Over operation.
-static constexpr const char* k_composite_shader = R"GLSL(
-#version 460
-#extension GL_EXT_nonuniform_qualifier : enable
-
-layout(push_constant) uniform PushConsts {
-    uint bgImage;      
-    uint fgImage;      
-    uint outputImage;  
-    uint outputWidth;
-    uint outputHeight;
-    uint bgWidth;      
-    uint bgHeight;     
-} pushConsts;
-
-layout(set = 0, binding = 0) uniform sampler2D textures[];     
-layout(set = 2, binding = 0, rgba16f) uniform image2D images[];
-
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-void main()
-{
-    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-
-    if (pos.x >= pushConsts.outputWidth || pos.y >= pushConsts.outputHeight) {
-        return;
-    }
-
-    vec2 uv = (vec2(pos) + 0.5) / vec2(pushConsts.outputWidth, pushConsts.outputHeight);
-
-    ivec2 bgSize = ivec2(pushConsts.bgWidth, pushConsts.bgHeight);
-    vec2 bgTexel = uv * vec2(bgSize) - 0.5;
-
-    ivec2 base = ivec2(floor(bgTexel));
-    ivec2 c0 = clamp(base,                 ivec2(0), bgSize - ivec2(1));
-    ivec2 c1 = clamp(base + ivec2(1, 0), ivec2(0), bgSize - ivec2(1));
-    ivec2 c2 = clamp(base + ivec2(0, 1), ivec2(0), bgSize - ivec2(1));
-    ivec2 c3 = clamp(base + ivec2(1, 1), ivec2(0), bgSize - ivec2(1));
-    vec2 f = fract(bgTexel);
-
-    vec4 bg = mix(
-        mix(imageLoad(images[pushConsts.bgImage], c0),
-            imageLoad(images[pushConsts.bgImage], c1), f.x),
-        mix(imageLoad(images[pushConsts.bgImage], c2),
-            imageLoad(images[pushConsts.bgImage], c3), f.x),
-        f.y
-    );
-
-    vec4 fg = texture(textures[pushConsts.fgImage], uv);
-
-    vec3 color = fg.rgb + bg.rgb * (1.0 - fg.a);
-    
-    // vec3 color = fg.rgb * fg.a + bg.rgb * (1.0 - fg.a);
-
-    //if(pushConsts.bgHeight>1)
-    //{
-    //    color = bg.rgb;
-    //}
-    //else
-    //{
-    //    color = fg.rgb;
-    //}
-
-    //if (fg.a < 0.05) {
-    //    imageStore(images[pushConsts.outputImage], pos, vec4(bg.rgb, 1.0f));
-    //} else {
-    //    imageStore(images[pushConsts.outputImage], pos, vec4(fg.rgb, 1.0f));
-    //}
-
-    imageStore(images[pushConsts.outputImage], pos, vec4(color.rgb, 1.0f));
-}
-)GLSL";
-
-}  // namespace
 
 namespace Corona::Systems {
 
@@ -246,14 +167,12 @@ void DisplaySystem::update() {
 
 bool DisplaySystem::ensure_composite_resources(uint32_t width, uint32_t height) {
     if (!composite_pipeline_ready_) {
-        try {
-            composite_pipeline_ = ComputePipeline(std::string(k_composite_shader));
-            composite_pipeline_ready_ = true;
-            CFW_LOG_INFO("DisplaySystem: Composite compute pipeline created");
-        } catch (const std::exception& e) {
-            CFW_LOG_ERROR("DisplaySystem: Failed to create composite pipeline: {}", e.what());
+        composite_pipeline_ready_ = (composite_pipeline_.getComputePipelineID() != 0);
+        if (!composite_pipeline_ready_) {
+            CFW_LOG_ERROR("DisplaySystem: Failed to create typed composite pipeline");
             return false;
         }
+        CFW_LOG_INFO("DisplaySystem: Typed composite compute pipeline created");
     }
 
     if (composite_width_ != width || composite_height_ != height || !composite_output_) {
@@ -285,13 +204,13 @@ void DisplaySystem::compose_and_present(HardwareDisplayer& displayer,
     }
 
     // bgImage & outputImage are StorageImage (set 2); fgImage is SampledImage (set 0).
-    composite_pipeline_["pushConsts.bgImage"] = optics_image.storeDescriptor();
-    composite_pipeline_["pushConsts.fgImage"] = ui_image.storeDescriptor();
-    composite_pipeline_["pushConsts.outputImage"] = composite_output_.storeDescriptor();
-    composite_pipeline_["pushConsts.outputWidth"] = state.ui.width;
-    composite_pipeline_["pushConsts.outputHeight"] = state.ui.height;
-    composite_pipeline_["pushConsts.bgWidth"] = std::max(state.optics.width, 1u);
-    composite_pipeline_["pushConsts.bgHeight"] = std::max(state.optics.height, 1u);
+    composite_pipeline_.pushConsts.bgImage = optics_image.storeDescriptor();
+    composite_pipeline_.pushConsts.fgImage = ui_image.storeDescriptor();
+    composite_pipeline_.pushConsts.outputImage = composite_output_.storeDescriptor();
+    composite_pipeline_.pushConsts.outputWidth = state.ui.width;
+    composite_pipeline_.pushConsts.outputHeight = state.ui.height;
+    composite_pipeline_.pushConsts.bgWidth = std::max(state.optics.width, 1u);
+    composite_pipeline_.pushConsts.bgHeight = std::max(state.optics.height, 1u);
 
     // GPU sync: wait for each producer's rendering to finish before reading their images
     if (optics_executor) {
@@ -326,7 +245,7 @@ void DisplaySystem::shutdown() {
 
     composite_pipeline_ready_ = false;
     composite_output_ = HardwareImage();
-    composite_pipeline_ = ComputePipeline();
+    composite_pipeline_ = ComputePipeline<composite_comp_glsl>();
 
     surface_states_.clear();
     displayers_.clear();

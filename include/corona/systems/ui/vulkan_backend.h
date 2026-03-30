@@ -1,6 +1,9 @@
-#pragma once
+﻿#pragma once
 
+#include <corona/shader_include.h>
 #include <CabbageHardware.h>
+#include GLSL(../../../../assets/shaders/imgui.vert.glsl)
+#include GLSL(../../../../assets/shaders/imgui.frag.glsl)
 #include <SDL3/SDL.h>
 #include <imgui.h>
 
@@ -59,7 +62,7 @@ class VulkanBackend {
     HardwareExecutor executor_;
 
     HardwareImage font_atlas_image_;
-    RasterizerPipeline imgui_pipeline_;
+    RasterizerPipeline<imgui_vert_glsl, imgui_frag_glsl> imgui_pipeline_;
 
     uint64_t frame_index_ = 0;
     std::uintptr_t image_handle_ = 0;
