@@ -14,7 +14,6 @@
 #include <cstdint>
 #include <vector>
 
-#include "corona/resource/types/text.h"
 #include "hardware.h"
 
 #undef CORONA_ENABLE_VISION
@@ -27,12 +26,6 @@
 
 namespace
 {
-    Corona::Resource::TResourceID load_shader(const std::filesystem::path& shader_path)
-    {
-        auto shader = Corona::Resource::ResourceManager::get_instance().import_sync(shader_path);
-        return shader;
-    }
-
 #ifdef CORONA_ENABLE_VISION
     HardwareBuffer importedViewBuffer;
     HardwareImage importedViewImage;
@@ -126,42 +119,18 @@ namespace Corona::Systems
         return true;
     }
 
-    bool OpticsSystem::load_shader_texts(std::string& vert_source, std::string& frag_source, std::string& compute_source)
-    {
-        auto vert_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.vert.glsl");
-        auto frag_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.frag.glsl");
-        auto compute_id = load_shader(std::filesystem::current_path() / "assets" / "shaders" / "test.comp.glsl");
-
-        auto vert_code = Resource::ResourceManager::get_instance().acquire_read<Resource::Text>(vert_id);
-        auto frag_code = Resource::ResourceManager::get_instance().acquire_read<Resource::Text>(frag_id);
-        auto compute_code = Resource::ResourceManager::get_instance().acquire_read<Resource::Text>(compute_id);
-
-        if (!vert_code || !frag_code || !compute_code)
-        {
-            CFW_LOG_CRITICAL("OpticsSystem: Failed to load required shader files");
-            return false;
-        }
-
-        vert_source = vert_code->text;
-        frag_source = frag_code->text;
-        compute_source = compute_code->text;
-        return true;
-    }
-
-    bool OpticsSystem::initialize_render_pipelines(const std::string& vert_source,
-                                                   const std::string& frag_source,
-                                                   const std::string& compute_source)
+    bool OpticsSystem::initialize_render_pipelines()
     {
         try
         {
-            hardware_->rasterizerPipeline = RasterizerPipeline(vert_source, frag_source);
-            hardware_->computePipeline = ComputePipeline(compute_source);
+            hardware_->rasterizerPipeline.emplace();
+            hardware_->computePipeline.emplace();
             hardware_->shaderHasInit = true;
-            CFW_LOG_INFO("OpticsSystem: Shaders compiled successfully");
+            CFW_LOG_INFO("OpticsSystem: Typed shader pipelines created successfully");
         }
-        catch (const std::exception&)
+        catch (const std::exception& e)
         {
-            CFW_LOG_CRITICAL("OpticsSystem: Failed to compile shaders");
+            CFW_LOG_CRITICAL("OpticsSystem: Failed to initialize typed pipelines: {}", e.what());
             return false;
         }
 
@@ -184,21 +153,10 @@ namespace Corona::Systems
             return false;
         }
 
-        std::string vert_source;
-        std::string frag_source;
-        std::string compute_source;
-        if (!load_shader_texts(vert_source, frag_source, compute_source))
+        if (!initialize_render_pipelines())
         {
             return false;
         }
-
-        if (!initialize_render_pipelines(vert_source, frag_source, compute_source))
-        {
-            return false;
-        }
-
-        CFW_LOG_WARNING("OpticsSystem: Shader compilation temporarily disabled - waiting for Resource API update");
-        hardware_->shaderHasInit = true;
 
         if (auto* event_bus = ctx->event_bus())
         {
@@ -217,7 +175,7 @@ namespace Corona::Systems
 
     void OpticsSystem::update()
     {
-        if (!hardware_->shaderHasInit)
+        if (!hardware_->shaderHasInit || !hardware_->rasterizerPipeline || !hardware_->computePipeline)
         {
             return;
         }
@@ -235,6 +193,8 @@ namespace Corona::Systems
     void OpticsSystem::optics_pipeline(float frame_count, uint64_t frame_index)
     {
         // CFW_LOG_DEBUG("OpticsSystem: Rendering pipeline temporarily disabled - waiting for new Storage API");
+        auto& rasterizer = *hardware_->rasterizerPipeline;
+        auto& compute = *hardware_->computePipeline;
 
         // 遍历场景存储并使用 acquire_read 访问相关句柄
         for (const auto& scene : SharedDataHub::instance().scene_storage())
@@ -257,11 +217,11 @@ namespace Corona::Systems
                         hardware_->gbufferUniformBuffer.copyFromData(&hardware_->gbufferUniformBufferObjects,
                                                                      sizeof(hardware_->gbufferUniformBufferObjects));
 
-                        hardware_->rasterizerPipeline["gbufferPostion"] = hardware_->gbufferPostionImage;
-                        hardware_->rasterizerPipeline["gbufferBaseColor"] = hardware_->gbufferBaseColorImage;
-                        hardware_->rasterizerPipeline["gbufferNormal"] = hardware_->gbufferNormalImage;
-                        hardware_->rasterizerPipeline["gbufferMotionVector"] = hardware_->gbufferMotionVectorImage;
-                        hardware_->rasterizerPipeline.setDepthImage(hardware_->gbufferDepthImage);
+                        rasterizer.gbufferPostion = hardware_->gbufferPostionImage;
+                        rasterizer.gbufferBaseColor = hardware_->gbufferBaseColorImage;
+                        rasterizer.gbufferNormal = hardware_->gbufferNormalImage;
+                        rasterizer.gbufferMotionVector = hardware_->gbufferMotionVectorImage;
+                        rasterizer.setDepthImage(hardware_->gbufferDepthImage);
 
                         // 遍历所有光学设备
                         for (const auto& optics : SharedDataHub::instance().optics_storage())
@@ -282,42 +242,35 @@ namespace Corona::Systems
                                 // 注意：节点累积变换已在加载时"烘焙"到顶点数据中
                                 for (auto& m : geom->mesh_handles)
                                 {
-                                    hardware_->rasterizerPipeline["pushConsts.modelMatrix"] = model_matrix;
-                                    hardware_->rasterizerPipeline["pushConsts.uniformBufferIndex"] = hardware_->
-                                        gbufferUniformBuffer.storeDescriptor();
+                                    rasterizer.pushConsts.modelMatrix = model_matrix;
+                                    rasterizer.pushConsts.uniformBufferIndex = hardware_->gbufferUniformBuffer.
+                                        storeDescriptor();
                                     // 检查纹理是否有效，避免对未初始化的 HardwareImage 调用 storeDescriptor()
                                     if (m.textureBuffer)
                                     {
-                                        hardware_->rasterizerPipeline["pushConsts.textureIndex"] = m.textureBuffer.
-                                            storeDescriptor();
+                                        rasterizer[test_frag_glsl::pushConsts::textureIndex] = m.textureBuffer.storeDescriptor();
                                     }
                                     else
                                     {
-                                        hardware_->rasterizerPipeline["pushConsts.textureIndex"] = static_cast<uint32_t>
-                                            (0);
+                                        rasterizer[test_frag_glsl::pushConsts::textureIndex] = static_cast<uint32_t>(0);
                                     }
                                     // 传递材质颜色到着色器
                                     ktm::fvec4 materialColor{
                                         m.materialColor[0], m.materialColor[1], m.materialColor[2], m.materialColor[3]
                                     };
-                                    hardware_->rasterizerPipeline["pushConsts.materialColor"] = materialColor;
-                                    hardware_->rasterizerPipeline.record(m.indexBuffer, m.vertexBuffer);
+                                    rasterizer[test_frag_glsl::pushConsts::materialColor] = materialColor;
+                                    rasterizer.record(m.indexBuffer, m.vertexBuffer);
                                 }
                             }
                         }
 
-                        hardware_->computePipeline["pushConsts.gbufferSize"] = hardware_->gbufferSize;
-                        hardware_->computePipeline["pushConsts.gbufferPostionImage"] = hardware_->gbufferPostionImage.
-                            storeDescriptor();
-                        hardware_->computePipeline["pushConsts.gbufferBaseColorImage"] = hardware_->
-                            gbufferBaseColorImage.storeDescriptor();
-                        hardware_->computePipeline["pushConsts.gbufferNormalImage"] = hardware_->gbufferNormalImage.
-                            storeDescriptor();
-                        hardware_->computePipeline["pushConsts.gbufferDepthImage"] = hardware_->rasterizerPipeline.
-                            getDepthImage().storeDescriptor();
+                        compute.pushConsts.gbufferSize = hardware_->gbufferSize;
+                        compute.pushConsts.gbufferPostionImage = hardware_->gbufferPostionImage.storeDescriptor();
+                        compute.pushConsts.gbufferBaseColorImage = hardware_->gbufferBaseColorImage.storeDescriptor();
+                        compute.pushConsts.gbufferNormalImage = hardware_->gbufferNormalImage.storeDescriptor();
+                        compute.pushConsts.gbufferDepthImage = rasterizer.getDepthImage().storeDescriptor();
 
-                        hardware_->computePipeline["pushConsts.finalOutputImage"] = hardware_->finalOutputImage.
-                            storeDescriptor();
+                        compute.pushConsts.finalOutputImage = hardware_->finalOutputImage.storeDescriptor();
 
                         ktm::fvec3 sun_dir;
                         sun_dir.x = 1.0f;
@@ -334,8 +287,8 @@ namespace Corona::Systems
                             }
                         }
 
-                        hardware_->computePipeline["pushConsts.sun_dir"] = ktm::normalize(sun_dir);
-                        hardware_->computePipeline["pushConsts.floor_grid_enabled"] = floor_grid_enabled;
+                        compute.pushConsts.sun_dir = ktm::normalize(sun_dir);
+                        compute.pushConsts.floor_grid_enabled = floor_grid_enabled;
                         {
                             // 调整为黄昏颜色 (Dusk)
                             static const ktm::fvec3 lightColor{
@@ -344,13 +297,12 @@ namespace Corona::Systems
                                 60.0f
                             };
 
-                            hardware_->computePipeline["pushConsts.lightColor"] = lightColor;
+                            compute.pushConsts.lightColor = lightColor;
                         }
 
                         hardware_->uniformBuffer.copyFromData(&hardware_->uniformBufferObjects,
                                                               sizeof(hardware_->uniformBufferObjects));
-                        hardware_->computePipeline["pushConsts.uniformBufferIndex"] = hardware_->uniformBuffer.
-                            storeDescriptor();
+                        compute.pushConsts.uniformBufferIndex = hardware_->uniformBuffer.storeDescriptor();
 
                         // GPU sync: wait for Display to finish consuming our image
                         // before we overwrite it with new rendering output.
@@ -360,8 +312,8 @@ namespace Corona::Systems
                             }
                         }
 
-                        hardware_->executor << hardware_->rasterizerPipeline(1920, 1080)
-                            << hardware_->computePipeline(1920 / 8, 1080 / 8, 1)
+                        hardware_->executor << rasterizer(1920, 1080)
+                            << compute(1920 / 8, 1080 / 8, 1)
                             << hardware_->executor.commit();
 
                         if (image_handle_ != 0)
