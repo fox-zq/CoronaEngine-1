@@ -116,7 +116,7 @@ void BindAll(nanobind::module_& m) {
              "Get number of profiles in this actor");
 
     // ============================================================================
-    // Camera: 相机类
+    // Camera: 相机类（合并了原 Viewport 功能）
     // ============================================================================
     nb::class_<Camera>(m, "Camera")
         .def(nb::init<>(), "Create a default Camera")
@@ -139,50 +139,31 @@ void BindAll(nanobind::module_& m) {
         .def("set_view_left", &Camera::set_view_left, nb::arg("distance") = 5.0f, "左视图: position from -X looking toward +X")
         .def("set_view_right", &Camera::set_view_right, nb::arg("distance") = 5.0f, "右视图: position from +X looking toward -X")
         .def("set_view_top", &Camera::set_view_top, nb::arg("distance") = 5.0f, "俯视图: position from +Y looking toward -Y")
-        .def("set_view_bottom", &Camera::set_view_bottom, nb::arg("distance") = 5.0f, "仰视图: position from -Y looking toward +Y");
+        .def("set_view_bottom", &Camera::set_view_bottom, nb::arg("distance") = 5.0f, "仰视图: position from -Y looking toward +Y")
+        // 原 Viewport 功能
+        .def("set_image_effects", &Camera::set_image_effects, nb::arg("effects"),
+             "Set image effects for this camera")
+        .def("get_image_effects", &Camera::get_image_effects,
+             "Get image effects attached to this camera",
+             nb::rv_policy::reference)
+        .def("has_image_effects", &Camera::has_image_effects,
+             "Check if camera has image effects")
+        .def("remove_image_effects", &Camera::remove_image_effects,
+             "Remove image effects from this camera")
+        .def("set_size", &Camera::set_size, nb::arg("width"), nb::arg("height"),
+             "Set camera render dimensions")
+        .def("set_viewport_rect", &Camera::set_viewport_rect,
+             nb::arg("x"), nb::arg("y"), nb::arg("width"), nb::arg("height"),
+             "Set viewport rectangle")
+        .def("pick_actor_at_pixel", &Camera::pick_actor_at_pixel,
+             nb::arg("x"), nb::arg("y"),
+             "Pick actor at pixel coordinates");
 
     // ============================================================================
     // ImageEffects: 图像效果类
     // ============================================================================
     nb::class_<ImageEffects>(m, "ImageEffects")
         .def(nb::init<>(), "Create an ImageEffects instance");
-
-    // ============================================================================
-    // Viewport: 视口类
-    // ============================================================================
-    nb::class_<Viewport>(m, "Viewport")
-        .def(nb::init<>(), "Create a default Viewport")
-        .def(nb::init<int, int, bool>(),
-             nb::arg("width"), nb::arg("height"), nb::arg("light_field") = false,
-             "Create a Viewport with specified dimensions")
-        .def("set_camera", &Viewport::set_camera, nb::arg("camera"),
-             "Set the camera for this viewport")
-        .def("get_camera", &Viewport::get_camera,
-             "Get the camera attached to this viewport",
-             nb::rv_policy::reference)
-        .def("has_camera", &Viewport::has_camera,
-             "Check if viewport has a camera")
-        .def("remove_camera", &Viewport::remove_camera,
-             "Remove camera from this viewport")
-        .def("set_image_effects", &Viewport::set_image_effects, nb::arg("effects"),
-             "Set image effects for this viewport")
-        .def("get_image_effects", &Viewport::get_image_effects,
-             "Get image effects attached to this viewport",
-             nb::rv_policy::reference)
-        .def("has_image_effects", &Viewport::has_image_effects,
-             "Check if viewport has image effects")
-        .def("remove_image_effects", &Viewport::remove_image_effects,
-             "Remove image effects from this viewport")
-        .def("set_size", &Viewport::set_size, nb::arg("width"), nb::arg("height"),
-             "Set viewport dimensions")
-        .def("set_viewport_rect", &Viewport::set_viewport_rect,
-             nb::arg("x"), nb::arg("y"), nb::arg("width"), nb::arg("height"),
-             "Set viewport rectangle")
-        .def("pick_actor_at_pixel", &Viewport::pick_actor_at_pixel,
-             nb::arg("x"), nb::arg("y"),
-             "Pick actor at pixel coordinates")
-        .def("save_screenshot", &Viewport::save_screenshot, nb::arg("path"),
-             "Save a screenshot from this viewport's camera to file");
 
     // ============================================================================
     // Environment: 环境类
@@ -236,17 +217,17 @@ void BindAll(nanobind::module_& m) {
              "Get number of actors in the scene")
         .def("has_actor", &Scene::has_actor, nb::arg("actor"),
              "Check if actor is in the scene")
-        // Viewport management
-        .def("add_viewport", &Scene::add_viewport, nb::arg("viewport"),
-             "Add a viewport to the scene")
-        .def("remove_viewport", &Scene::remove_viewport, nb::arg("viewport"),
-             "Remove a viewport from the scene")
-        .def("clear_viewports", &Scene::clear_viewports,
-             "Remove all viewports from the scene")
-        .def("viewport_count", &Scene::viewport_count,
-             "Get number of viewports in the scene")
-        .def("has_viewport", &Scene::has_viewport, nb::arg("viewport"),
-             "Check if viewport is in the scene");
+        // Camera management
+        .def("add_camera", &Scene::add_camera, nb::arg("camera"),
+             "Add a camera to the scene")
+        .def("remove_camera", &Scene::remove_camera, nb::arg("camera"),
+             "Remove a camera from the scene")
+        .def("clear_cameras", &Scene::clear_cameras,
+             "Remove all cameras from the scene")
+        .def("camera_count", &Scene::camera_count,
+             "Get number of cameras in the scene")
+        .def("has_camera", &Scene::has_camera, nb::arg("camera"),
+             "Check if camera is in the scene");
 
     // ============================================================================
     // Scene I/O utilities

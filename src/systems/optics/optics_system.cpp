@@ -199,16 +199,10 @@ namespace Corona::Systems
         // 遍历场景存储并使用 acquire_read 访问相关句柄
         for (const auto& scene : SharedDataHub::instance().scene_storage())
         {
-            for (auto vp_handle : scene.viewport_handles)
+            for (auto cam_handle : scene.camera_handles)
             {
-                if (auto viewport = SharedDataHub::instance().viewport_storage().acquire_read(vp_handle))
+                if (auto camera = SharedDataHub::instance().camera_storage().acquire_read(cam_handle))
                 {
-                    if (viewport->camera == 0)
-                    {
-                        continue;
-                    }
-                    if (auto camera = SharedDataHub::instance().camera_storage().acquire_read(viewport->camera))
-                    {
                         hardware_->uniformBufferObjects.eyePosition = camera->position;
                         hardware_->uniformBufferObjects.eyeDir = camera->forward;
                         hardware_->uniformBufferObjects.eyeViewMatrix = camera->compute_view_matrix();
@@ -356,7 +350,6 @@ namespace Corona::Systems
                         //         hardware_->executor) << hardware_->finalOutputImage;
                         // }
 #endif
-                    }
                 }
             }
         }

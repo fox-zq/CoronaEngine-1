@@ -150,10 +150,6 @@ struct CameraDevice {
     }
 };
 
-struct ViewportDevice {
-    std::uintptr_t camera{};
-};
-
 struct EnvironmentDevice {
     ktm::fvec3 sun_position;
     std::uint32_t floor_grid_enabled{1};
@@ -168,7 +164,7 @@ struct EnvironmentDevice {
 struct SceneDevice {
     std::uintptr_t environment{};
     std::vector<std::uintptr_t> actor_handles;
-    std::vector<std::uintptr_t> viewport_handles;
+    std::vector<std::uintptr_t> camera_handles;
 };
 
 struct ImageDevice {
@@ -206,7 +202,6 @@ class SharedDataHub {
     using ProfileStorage = Kernel::Utils::Storage<ProfileDevice, 128, 2>;
     using ActorStorage = Kernel::Utils::Storage<ActorDevice, 128, 2>;
     using CameraStorage = Kernel::Utils::Storage<CameraDevice, 128, 2>;
-    using ViewportStorage = Kernel::Utils::Storage<ViewportDevice, 128, 2>;
     using EnvironmentStorage = Kernel::Utils::Storage<EnvironmentDevice, 128, 2>;
     using SceneStorage = Kernel::Utils::Storage<SceneDevice, 128, 2>;
     using ImageStorage = Kernel::Utils::Storage<ImageDevice, 128, 2>;
@@ -241,9 +236,6 @@ class SharedDataHub {
     CameraStorage& camera_storage();
     const CameraStorage& camera_storage() const;
 
-    ViewportStorage& viewport_storage();
-    const ViewportStorage& viewport_storage() const;
-
     EnvironmentStorage& environment_storage();
     const EnvironmentStorage& environment_storage() const;
 
@@ -265,7 +257,6 @@ class SharedDataHub {
     ActorStorage actor_storage_;
     EnvironmentStorage environment_storage_;
     CameraStorage camera_storage_;
-    ViewportStorage viewport_storage_;
     SceneStorage scene_storage_;
     ImageStorage image_storage_;
 };

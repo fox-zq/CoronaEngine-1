@@ -184,108 +184,108 @@ bool Corona::API::Scene::has_actor(const Actor* actor) const {
     return actors_index_.contains(actor);
 }
 
-void Corona::API::Scene::add_viewport(Viewport* viewport) {
+void Corona::API::Scene::add_camera(Camera* camera) {
     if (handle_ == 0) {
-        CFW_LOG_WARNING("[Scene::add_viewport] Invalid scene handle");
+        CFW_LOG_WARNING("[Scene::add_camera] Invalid scene handle");
         return;
     }
 
-    if (viewport == nullptr) {
-        CFW_LOG_WARNING("[Scene::add_viewport] Null viewport pointer");
+    if (camera == nullptr) {
+        CFW_LOG_WARNING("[Scene::add_camera] Null camera pointer");
         return;
     }
 
-    const auto viewport_handle = viewport->get_handle();
-    if (viewport_handle == 0) {
-        CFW_LOG_WARNING("[Scene::add_viewport] Invalid viewport handle (0)");
+    const auto camera_handle = camera->get_handle();
+    if (camera_handle == 0) {
+        CFW_LOG_WARNING("[Scene::add_camera] Invalid camera handle (0)");
         return;
     }
 
-    const auto viewport_insert_result = viewports_index_.insert(viewport);
-    if (!viewport_insert_result.second) {
-        CFW_LOG_WARNING("[Scene::add_viewport] Viewport already exists in scene, handle: {}", viewport_handle);
+    const auto camera_insert_result = cameras_index_.insert(camera);
+    if (!camera_insert_result.second) {
+        CFW_LOG_WARNING("[Scene::add_camera] Camera already exists in scene, handle: {}", camera_handle);
         return;
     }
 
-    viewports_.push_back(viewport);
+    cameras_.push_back(camera);
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        accessor->viewport_handles.push_back(viewport_handle);
+        accessor->camera_handles.push_back(camera_handle);
     } else {
         // Roll back local state to keep Scene cache and shared storage consistent.
-        viewports_.pop_back();
-        viewports_index_.erase(viewport);
-        CFW_LOG_ERROR("[Scene::add_viewport] Failed to acquire write access to scene storage, rolled back local viewport insertion");
+        cameras_.pop_back();
+        cameras_index_.erase(camera);
+        CFW_LOG_ERROR("[Scene::add_camera] Failed to acquire write access to scene storage, rolled back local camera insertion");
     }
 }
 
-void Corona::API::Scene::remove_viewport(Viewport* viewport) {
+void Corona::API::Scene::remove_camera(Camera* camera) {
     if (handle_ == 0) return;
 
-    if (viewport == nullptr) {
-        CFW_LOG_WARNING("[Scene::remove_viewport] Null viewport pointer");
+    if (camera == nullptr) {
+        CFW_LOG_WARNING("[Scene::remove_camera] Null camera pointer");
         return;
     }
 
-    auto viewport_it = std::find(viewports_.begin(), viewports_.end(), viewport);
-    const bool existed_in_vector = viewport_it != viewports_.end();
-    const std::size_t viewport_pos = existed_in_vector
-                                         ? static_cast<std::size_t>(std::distance(viewports_.begin(), viewport_it))
+    auto camera_it = std::find(cameras_.begin(), cameras_.end(), camera);
+    const bool existed_in_vector = camera_it != cameras_.end();
+    const std::size_t camera_pos = existed_in_vector
+                                         ? static_cast<std::size_t>(std::distance(cameras_.begin(), camera_it))
                                          : 0;
-    const bool existed_in_index = viewports_index_.contains(viewport);
+    const bool existed_in_index = cameras_index_.contains(camera);
 
     if (!existed_in_vector && !existed_in_index) {
-        CFW_LOG_WARNING("[Scene::remove_viewport] Viewport not found in scene");
+        CFW_LOG_WARNING("[Scene::remove_camera] Camera not found in scene");
         return;
     }
 
     if (existed_in_vector) {
-        viewports_.erase(viewport_it);
+        cameras_.erase(camera_it);
     }
     if (existed_in_index) {
-        viewports_index_.erase(viewport);
+        cameras_index_.erase(camera);
     }
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        std::erase(accessor->viewport_handles, viewport->get_handle());
+        std::erase(accessor->camera_handles, camera->get_handle());
     } else {
         if (existed_in_vector) {
-            viewports_.insert(std::next(viewports_.begin(), static_cast<std::vector<Viewport*>::difference_type>(viewport_pos)), viewport);
+            cameras_.insert(std::next(cameras_.begin(), static_cast<std::vector<Camera*>::difference_type>(camera_pos)), camera);
         }
         if (existed_in_index) {
-            viewports_index_.insert(viewport);
+            cameras_index_.insert(camera);
         }
-        CFW_LOG_ERROR("[Scene::remove_viewport] Failed to acquire write access to scene storage, rolled back local viewport removal");
+        CFW_LOG_ERROR("[Scene::remove_camera] Failed to acquire write access to scene storage, rolled back local camera removal");
     }
 }
 
-void Corona::API::Scene::clear_viewports() {
+void Corona::API::Scene::clear_cameras() {
     if (handle_ == 0) return;
 
-    CFW_LOG_INFO("[Scene::clear_viewports] Clearing {} viewports", viewports_.size());
+    CFW_LOG_INFO("[Scene::clear_cameras] Clearing {} cameras", cameras_.size());
 
-    const auto viewports_backup = viewports_;
-    const auto viewports_index_backup = viewports_index_;
+    const auto cameras_backup = cameras_;
+    const auto cameras_index_backup = cameras_index_;
 
-    viewports_.clear();
-    viewports_index_.clear();
+    cameras_.clear();
+    cameras_index_.clear();
 
     if (auto accessor = SharedDataHub::instance().scene_storage().acquire_write(handle_)) {
-        accessor->viewport_handles.clear();
+        accessor->camera_handles.clear();
     } else {
-        viewports_ = viewports_backup;
-        viewports_index_ = viewports_index_backup;
-        CFW_LOG_ERROR("[Scene::clear_viewports] Failed to acquire write access to scene storage, rolled back local viewport clear");
+        cameras_ = cameras_backup;
+        cameras_index_ = cameras_index_backup;
+        CFW_LOG_ERROR("[Scene::clear_cameras] Failed to acquire write access to scene storage, rolled back local camera clear");
     }
 }
 
-std::size_t Corona::API::Scene::viewport_count() const {
-    return viewports_.size();
+std::size_t Corona::API::Scene::camera_count() const {
+    return cameras_.size();
 }
 
-bool Corona::API::Scene::has_viewport(const Viewport* viewport) const {
-    if (viewport == nullptr) return false;
-    return viewports_index_.contains(viewport);
+bool Corona::API::Scene::has_camera(const Camera* camera) const {
+    if (camera == nullptr) return false;
+    return cameras_index_.contains(camera);
 }
 
 // ########################
@@ -1522,140 +1522,49 @@ Corona::API::ImageEffects::~ImageEffects() {
 }
 
 // ########################
-//        Viewport
+//   Camera (原 Viewport 功能)
 // ########################
-Corona::API::Viewport::Viewport()
-    : handle_(0) {
-    handle_ = SharedDataHub::instance().viewport_storage().allocate();
-    if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = 0;
-    } else {
-        CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
-        SharedDataHub::instance().viewport_storage().deallocate(handle_);
-        handle_ = 0;
-    }
-}
-
-Corona::API::Viewport::Viewport(int width, int height, bool light_field)
-    : handle_(0), width_(width), height_(height) {
-    handle_ = SharedDataHub::instance().viewport_storage().allocate();
-    if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = 0;
-    } else {
-        CFW_LOG_ERROR("[Viewport::Viewport] Failed to acquire write access to viewport storage");
-        SharedDataHub::instance().viewport_storage().deallocate(handle_);
-        handle_ = 0;
-    }
-}
-
-Corona::API::Viewport::~Viewport() {
-    if (handle_ != 0) {
-        SharedDataHub::instance().viewport_storage().deallocate(handle_);
-        handle_ = 0;
-    }
-}
-
-void Corona::API::Viewport::set_camera(Camera* camera) {
-    if (handle_ == 0) {
-        CFW_LOG_WARNING("[Viewport::set_camera] Invalid viewport handle");
-        return;
-    }
-
-    camera_ = camera;
-
-    if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = camera_ ? camera_->get_handle() : 0;
-    } else {
-        CFW_LOG_ERROR("[Viewport::set_camera] Failed to acquire write access to viewport storage");
-        return;
-    }
-
-    if (camera_ != nullptr)
-    {
-        if (void* surface = get_default_surface(); surface != nullptr)
-        {
-            camera_->set_surface(surface);
-        }
-    }
-}
-
-Corona::API::Camera* Corona::API::Viewport::get_camera() {
-    return camera_;
-}
-
-bool Corona::API::Viewport::has_camera() const {
-    return camera_ != nullptr;
-}
-
-void Corona::API::Viewport::remove_camera() {
-    if (handle_ == 0) return;
-
-    camera_ = nullptr;
-
-    if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        accessor->camera = 0;
-    }
-}
-
-void Corona::API::Viewport::set_image_effects(ImageEffects* effects) {
+void Corona::API::Camera::set_image_effects(ImageEffects* effects) {
     image_effects_ = effects;
     // TODO: 如果有 image_effects_storage，在此写入
 }
 
-Corona::API::ImageEffects* Corona::API::Viewport::get_image_effects() {
+Corona::API::ImageEffects* Corona::API::Camera::get_image_effects() {
     return image_effects_;
 }
 
-bool Corona::API::Viewport::has_image_effects() const {
+bool Corona::API::Camera::has_image_effects() const {
     return image_effects_ != nullptr;
 }
 
-void Corona::API::Viewport::remove_image_effects() {
+void Corona::API::Camera::remove_image_effects() {
     image_effects_ = nullptr;
     // TODO: 如果有 image_effects_storage，在此清理
 }
 
-void Corona::API::Viewport::set_size(int width, int height) {
+void Corona::API::Camera::set_size(int width, int height) {
     if (handle_ == 0) {
-        CFW_LOG_WARNING("[Viewport::set_size] Invalid viewport handle");
+        CFW_LOG_WARNING("[Camera::set_size] Invalid camera handle");
         return;
     }
 
     if (width <= 0 || height <= 0) {
-        CFW_LOG_WARNING("[Viewport::set_size] Invalid size: {}x{}", width, height);
+        CFW_LOG_WARNING("[Camera::set_size] Invalid size: {}x{}", width, height);
         return;
     }
 
     width_ = width;
     height_ = height;
-
-    // Viewport 的大小可能需要在 ViewportDevice 中存储
-    if (auto accessor = SharedDataHub::instance().viewport_storage().acquire_write(handle_)) {
-        // TODO: 如果 ViewportDevice 有 width/height 字段，在此设置
-    }
 }
 
-void Corona::API::Viewport::set_viewport_rect(int x, int y, int width, int height) {
+void Corona::API::Camera::set_viewport_rect(int x, int y, int width, int height) {
     // TODO: Implement viewport rectangle settings
-    CFW_LOG_WARNING("[Viewport::set_viewport_rect] Not implemented yet");
+    CFW_LOG_WARNING("[Camera::set_viewport_rect] Not implemented yet");
 }
 
-void Corona::API::Viewport::pick_actor_at_pixel(int x, int y) const {
+void Corona::API::Camera::pick_actor_at_pixel(int x, int y) const {
     // TODO: Implement pixel picking for actor selection
-    CFW_LOG_WARNING("[Viewport::pick_actor_at_pixel] Not implemented yet");
-}
-
-void Corona::API::Viewport::save_screenshot(const std::string& path) const {
-    if (camera_ == nullptr) {
-        CFW_LOG_WARNING("[Viewport::save_screenshot] No camera attached to viewport");
-        return;
-    }
-
-    camera_->save_screenshot(path);
-}
-
-std::uintptr_t Corona::API::Viewport::get_handle() const {
-    return handle_;
+    CFW_LOG_WARNING("[Camera::pick_actor_at_pixel] Not implemented yet");
 }
 
 namespace Corona::API

@@ -178,7 +178,12 @@ class Actor {
 };
 
 // ============================================================================
-// Camera: 相机类
+// Forward declarations
+// ============================================================================
+class ImageEffects;
+
+// ============================================================================
+// Camera: 相机类（合并了原 Viewport 的功能）
 // ============================================================================
 class Camera {
    public:
@@ -204,12 +209,25 @@ class Camera {
     void set_view_top(float distance = 5.0f);
     void set_view_bottom(float distance = 5.0f);
 
+    // ========== 原 Viewport 功能 ==========
+    void set_image_effects(ImageEffects* effects);
+    [[nodiscard]] ImageEffects* get_image_effects();
+    [[nodiscard]] bool has_image_effects() const;
+    void remove_image_effects();
+
+    void set_size(int width, int height);
+    void set_viewport_rect(int x, int y, int width, int height);
+    void pick_actor_at_pixel(int x, int y) const;
+
    private:
-    friend class Viewport;
+    friend class Scene;
 
     [[nodiscard]] std::uintptr_t get_handle() const;
 
     std::uintptr_t handle_{};
+    ImageEffects* image_effects_{nullptr};
+    int width_{1920};
+    int height_{1080};
 };
 
 // ============================================================================
@@ -222,49 +240,6 @@ class ImageEffects {
 
    private:
     std::uintptr_t handle_{};
-};
-
-// ============================================================================
-// Viewport: 视口类（OOP 设计）
-// ============================================================================
-class Viewport {
-   public:
-    Viewport();
-    explicit Viewport(int width, int height, bool light_field = false);
-    ~Viewport();
-
-    // ========== Camera 管理（直接使用实例指针）==========
-    void set_camera(Camera* camera);
-    [[nodiscard]] Camera* get_camera();
-    [[nodiscard]] bool has_camera() const;
-    void remove_camera();
-
-    // ========== ImageEffects 管理（直接使用实例指针）==========
-    void set_image_effects(ImageEffects* effects);
-    [[nodiscard]] ImageEffects* get_image_effects();
-    [[nodiscard]] bool has_image_effects() const;
-    void remove_image_effects();
-
-    // ========== 视口属性 ==========
-    void set_size(int width, int height);
-    void set_viewport_rect(int x, int y, int width, int height);
-
-    // ========== 交互功能 ==========
-    void pick_actor_at_pixel(int x, int y) const;
-    void save_screenshot(const std::string& path) const;
-
-   private:
-    friend class Scene;
-
-    [[nodiscard]] std::uintptr_t get_handle() const;
-
-    std::uintptr_t handle_{};
-
-    Camera* camera_{nullptr};
-    ImageEffects* image_effects_{nullptr};
-
-    int width_{1960};
-    int height_{1080};
 };
 
 // ============================================================================
@@ -317,22 +292,22 @@ class Scene {
     [[nodiscard]] std::size_t actor_count() const;
     [[nodiscard]] bool has_actor(const Actor* actor) const;
 
-    // ========== Viewport 管理 ==========
-    void add_viewport(Viewport* viewport);
-    void remove_viewport(Viewport* viewport);
-    void clear_viewports();
+    // ========== Camera 管理 ==========
+    void add_camera(Camera* camera);
+    void remove_camera(Camera* camera);
+    void clear_cameras();
 
-    [[nodiscard]] std::size_t viewport_count() const;
-    [[nodiscard]] bool has_viewport(const Viewport* viewport) const;
+    [[nodiscard]] std::size_t camera_count() const;
+    [[nodiscard]] bool has_camera(const Camera* camera) const;
 
    private:
     std::uintptr_t handle_{};
 
     Environment* environment_{nullptr};
     std::vector<Actor*> actors_;
-    std::vector<Viewport*> viewports_;
+    std::vector<Camera*> cameras_;
     std::unordered_set<const Actor*> actors_index_;
-    std::unordered_set<const Viewport*> viewports_index_;
+    std::unordered_set<const Camera*> cameras_index_;
 };
 
 // ============================================================================
