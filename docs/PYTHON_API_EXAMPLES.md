@@ -1,12 +1,12 @@
 # Corona Engine Python API 使用指南（OOP 版）
 
-版本: 1.1  
-日期: 2025-11-15
+版本: 2.0  
+日期: 2026-03-31
 
 本文档展示当前 OOP 风格的 Python API 使用方式，示例与绑定接口严格对齐：
-- 顶层类名：Geometry, Mechanics, Optics, Acoustics, Kinematics, Actor, ActorProfile, Camera, ImageEffects, Viewport, Environment, Scene
+- 顶层类名：Geometry, Mechanics, Optics, Acoustics, Kinematics, Actor, ActorProfile, Camera, ImageEffects, Environment, Scene
 - Profile 使用 ActorProfile（顶层类），而非 Actor.Profile
-- Viewport 不提供 get_width/get_height/get_aspect_ratio；通过 set_size 设置尺寸
+- Camera 合并了原 Viewport 的功能（图像效果、尺寸管理、截图等）
 - API 不暴露任何句柄或内部几何指针，完全以对象交互
 
 ---
@@ -16,7 +16,7 @@
 - Geometry（几何体）
 - 组件（Optics / Mechanics / Kinematics / Acoustics）
 - Actor 与 ActorProfile
-- Camera 与 Viewport
+- Camera 与 ImageEffects
 - Environment 与 Scene
 - 完整示例
 - 常见问题与最佳实践
@@ -30,7 +30,7 @@
 from corona_engine import (
     Geometry, Mechanics, Optics, Kinematics, Acoustics,
     Actor, ActorProfile,
-    Camera, ImageEffects, Viewport,
+    Camera, ImageEffects,
     Environment, Scene,
 )
 ```
@@ -120,9 +120,9 @@ actor.remove_profile(profile)
 
 ---
 
-## Camera 与 Viewport
+## Camera 与 ImageEffects
 
-Camera 存放相机位置、方向、上向量、视野角；Viewport 绑定一个 Camera 与一个可选的图像后处理对象。
+Camera 存放相机位置、方向、上向量、视野角，同时集成了尺寸管理、图像后处理和截图等功能。
 
 ```python
 # 相机
@@ -136,36 +136,25 @@ cam.set(
 # 如需绑定渲染目标（平台相关指针/句柄），传入整数形式：
 # cam.set_surface(surface_ptr_as_int)
 
-# 视口
-vp = Viewport(1920, 1080)
-vp.set_camera(cam)
+# 尺寸与视口矩形
+cam.set_size(1920, 1080)
+cam.set_viewport_rect(0, 0, 1920, 1080)
 
 # 可选图像效果
 fx = ImageEffects()
-vp.set_image_effects(fx)
+cam.set_image_effects(fx)
 
-# 视口属性
-vp.set_size(1920, 1080)
-vp.set_viewport_rect(0, 0, 1920, 1080)
-# vp.set_surface(surface_ptr_as_int)
+if cam.has_image_effects():
+    _fx = cam.get_image_effects()
 
-# 可选交互/输出
-vp.pick_actor_at_pixel(100, 200)
-vp.save_screenshot("screenshot.png")
+cam.remove_image_effects()
 
-# 判空 / 访问
-if vp.has_camera():
-    vp.get_camera().set([0, 3, -8], [0, 0, 1], [0, 1, 0], 60)
-
-if vp.has_image_effects():
-    _fx = vp.get_image_effects()
-
-# 移除
-vp.remove_camera()
-vp.remove_image_effects()
+# 交互/输出
+cam.pick_actor_at_pixel(100, 200)
+cam.save_screenshot("screenshot.png")
 ```
 
-说明：Viewport 可能没有 Camera 或 ImageEffects，需先判断 has_camera()/has_image_effects()。
+说明：Camera 可能没有 ImageEffects，需先判断 `has_image_effects()` 再 `get_image_effects()`。
 
 ---
 
@@ -189,18 +178,19 @@ prof.optics = Optics(geo)
 actor.add_profile(prof)
 scene.add_actor(actor)
 
-# Viewport
-vp = Viewport(1280, 720)
-vp.set_camera(Camera())
-scene.add_viewport(vp)
+# Camera
+cam = Camera()
+cam.set([0, 2, -6], [0, 0, 1], [0, 1, 0], 60)
+cam.set_size(1280, 720)
+scene.add_camera(cam)
 
 print("actors:", scene.actor_count())
-print("viewports:", scene.viewport_count())
+print("cameras:", scene.camera_count())
 
 # 查询/移除/清空
 if scene.has_actor(actor):
     scene.remove_actor(actor)
-scene.clear_viewports()
+scene.clear_cameras()
 ```
 
 ---
@@ -232,12 +222,11 @@ actor = Actor()
 actor.add_profile(prof)
 scene.add_actor(actor)
 
-# 视口
+# 相机
 cam = Camera()
 cam.set([0, 2, -6], [0, 0, 1], [0, 1, 0], 60)
-vp = Viewport(1920, 1080)
-vp.set_camera(cam)
-scene.add_viewport(vp)
+cam.set_size(1920, 1080)
+scene.add_camera(cam)
 
 # 运行时：按需刷新/驱动由引擎系统侧处理（此处仅展示 API 用法）
 ```
@@ -248,8 +237,8 @@ scene.add_viewport(vp)
 
 - 组件与 Geometry 的一致性：同一 Profile 内的组件必须来自同一个 Geometry 实例，否则 `Actor.add_profile()` 会拒绝。
 - OOP 封装：API 不暴露任何句柄或内部指针，Python 端以对象交互为主。
-- 视口判空：Viewport 可能没有 Camera 或 ImageEffects，先调用 `has_*()` 再 `get_*()`。
+- 图像效果判空：Camera 可能没有 ImageEffects，先调用 `has_image_effects()` 再 `get_image_effects()`。
 - 动画单位：旋转使用欧拉角（ZYX），数值单位通常为弧度。
-- 生命周期：Python 持有对象并负责释放；避免让局部变量在被 Scene/Viewport/Actor 使用后过早回收。
+- 生命周期：Python 持有对象并负责释放；避免让局部变量在被 Scene/Camera/Actor 使用后过早回收。
 - 组件复用：允许复用组件，但必须与 Profile 的 Geometry 相同；跨几何体复用会被拒绝。
 - 线程/系统：底层容器是系统的“单一事实来源”，API 读取/写入直接作用于容器，减少状态漂移；请避免自行缓存关键状态。
