@@ -202,13 +202,6 @@ class Camera {
     [[nodiscard]] std::array<float, 3> get_world_up() const;
     [[nodiscard]] float get_fov() const;
 
-    void set_view_front(float distance = 5.0f);
-    void set_view_back(float distance = 5.0f);
-    void set_view_left(float distance = 5.0f);
-    void set_view_right(float distance = 5.0f);
-    void set_view_top(float distance = 5.0f);
-    void set_view_bottom(float distance = 5.0f);
-
     // ========== 原 Viewport 功能 ==========
     void set_image_effects(ImageEffects* effects);
     [[nodiscard]] ImageEffects* get_image_effects();

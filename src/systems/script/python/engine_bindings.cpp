@@ -134,13 +134,6 @@ void BindAll(nanobind::module_& m) {
         .def("get_forward", &Camera::get_forward, "Get camera forward direction [x, y, z]")
         .def("get_world_up", &Camera::get_world_up, "Get camera world up vector [x, y, z]")
         .def("get_fov", &Camera::get_fov, "Get field of view in degrees")
-        .def("set_view_front", &Camera::set_view_front, nb::arg("distance") = 5.0f, "正视图: position from -Z looking toward +Z (distance: camera distance from origin)")
-        .def("set_view_back", &Camera::set_view_back, nb::arg("distance") = 5.0f, "后视图: position from +Z looking toward -Z")
-        .def("set_view_left", &Camera::set_view_left, nb::arg("distance") = 5.0f, "左视图: position from -X looking toward +X")
-        .def("set_view_right", &Camera::set_view_right, nb::arg("distance") = 5.0f, "右视图: position from +X looking toward -X")
-        .def("set_view_top", &Camera::set_view_top, nb::arg("distance") = 5.0f, "俯视图: position from +Y looking toward -Y")
-        .def("set_view_bottom", &Camera::set_view_bottom, nb::arg("distance") = 5.0f, "仰视图: position from -Y looking toward +Y")
-        // 原 Viewport 功能
         .def("set_image_effects", &Camera::set_image_effects, nb::arg("effects"),
              "Set image effects for this camera")
         .def("get_image_effects", &Camera::get_image_effects,
