@@ -59,7 +59,19 @@ void BindAll(nanobind::module_& m) {
     // ============================================================================
     nb::class_<Optics>(m, "Optics")
         .def(nb::init<Geometry&>(), nb::arg("geometry"),
-             "Create an Optics component attached to a Geometry");
+             "Create an Optics component attached to a Geometry")
+        .def("set_metallic", &Optics::set_metallic, nb::arg("metallic"))
+        .def("get_metallic", &Optics::get_metallic)
+        .def("set_roughness", &Optics::set_roughness, nb::arg("roughness"))
+        .def("get_roughness", &Optics::get_roughness)
+        .def("set_ambient", &Optics::set_ambient, nb::arg("ambient"))
+        .def("get_ambient", &Optics::get_ambient)
+        .def("set_diffuse", &Optics::set_diffuse, nb::arg("diffuse"))
+        .def("get_diffuse", &Optics::get_diffuse)
+        .def("set_specular", &Optics::set_specular, nb::arg("specular"))
+        .def("get_specular", &Optics::get_specular)
+        .def("set_shininess", &Optics::set_shininess, nb::arg("shininess"))
+        .def("get_shininess", &Optics::get_shininess);
 
     // ============================================================================
     // Acoustics: 声学组件

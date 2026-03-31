@@ -94,6 +94,13 @@ struct AcousticsDevice {
 
 struct OpticsDevice {
     std::uintptr_t geometry_handle{};
+
+    float metallic{0.0f};
+    float roughness{0.5f};
+    ktm::fvec3 ambient{0.2f, 0.2f, 0.2f};
+    ktm::fvec3 diffuse{0.8f, 0.8f, 0.8f};
+    ktm::fvec3 specular{1.0f, 1.0f, 1.0f};
+    float shininess{32.0f};
 };
 
 struct ProfileDevice {

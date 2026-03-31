@@ -88,6 +88,19 @@ class Optics {
     explicit Optics(Geometry& geo);
     ~Optics();
 
+    void set_metallic(float metallic);
+    [[nodiscard]] float get_metallic() const;
+    void set_roughness(float roughness);
+    [[nodiscard]] float get_roughness() const;
+    void set_ambient(const std::array<float, 3>& ambient);
+    [[nodiscard]] std::array<float, 3> get_ambient() const;
+    void set_diffuse(const std::array<float, 3>& diffuse);
+    [[nodiscard]] std::array<float, 3> get_diffuse() const;
+    void set_specular(const std::array<float, 3>& specular);
+    [[nodiscard]] std::array<float, 3> get_specular() const;
+    void set_shininess(float shininess);
+    [[nodiscard]] float get_shininess() const;
+
    private:
     friend class Actor;
 
