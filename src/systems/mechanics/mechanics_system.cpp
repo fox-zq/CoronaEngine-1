@@ -277,8 +277,12 @@ void MechanicsSystem::update_physics() {
     std::vector<std::uintptr_t> mechanics_handles;
     mechanics_handles.reserve(64);
 
+    std::vector<std::uintptr_t> scene_handles;
+    scene_handles.reserve(4);
+
     //遍历所有场景所有物体
     for (const auto& scene : scene_storage) {
+        scene_handles.push_back(reinterpret_cast<std::uintptr_t>(&scene));
         // 从场景的 EnvironmentDevice 读取物理参数
         if (scene.environment != 0) {
             if (auto env = environment_storage.acquire_read(scene.environment)) {
@@ -417,6 +421,32 @@ void MechanicsSystem::update_physics() {
 
         handle_to_index[h] = mechanics_data.size();
         mechanics_data.push_back(entry);
+    }
+
+    // 计算场景级世界 AABB 并写入 scene_storage
+    if (!mechanics_data.empty()) {
+        ktm::fvec3 scene_min = mechanics_data[0].min_world;
+        ktm::fvec3 scene_max = mechanics_data[0].max_world;
+        for (const auto& e : mechanics_data) {
+            scene_min.x = std::min(scene_min.x, e.min_world.x);
+            scene_min.y = std::min(scene_min.y, e.min_world.y);
+            scene_min.z = std::min(scene_min.z, e.min_world.z);
+            scene_max.x = std::max(scene_max.x, e.max_world.x);
+            scene_max.y = std::max(scene_max.y, e.max_world.y);
+            scene_max.z = std::max(scene_max.z, e.max_world.z);
+        }
+        ktm::fvec3 scene_center;
+        scene_center.x = (scene_min.x + scene_max.x) * 0.5f;
+        scene_center.y = (scene_min.y + scene_max.y) * 0.5f;
+        scene_center.z = (scene_min.z + scene_max.z) * 0.5f;
+
+        for (auto sh : scene_handles) {
+            if (auto s_w = scene_storage.acquire_write(sh)) {
+                s_w->min_world    = scene_min;
+                s_w->max_world    = scene_max;
+                s_w->center_world = scene_center;
+            }
+        }
     }
 
     //少于2个物体无需碰撞检测

@@ -38,6 +38,9 @@ class Geometry {
     [[nodiscard]] std::array<float, 3> get_rotation() const;
     [[nodiscard]] std::array<float, 3> get_scale() const;
 
+    /// 获取模型 AABB，返回 {min_x, min_y, min_z, max_x, max_y, max_z}
+    [[nodiscard]] std::array<float, 6> get_aabb() const;
+
    private:
     friend class Mechanics;
     friend class Optics;
@@ -191,9 +194,16 @@ class Actor {
 };
 
 // ============================================================================
-// Forward declarations
+// ImageEffects: 图像效果类
 // ============================================================================
-class ImageEffects;
+class ImageEffects {
+   public:
+    ImageEffects();
+    ~ImageEffects();
+
+   private:
+    std::uintptr_t handle_{};
+};
 
 // ============================================================================
 // Camera: 相机类（合并了原 Viewport 的功能）
@@ -234,18 +244,6 @@ class Camera {
     ImageEffects* image_effects_{nullptr};
     int width_{1920};
     int height_{1080};
-};
-
-// ============================================================================
-// ImageEffects: 图像效果类
-// ============================================================================
-class ImageEffects {
-   public:
-    ImageEffects();
-    ~ImageEffects();
-
-   private:
-    std::uintptr_t handle_{};
 };
 
 // ============================================================================
@@ -305,6 +303,9 @@ class Scene {
 
     [[nodiscard]] std::size_t camera_count() const;
     [[nodiscard]] bool has_camera(const Camera* camera) const;
+
+    /// 获取场景世界 AABB，返回 {min_x, min_y, min_z, max_x, max_y, max_z}
+    [[nodiscard]] std::array<float, 6> get_aabb() const;
 
    private:
     std::uintptr_t handle_{};

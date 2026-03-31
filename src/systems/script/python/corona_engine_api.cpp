@@ -288,6 +288,17 @@ bool Corona::API::Scene::has_camera(const Camera* camera) const {
     return cameras_index_.contains(camera);
 }
 
+std::array<float, 6> Corona::API::Scene::get_aabb() const {
+    if (handle_ == 0) {
+        return {0, 0, 0, 0, 0, 0};
+    }
+    if (auto accessor = SharedDataHub::instance().scene_storage().try_acquire_read(handle_)) {
+        return {accessor->min_world.x, accessor->min_world.y, accessor->min_world.z,
+                accessor->max_world.x, accessor->max_world.y, accessor->max_world.z};
+    }
+    return {0, 0, 0, 0, 0, 0};
+}
+
 // ########################
 //      Environment
 // ########################
@@ -823,6 +834,21 @@ std::array<float, 3> Corona::API::Geometry::get_scale() const {
 
 std::uintptr_t Corona::API::Geometry::get_handle() const {
     return handle_;
+}
+
+std::array<float, 6> Corona::API::Geometry::get_aabb() const {
+    if (auto geom = SharedDataHub::instance().geometry_storage().try_acquire_read(handle_)) {
+        if (auto res = SharedDataHub::instance().model_resource_storage().try_acquire_read(geom->model_resource_handle)) {
+            if (res->model_id) {
+                if (auto scene = Resource::ResourceManager::get_instance().acquire_read<Resource::Scene>(res->model_id)) {
+                    auto aabb_min = scene->get_scene_aabb().min;
+                    auto aabb_max = scene->get_scene_aabb().max;
+                    return {aabb_min[0], aabb_min[1], aabb_min[2], aabb_max[0], aabb_max[1], aabb_max[2]};
+                }
+            }
+        }
+    }
+    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 }
 
 std::uintptr_t Corona::API::Geometry::get_transform_handle() const {

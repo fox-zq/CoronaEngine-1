@@ -33,7 +33,9 @@ void BindAll(nanobind::module_& m) {
         .def("get_rotation", &Geometry::get_rotation,
              "Get local rotation (Euler angles) [pitch, yaw, roll]")
         .def("get_scale", &Geometry::get_scale,
-             "Get local scale [x, y, z]");
+             "Get local scale [x, y, z]")
+        .def("get_aabb", &Geometry::get_aabb,
+             "Get model AABB [min_x, min_y, min_z, max_x, max_y, max_z]");
 
     // ============================================================================
     // Mechanics: 物理/力学组件
@@ -232,7 +234,9 @@ void BindAll(nanobind::module_& m) {
         .def("camera_count", &Scene::camera_count,
              "Get number of cameras in the scene")
         .def("has_camera", &Scene::has_camera, nb::arg("camera"),
-             "Check if camera is in the scene");
+             "Check if camera is in the scene")
+        .def("get_aabb", &Scene::get_aabb,
+             "Get scene world AABB as [min_x, min_y, min_z, max_x, max_y, max_z]");
 
     // ============================================================================
     // Scene I/O utilities
