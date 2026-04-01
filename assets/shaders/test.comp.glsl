@@ -28,6 +28,9 @@ layout(push_constant) uniform PushConsts
     float camera_near;
     float camera_far;
 
+    uint gbufferObjectIDImage;
+    uint objectIDOutputImage;
+
     uint finalOutputImage;
 
     uint uniformBufferIndex;
@@ -444,6 +447,16 @@ vec3 FilmicToneMappingExpr(vec3 x)
     return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
+// Hash-based ID to RGB color mapping
+vec3 objectIDToColor(float id)
+{
+    uint uid = uint(id);
+    uint r = (uid * 1664525u + 1013904223u) & 0xFFu;
+    uint g = ((uid >> 8u) * 1664525u + 1013904223u) & 0xFFu;
+    uint b = ((uid >> 16u) * 1664525u + 1013904223u) & 0xFFu;
+    return vec3(float(r), float(g), float(b)) / 255.0;
+}
+
 float grid_line(float coord, float scale)
 {
     float v = coord * scale;
@@ -517,4 +530,9 @@ void main()
     }
 
 	imageStore(inputImageRGBA16[pushConsts.finalOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(renderResult, 1.0f));
+
+	// Write Object ID visualization
+	vec4 rawObjectID = imageLoad(inputImageRGBA16[pushConsts.gbufferObjectIDImage], ivec2(gl_GlobalInvocationID.xy));
+	vec3 idColor = (gbufferDepth < (1.0 - 1e-3)) ? objectIDToColor(rawObjectID.r) : vec3(0.0);
+	imageStore(inputImageRGBA16[pushConsts.objectIDOutputImage], ivec2(gl_GlobalInvocationID.xy), vec4(idColor, 1.0f));
 }

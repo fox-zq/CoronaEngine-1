@@ -188,6 +188,8 @@ void BindAll(nanobind::module_& m) {
              "Set all camera parameters at once")
         .def("save_screenshot", &Camera::save_screenshot, nb::arg("path"),
              "Save a screenshot from this camera's perspective to file")
+        .def("save_gbuffer", &Camera::save_gbuffer, nb::arg("path"), nb::arg("buffer_type"),
+             "Save a GBuffer pass to file. buffer_type: 'final_color', 'object_id', 'base_color', 'normal', 'position'")
         .def("set_surface", [](Camera& self, std::uintptr_t surface) { self.set_surface(reinterpret_cast<void*>(surface)); }, nb::arg("surface"), "Set render surface (pass window ID as integer)")
         .def("get_position", &Camera::get_position, "Get camera position [x, y, z]")
         .def("get_forward", &Camera::get_forward, "Get camera forward direction [x, y, z]")

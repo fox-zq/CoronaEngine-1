@@ -1541,6 +1541,28 @@ void Corona::API::Camera::save_screenshot(const std::string& path) const {
     }
 }
 
+void Corona::API::Camera::save_gbuffer(const std::string& path, const std::string& buffer_type) const {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Camera::save_gbuffer] Invalid camera handle");
+        return;
+    }
+
+    void* surface = nullptr;
+    if (auto accessor = SharedDataHub::instance().camera_storage().acquire_read(handle_)) {
+        surface = accessor->surface;
+    }
+
+    if (surface == nullptr) {
+        CFW_LOG_WARNING("[Camera::save_gbuffer] Camera has no associated surface");
+        return;
+    }
+
+    if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
+        event_bus->publish<Events::ScreenshotRequestEvent>({surface, path, buffer_type});
+        CFW_LOG_INFO("[Camera::save_gbuffer] GBuffer ({}) request queued: {}", buffer_type, path);
+    }
+}
+
 // ########################
 //      ImageEffects
 // ########################

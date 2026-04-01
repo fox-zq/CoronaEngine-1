@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <cmath>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "hardware.h"
@@ -100,6 +101,11 @@ namespace Corona::Systems
             hardware_->gbufferDepthImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
                                                          ImageFormat::D32_FLOAT, ImageUsage::DepthImage);
 
+            hardware_->gbufferObjectIDImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
+                                                            ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->objectIDOutputImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
+                                                           ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+
             hardware_->uniformBuffer =
                 HardwareBuffer(sizeof(Hardware::UniformBufferObject), BufferUsage::StorageBuffer);
             hardware_->gbufferUniformBuffer = HardwareBuffer(sizeof(Hardware::gbufferUniformBufferObject),
@@ -166,7 +172,7 @@ namespace Corona::Systems
                         return;
                     }
                     std::lock_guard<std::mutex> lock(screenshot_mutex_);
-                    pending_screenshots_.push_back({event.surface, event.file_path});
+                    pending_screenshots_.push_back({event.surface, event.file_path, event.buffer_type});
                 });
         }
 
@@ -215,9 +221,11 @@ namespace Corona::Systems
                         rasterizer.gbufferBaseColor = hardware_->gbufferBaseColorImage;
                         rasterizer.gbufferNormal = hardware_->gbufferNormalImage;
                         rasterizer.gbufferMotionVector = hardware_->gbufferMotionVectorImage;
+                        rasterizer.gbufferObjectID = hardware_->gbufferObjectIDImage;
                         rasterizer.setDepthImage(hardware_->gbufferDepthImage);
 
                         // 遍历所有光学设备
+                        uint32_t object_id = 1;
                         for (const auto& optics : SharedDataHub::instance().optics_storage())
                         {
                             if (auto geom = SharedDataHub::instance().geometry_storage().acquire_write(
@@ -253,9 +261,11 @@ namespace Corona::Systems
                                         m.materialColor[0], m.materialColor[1], m.materialColor[2], m.materialColor[3]
                                     };
                                     rasterizer[test_frag_glsl::pushConsts::materialColor] = materialColor;
+                                    rasterizer[test_frag_glsl::pushConsts::objectID] = object_id;
                                     rasterizer.record(m.indexBuffer, m.vertexBuffer);
                                 }
                             }
+                            ++object_id;
                         }
 
                         compute.pushConsts.gbufferSize = hardware_->gbufferSize;
@@ -263,6 +273,9 @@ namespace Corona::Systems
                         compute.pushConsts.gbufferBaseColorImage = hardware_->gbufferBaseColorImage.storeDescriptor();
                         compute.pushConsts.gbufferNormalImage = hardware_->gbufferNormalImage.storeDescriptor();
                         compute.pushConsts.gbufferDepthImage = rasterizer.getDepthImage().storeDescriptor();
+
+                        compute.pushConsts.gbufferObjectIDImage = hardware_->gbufferObjectIDImage.storeDescriptor();
+                        compute.pushConsts.objectIDOutputImage = hardware_->objectIDOutputImage.storeDescriptor();
 
                         compute.pushConsts.finalOutputImage = hardware_->finalOutputImage.storeDescriptor();
 
@@ -398,47 +411,70 @@ namespace Corona::Systems
             return;
         }
 
-        // GPU readback: copy finalOutputImage to staging buffer
+        // Select source image based on buffer_type
+        // Group by buffer_type so we only readback each image once if there are multiple requests
         const uint64_t pixel_count = static_cast<uint64_t>(w) * h;
-        const uint64_t buffer_size = pixel_count * 8;  // RGBA16F = 4 channels * 2 bytes
-
-        HardwareBuffer staging_buffer(static_cast<uint32_t>(buffer_size), BufferUsage::StorageBuffer);
-        if (!staging_buffer) {
-            CFW_LOG_ERROR("OpticsSystem: Failed to create staging buffer for screenshot");
-            return;
+        std::unordered_map<std::string, std::vector<PendingScreenshot*>> by_type;
+        for (auto& req : matched) {
+            by_type[req.buffer_type.empty() ? "final_color" : req.buffer_type].push_back(&req);
         }
 
-        hardware_->executor << hardware_->finalOutputImage.copyTo(staging_buffer)
-                            << hardware_->executor.commit();
+        for (auto& [buf_type, reqs] : by_type) {
+            // Select the HardwareImage for this buf_type
+            HardwareImage* src_image = &hardware_->finalOutputImage;
+            bool is_normal = false;
+            if (buf_type == "object_id") {
+                src_image = &hardware_->objectIDOutputImage;
+            } else if (buf_type == "base_color") {
+                src_image = &hardware_->gbufferBaseColorImage;
+            } else if (buf_type == "normal") {
+                src_image = &hardware_->gbufferNormalImage;
+                is_normal = true;
+            } else if (buf_type == "position") {
+                src_image = &hardware_->gbufferPostionImage;
+            }
 
-        std::vector<uint16_t> half_data(pixel_count * 4);
-        if (!staging_buffer.copyToData(half_data.data(), buffer_size)) {
-            CFW_LOG_ERROR("OpticsSystem: Failed to read rendered data from GPU");
-            return;
-        }
+            const uint64_t buffer_size = pixel_count * 8;  // RGBA16F = 4 channels * 2 bytes
+            HardwareBuffer staging_buffer(static_cast<uint32_t>(buffer_size), BufferUsage::StorageBuffer);
+            if (!staging_buffer) {
+                CFW_LOG_ERROR("OpticsSystem: Failed to create staging buffer for {} screenshot", buf_type);
+                continue;
+            }
 
-        // Convert RGBA16F to RGBA8
-        std::vector<uint8_t> rgba8(pixel_count * 4);
-        for (uint64_t i = 0; i < pixel_count * 4; ++i) {
-            float v = half_to_float(half_data[i]);
-            v = std::fmax(0.0f, std::fmin(1.0f, v));
-            rgba8[i] = static_cast<uint8_t>(v * 255.0f + 0.5f);
-        }
+            hardware_->executor << src_image->copyTo(staging_buffer)
+                                << hardware_->executor.commit();
 
-        // Export each matched request using CoronaResource
-        for (const auto& req : matched) {
-            std::filesystem::path file_path(req.file_path);
-            auto image = std::make_shared<Resource::Image>(file_path);
-            image->set_data(rgba8.data(), static_cast<int>(w), static_cast<int>(h), 4);
+            std::vector<uint16_t> half_data(pixel_count * 4);
+            if (!staging_buffer.copyToData(half_data.data(), buffer_size)) {
+                CFW_LOG_ERROR("OpticsSystem: Failed to read {} data from GPU", buf_type);
+                continue;
+            }
 
-            auto rid = Resource::IResource::generate_uid(file_path);
-            auto& manager = Resource::ResourceManager::get_instance();
-            manager.add_resource(rid, image);
+            // Convert RGBA16F to RGBA8 with buffer-specific normalization
+            std::vector<uint8_t> rgba8(pixel_count * 4);
+            for (uint64_t i = 0; i < pixel_count * 4; ++i) {
+                float v = half_to_float(half_data[i]);
+                if (is_normal) {
+                    v = v * 0.5f + 0.5f;  // [-1,1] -> [0,1]
+                }
+                v = std::fmax(0.0f, std::fmin(1.0f, v));
+                rgba8[i] = static_cast<uint8_t>(v * 255.0f + 0.5f);
+            }
 
-            if (manager.export_sync(rid, file_path)) {
-                CFW_LOG_INFO("OpticsSystem: Screenshot saved to {}", req.file_path);
-            } else {
-                CFW_LOG_ERROR("OpticsSystem: Failed to save screenshot to {}", req.file_path);
+            for (const auto* req : reqs) {
+                std::filesystem::path file_path(req->file_path);
+                auto image = std::make_shared<Resource::Image>(file_path);
+                image->set_data(rgba8.data(), static_cast<int>(w), static_cast<int>(h), 4);
+
+                auto rid = Resource::IResource::generate_uid(file_path);
+                auto& manager = Resource::ResourceManager::get_instance();
+                manager.add_resource(rid, image);
+
+                if (manager.export_sync(rid, file_path)) {
+                    CFW_LOG_INFO("OpticsSystem: {} screenshot saved to {}", buf_type, req->file_path);
+                } else {
+                    CFW_LOG_ERROR("OpticsSystem: Failed to save {} screenshot to {}", buf_type, req->file_path);
+                }
             }
         }
     }

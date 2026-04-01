@@ -15,6 +15,9 @@ struct Hardware {
     HardwareImage gbufferMotionVectorImage;
     HardwareImage gbufferDepthImage;
 
+    HardwareImage gbufferObjectIDImage;
+    HardwareImage objectIDOutputImage;
+
     HardwareImage finalOutputImage;
     HardwareExecutor executor;
 

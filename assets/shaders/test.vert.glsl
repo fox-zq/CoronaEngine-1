@@ -7,6 +7,7 @@ layout(push_constant) uniform PushConsts
     uint uniformBufferIndex;
     mat4 modelMatrix;
     vec4 materialColor;
+    uint objectID;
 } pushConsts;
 
 layout(set = 1, binding = 0) readonly buffer UniformBufferObject
