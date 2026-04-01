@@ -1051,6 +1051,25 @@ float Corona::API::Mechanics::get_damping() const {
     return 0.99f;
 }
 
+void Corona::API::Mechanics::set_collision_callback(
+    std::function<void(std::uintptr_t, bool, const std::array<float,3>&, const std::array<float,3>&)> callback) {
+    if (handle_ == 0) {
+        CFW_LOG_WARNING("[Mechanics::set_collision_callback] Invalid mechanics handle");
+        return;
+    }
+
+    if (auto accessor = SharedDataHub::instance().mechanics_storage().acquire_write(handle_)) {
+        // Store a callback that accepts std::array<float,3> to match nanobind-convertible types.
+        accessor->collision_callback = [callback](std::uintptr_t other, bool began, const std::array<float,3>& normal_arr, const std::array<float,3>& point_arr) {
+            if (callback) {
+                callback(other, began, normal_arr, point_arr);
+            }
+        };
+    } else {
+        CFW_LOG_ERROR("[Mechanics::set_collision_callback] Failed to acquire write access to mechanics storage");
+    }
+}
+
 // ########################
 //       Acoustics
 // ########################

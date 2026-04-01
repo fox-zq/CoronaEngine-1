@@ -17,8 +17,23 @@
 
 #include "corona/shared_data_hub.h"
 #include "ktm/ktm.h"
+// Note: do not depend on nanobind in the mechanics system. Callbacks provided
+// from the scripting layer are expected to manage GIL acquisition themselves.
 
 namespace {
+
+struct PairHash {
+    std::size_t operator()(const std::pair<std::uintptr_t, std::uintptr_t>& p) const noexcept {
+        // combine hashes
+        std::size_t h1 = std::hash<std::uintptr_t>{}(p.first);
+        std::size_t h2 = std::hash<std::uintptr_t>{}(p.second);
+        return h1 ^ (h2 << 1);
+    }
+};
+
+// Persistent set of active collision pairs from previous frame
+static std::unordered_set<std::pair<std::uintptr_t, std::uintptr_t>, PairHash> g_prev_active_collisions;
+
 
 
 constexpr ktm::fvec3 make_fvec3(float x, float y, float z) {
@@ -258,6 +273,7 @@ void MechanicsSystem::update_physics() {
     std::unordered_map<std::uintptr_t, float> handle_to_mass;         // 物体句柄→质量
     std::unordered_map<std::uintptr_t, float> handle_to_damping;      // 物体句柄→阻尼
     std::unordered_map<std::uintptr_t, float> handle_to_restitution;  // 物体句柄→反弹系数
+    std::unordered_map<std::uintptr_t, std::uintptr_t> mech_to_actor;  // mechanics_handle -> actor_handle
 
 
     auto& mechanics_storage = SharedDataHub::instance().mechanics_storage();
@@ -300,6 +316,8 @@ void MechanicsSystem::update_physics() {
                         //过滤有效物理物体
                         if (profile->mechanics_handle != 0) {
                             mechanics_handles.push_back(profile->mechanics_handle);
+                            // record mapping from mechanics handle to its owning actor handle
+                            mech_to_actor[profile->mechanics_handle] = actor_handle;
                             //初始化速度
                             handle_to_velocity[profile->mechanics_handle] = make_fvec3(0.0f, 0.0f, 0.0f);
                             // 从 MechanicsDevice 读取物体级参数
@@ -494,6 +512,9 @@ void MechanicsSystem::update_physics() {
     //去重碰撞对
     octree_dedupe_pairs(pairs);
 
+    // Build current active collision set (actor pairs)
+    std::unordered_set<std::pair<std::uintptr_t, std::uintptr_t>, PairHash> curr_active_collisions;
+
     //窄相位碰撞检测与响应
     constexpr float eps = 1e-6f;               //容差
     constexpr float min_separation = 0.001f;   //避免微小重叠
@@ -534,6 +555,71 @@ void MechanicsSystem::update_physics() {
 
         //重叠量过小，忽略
         if (min_overlap < min_separation) continue;
+
+        ktm::fvec3 point;
+        point.x = (a.center_world.x + b.center_world.x) * 0.5f;
+        point.y = (a.center_world.y + b.center_world.y) * 0.5f;
+        point.z = (a.center_world.z + b.center_world.z) * 0.5f;
+
+        // Acquire accessors and copy callbacks out while holding the accessor to
+        // avoid races with writers. Call the copied callbacks outside the
+        // accessor scope so we don't hold engine locks while invoking Python.
+        std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> cb_a;
+        std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> cb_b;
+
+        {
+            auto mech_a_acc = mechanics_storage.acquire_read(ha);
+            if (mech_a_acc && mech_a_acc->collision_callback) {
+                cb_a = mech_a_acc->collision_callback; // copy under read lock
+            }
+        }
+
+        {
+            auto mech_b_acc = mechanics_storage.acquire_read(hb);
+            if (mech_b_acc && mech_b_acc->collision_callback) {
+                cb_b = mech_b_acc->collision_callback; // copy under read lock
+            }
+        }
+
+        // Prepare arrays for callback arguments
+        std::array<float, 3> normal_arr = {normal.x, normal.y, normal.z};
+        std::array<float, 3> point_arr = {point.x, point.y, point.z};
+
+        // Translate mechanics handles to actor handles (fallback to mechanics handle if mapping missing)
+        std::uintptr_t actor_a_handle = ha;
+        std::uintptr_t actor_b_handle = hb;
+        auto it_map_a = mech_to_actor.find(ha);
+        if (it_map_a != mech_to_actor.end()) actor_a_handle = it_map_a->second;
+        auto it_map_b = mech_to_actor.find(hb);
+        if (it_map_b != mech_to_actor.end()) actor_b_handle = it_map_b->second;
+
+        // Insert actor pair into current active collisions set (order normalized)
+        std::pair<std::uintptr_t, std::uintptr_t> actor_pair = actor_a_handle <= actor_b_handle ? std::make_pair(actor_a_handle, actor_b_handle) : std::make_pair(actor_b_handle, actor_a_handle);
+        curr_active_collisions.insert(actor_pair);
+
+        // Determine if this pair was newly started this frame
+        bool was_active = (g_prev_active_collisions.find(actor_pair) != g_prev_active_collisions.end());
+
+        // Only notify on collision start (was not active previously). Sustained collisions are ignored.
+        if (!was_active) {
+            if (cb_a) {
+                try {
+                    // cb_a is callback for object A; pass other actor handle (B) and began=true
+                    cb_a(actor_b_handle, true, normal_arr, point_arr);
+                } catch (...) {
+                    CFW_LOG_ERROR("MechanicsSystem: Exception occurred in collision callback for actor {}.", actor_a_handle);
+                }
+            }
+
+            if (cb_b) {
+                std::array<float, 3> reverse_normal_arr = {-normal.x, -normal.y, -normal.z};
+                try {
+                    cb_b(actor_a_handle, true, reverse_normal_arr, point_arr);
+                } catch (...) {
+                    CFW_LOG_ERROR("MechanicsSystem: Exception occurred in collision callback for actor {}.", actor_b_handle);
+                }
+            }
+        }
 
         //穿透修复：根据质量分配位移（质量大的物体位移少）
         float mass_a = handle_to_mass[ha];

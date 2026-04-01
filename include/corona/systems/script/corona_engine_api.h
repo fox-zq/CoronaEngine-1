@@ -6,6 +6,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <functional>
 
 namespace Corona {
 class Model;
@@ -73,6 +74,8 @@ class Mechanics {
     void set_damping(float damping);
     [[nodiscard]] float get_damping() const;
 
+    // 设置碰撞回调（参数为对方 actor 句柄、began(true=enter,false=exit)、法线、碰撞点）
+    void set_collision_callback(std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> callback);
    private:
     friend class Actor;
 
@@ -181,11 +184,12 @@ class Actor {
     void set_active_profile(const Profile* profile);
     [[nodiscard]] Profile* get_active_profile();
     [[nodiscard]] std::size_t profile_count() const;
+    
+    [[nodiscard]] std::uintptr_t get_handle() const;
 
    private:
     friend class Scene;
 
-    [[nodiscard]] std::uintptr_t get_handle() const;
 
     std::uintptr_t handle_{};
     std::unordered_map<std::uintptr_t, Profile> profiles_;

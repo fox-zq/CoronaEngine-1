@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace nb = nanobind;
 using namespace Corona::API;
@@ -54,7 +55,50 @@ void BindAll(nanobind::module_& m) {
         .def("set_damping", &Mechanics::set_damping, nb::arg("damping"),
              "Set velocity damping factor")
         .def("get_damping", &Mechanics::get_damping,
-             "Get velocity damping factor");
+             "Get velocity damping factor")
+        .def("set_collision_callback",
+             // Wrap Python callable into a std::function expected by the C++ API.
+             [](Mechanics& self, nb::object callback) {
+                 using CallbackType = std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)>;
+
+                 if (callback.is_none()) {
+                     // Clear callback
+                     self.set_collision_callback(CallbackType{});
+                     return;
+                 }
+
+                // Capture Python callable as a shared_ptr to nb::object with a deleter
+                // that acquires the GIL before destroying the nb::object. This ensures
+                // Py_DECREF runs with the GIL held even if the callback is cleared
+                // from another thread.
+                auto func_ptr = std::shared_ptr<nb::object>(new nb::object(callback), [](nb::object* p) {
+                    try {
+                        nb::gil_scoped_acquire gil;
+                        delete p;
+                    } catch (...) {
+                        // If GIL acquisition fails, try to delete anyway to avoid leak.
+                        delete p;
+                    }
+                });
+
+                CallbackType cb = [func_ptr](std::uintptr_t other, bool began, const std::array<float, 3>& normal, const std::array<float, 3>& point) mutable {
+                    // Acquire Python GIL because this callback may be invoked from another thread
+                    nb::gil_scoped_acquire gil;
+                    try {
+                        // Try calling new-style callback with (other, began, normal, point)
+                        (*func_ptr).attr("__call__")(other, began, normal, point);
+                    }  catch (const std::exception &e) {
+                        CFW_LOG_ERROR("[Bindings::collision_callback] std::exception when invoking Python callback: {}", e.what());
+                    } catch (...) {
+                        CFW_LOG_ERROR("[Bindings::collision_callback] Unknown exception when invoking Python callback");
+                    }
+                };
+
+                 self.set_collision_callback(cb);
+             },
+
+             nb::arg("callback"),
+             "Set collision callback. Callback receives (other_handle, normal, point) where normal and point are (x,y,z) tuples.");
 
     // ============================================================================
     // Optics: 光学/渲染组件
@@ -127,7 +171,8 @@ void BindAll(nanobind::module_& m) {
              "Get the currently active profile",
              nb::rv_policy::reference_internal)
         .def("profile_count", &Actor::profile_count,
-             "Get number of profiles in this actor");
+             "Get number of profiles in this actor")
+        .def("get_handle", &Actor::get_handle, "Get the underlying handle of this actor");
 
     // ============================================================================
     // Camera: 相机类（合并了原 Viewport 功能）
