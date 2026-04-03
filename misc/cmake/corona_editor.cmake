@@ -78,7 +78,7 @@ function(corona_install_corona_editor target_name core_target)
 
     if(WIN32)
         set(_CORONA_WRAPPER_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/corona_editor_install_${target_name}.bat")
-        set(_SCRIPT_CONTENT
+        string(CONCAT _SCRIPT_CONTENT
             "@echo off\n"
             "setlocal\n"
             "set DEST_ROOT=%~1\n"
@@ -101,16 +101,18 @@ function(corona_install_corona_editor target_name core_target)
         )
         file(WRITE "${_CORONA_WRAPPER_SCRIPT}" "${_SCRIPT_CONTENT}")
 
-        add_custom_command(
-            TARGET      ${target_name}
-            POST_BUILD
+        # Custom targets are always considered out-of-date, so the editor
+        # copy runs on every build.  Making the executable depend on this
+        # target ensures it is triggered even with --target <exe>.
+        add_custom_target(corona_editor_install_${target_name}
             COMMAND     cmd /c "${_CORONA_WRAPPER_SCRIPT}" "$<TARGET_FILE_DIR:${target_name}>/CabbageEditor" "$<TARGET_FILE_DIR:${target_name}>/CabbageEditor/Frontend"
             COMMENT     "[Corona:Editor] Installing editor resources..."
             VERBATIM
         )
+        add_dependencies(${target_name} corona_editor_install_${target_name})
     else()
         set(_CORONA_WRAPPER_SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/corona_editor_install_${target_name}.sh")
-        set(_SCRIPT_CONTENT
+        string(CONCAT _SCRIPT_CONTENT
             "#!/bin/bash\n"
             "DEST_ROOT=\"$1\"\n"
             "FRONTEND_DIR=\"$2\"\n"
@@ -132,12 +134,11 @@ function(corona_install_corona_editor target_name core_target)
         )
         file(WRITE "${_CORONA_WRAPPER_SCRIPT}" "${_SCRIPT_CONTENT}")
 
-        add_custom_command(
-            TARGET      ${target_name}
-            POST_BUILD
+        add_custom_target(corona_editor_install_${target_name}
             COMMAND     bash "${_CORONA_WRAPPER_SCRIPT}" "$<TARGET_FILE_DIR:${target_name}>/CabbageEditor" "$<TARGET_FILE_DIR:${target_name}>/CabbageEditor/Frontend"
             COMMENT     "[Corona:Editor] Installing editor resources..."
             VERBATIM
         )
+        add_dependencies(${target_name} corona_editor_install_${target_name})
     endif()
 endfunction()
