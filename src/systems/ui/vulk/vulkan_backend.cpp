@@ -47,7 +47,20 @@ struct ViewportData {
     ViewportRenderResources resources;   // per-window render target + geometry buffers
     RasterizerPipeline<imgui_vert_glsl, imgui_frag_glsl> pipeline;  // independent pipeline instance
     bool pipeline_ready = false;
+    bool pending_show   = false;         // deferred show: wait until first frame is rendered
 };
+
+// Deferred Platform_ShowWindow: intercept to delay OS window visibility until after the
+// first Renderer_SwapBuffers, eliminating the 1-frame white/black flash on dock-out.
+static void (*s_original_platform_show_window)(ImGuiViewport*) = nullptr;
+
+static void deferred_platform_show_window(ImGuiViewport* vp) {
+    if (auto* vd = static_cast<ViewportData*>(vp->RendererUserData)) {
+        vd->pending_show = true;  // defer until after first swap
+    } else if (s_original_platform_show_window) {
+        s_original_platform_show_window(vp);  // main viewport: show immediately
+    }
+}
 
 VulkanBackend* VulkanBackend::s_instance_ = nullptr;
 
@@ -139,6 +152,10 @@ void VulkanBackend::register_viewport_callbacks() {
     platform_io.Renderer_SetWindowSize = renderer_set_window_size;
     platform_io.Renderer_RenderWindow  = renderer_render_window;
     platform_io.Renderer_SwapBuffers   = renderer_swap_buffers;
+
+    // Intercept Platform_ShowWindow to defer OS window visibility until first frame is presented.
+    s_original_platform_show_window = platform_io.Platform_ShowWindow;
+    platform_io.Platform_ShowWindow = deferred_platform_show_window;
 
     // Main viewport is rendered via render_frame()/present_frame(), not via callbacks.
     // Set RendererUserData to nullptr so callbacks skip it (they check for null).
@@ -635,6 +652,14 @@ void VulkanBackend::renderer_swap_buffers(ImGuiViewport* vp, void* /*render_arg*
     }
 
     vd->displayer.wait(vd->resources.executor) << vd->resources.render_target;
+
+    // Deferred show: make the OS window visible now that the first frame has been presented.
+    if (vd->pending_show) {
+        if (s_original_platform_show_window) {
+            s_original_platform_show_window(vp);
+        }
+        vd->pending_show = false;
+    }
 }
 
 }  // namespace Corona::Systems
