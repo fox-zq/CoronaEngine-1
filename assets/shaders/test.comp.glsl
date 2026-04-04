@@ -371,23 +371,25 @@ float approx_air_column_density_ratio_along_3d_ray_for_curved_world(
     return approx_air_column_density_ratio_through_atmosphere(0.0f - xz, x - xz, z2, r / H);
 }
 
+float3 getAtmosphericSky(float3 rayOrigin, float3 rayDir, float3 sun_dir, float sun_power) {
 
-float3 getAtmosphericSky(float3 rayOrigin, float3 rayDir, float3 sun_dir , float sun_power)
-{
+    rayDir = normalize(rayDir);
+    sun_dir = normalize(sun_dir);
+
     int samplesCount = 16;
-
     float3 betaR = float3(5.5e-6, 13.0e-6, 22.4e-6);
     float3 betaM = float3(21e-6);
+    const float earthRadius = 6371e3;
 
     float t0, t1;
-    if (!intersectWithEarth(rayOrigin, rayDir, t0, t1))
-    {
+    if (!intersectWithEarth(rayOrigin, rayDir, t0, t1)) {
         return float3(0);
     }
 
-    float march_step = t1 / float(samplesCount);
+    if (t1 <= 0.0f) return float3(0);
 
-    float mu = dot(rayDir, sun_dir);
+    float march_step = t1 / float(samplesCount);
+    float mu = clamp(dot(rayDir, sun_dir), -1.0, 1.0);
 
     float phaseR = rayleighPhase(mu);
     float phaseM = HenyeyGreensteinPhase(mu);
@@ -399,33 +401,32 @@ float3 getAtmosphericSky(float3 rayOrigin, float3 rayDir, float3 sun_dir , float
     float3 sumM = float3(0);
     float march_pos = 0.0f;
 
-    for (int i = 0; i < samplesCount; i++)
-    {
+    for (int i = 0; i < samplesCount; i++) {
         const float hR = 7994.0f;
         const float hM = 1200.0f;
 
         float3 s = rayOrigin + rayDir * (march_pos + 0.5f * march_step);
-        float height = length(s) - 6371e3;
+
+        float height = max(length(s) - earthRadius, 0.0f);
 
         float hr = exp(-height / hR) * march_step;
         float hm = exp(-height / hM) * march_step;
         optical_depthR += hr;
         optical_depthM += hm;
 
-        float t0, t1;
-        intersectWithEarth(s, sun_dir, t0, t1);
+        float t0_light = 0.0f, t1_light = 0.0f;
+        intersectWithEarth(s, sun_dir, t0_light, t1_light);
 
-        float optical_depth_lightR =approx_air_column_density_ratio_along_3d_ray_for_curved_world(s,sun_dir,t1,6371e3,hR);
-        float optical_depth_lightM =approx_air_column_density_ratio_along_3d_ray_for_curved_world(s,sun_dir,t1, 6371e3, hM);
 
-        //if (true)
-        {
-            float3 tau =betaR * (optical_depthR + optical_depth_lightR) + betaM * 1.1f * (optical_depthM + optical_depth_lightM);
-            float3 attenuation = exp(-tau);
+        float optical_depth_lightR = approx_air_column_density_ratio_along_3d_ray_for_curved_world(s, sun_dir, t1_light, earthRadius, hR);
+        float optical_depth_lightM = approx_air_column_density_ratio_along_3d_ray_for_curved_world(s, sun_dir, t1_light, earthRadius, hM);
 
-            sumR += hr * attenuation;
-            sumM += hm * attenuation;
-        }
+        float3 tau = betaR * (optical_depthR + optical_depth_lightR) + betaM * 1.1f * (optical_depthM + optical_depth_lightM);
+
+        float3 attenuation = exp(-max(tau, 0.0f));
+
+        sumR += hr * attenuation;
+        sumM += hm * attenuation;
 
         march_pos += march_step;
     }
