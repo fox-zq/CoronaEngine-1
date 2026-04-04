@@ -103,10 +103,14 @@ namespace Corona::Systems
 
             hardware_->gbufferObjectIDImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
                                                             ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->objectIDOutputImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
+                                                           ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
 
             hardware_->uniformBuffer =
                 HardwareBuffer(sizeof(Hardware::UniformBufferObject), BufferUsage::StorageBuffer);
             hardware_->gbufferUniformBuffer = HardwareBuffer(sizeof(Hardware::gbufferUniformBufferObject),
+                                                             BufferUsage::StorageBuffer);
+            hardware_->computeUniformBuffer = HardwareBuffer(sizeof(Hardware::ComputeUniformBufferObject),
                                                              BufferUsage::StorageBuffer);
 
             hardware_->finalOutputImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
@@ -126,9 +130,7 @@ namespace Corona::Systems
         try
         {
             hardware_->rasterizerPipeline.emplace();
-            hardware_->lightingPipeline.emplace();
-            hardware_->skyPipeline.emplace();
-            hardware_->tonemapPipeline.emplace();
+            hardware_->computePipeline.emplace();
             hardware_->shaderHasInit = true;
             CFW_LOG_INFO("OpticsSystem: Typed shader pipelines created successfully");
         }
@@ -179,8 +181,7 @@ namespace Corona::Systems
 
     void OpticsSystem::update()
     {
-        if (!hardware_->shaderHasInit || !hardware_->rasterizerPipeline ||
-            !hardware_->lightingPipeline || !hardware_->skyPipeline || !hardware_->tonemapPipeline)
+        if (!hardware_->shaderHasInit || !hardware_->rasterizerPipeline || !hardware_->computePipeline)
         {
             return;
         }
@@ -199,9 +200,7 @@ namespace Corona::Systems
     {
         // CFW_LOG_DEBUG("OpticsSystem: Rendering pipeline temporarily disabled - waiting for new Storage API");
         auto& rasterizer = *hardware_->rasterizerPipeline;
-        auto& lighting = *hardware_->lightingPipeline;
-        auto& sky = *hardware_->skyPipeline;
-        auto& tonemap = *hardware_->tonemapPipeline;
+        auto& compute = *hardware_->computePipeline;
 
         // 遍历场景存储并使用 acquire_read 访问相关句柄
         for (const auto& scene : SharedDataHub::instance().scene_storage())
@@ -269,7 +268,17 @@ namespace Corona::Systems
                             ++object_id;
                         }
 
-                        // === Environment parameters ===
+                        compute.pushConsts.gbufferSize = hardware_->gbufferSize;
+                        compute.pushConsts.gbufferPostionImage = hardware_->gbufferPostionImage.storeDescriptor();
+                        compute.pushConsts.gbufferBaseColorImage = hardware_->gbufferBaseColorImage.storeDescriptor();
+                        compute.pushConsts.gbufferNormalImage = hardware_->gbufferNormalImage.storeDescriptor();
+                        compute.pushConsts.gbufferDepthImage = rasterizer.getDepthImage().storeDescriptor();
+
+                        compute.pushConsts.gbufferObjectIDImage = hardware_->gbufferObjectIDImage.storeDescriptor();
+                        compute.pushConsts.objectIDOutputImage = hardware_->objectIDOutputImage.storeDescriptor();
+
+                        compute.pushConsts.finalOutputImage = hardware_->finalOutputImage.storeDescriptor();
+
                         ktm::fvec3 sun_dir;
                         sun_dir.x = 1.0f;
                         sun_dir.y = 1.0f;
@@ -284,40 +293,23 @@ namespace Corona::Systems
                                 floor_grid_enabled = env->floor_grid_enabled;
                             }
                         }
-                        sun_dir = ktm::normalize(sun_dir);
+
+                        compute.pushConsts.sun_dir = ktm::normalize(sun_dir);
+                        compute.pushConsts.floor_grid_enabled = floor_grid_enabled;
+                        {
+                            // 调整为黄昏颜色 (Dusk)
+                            static const ktm::fvec3 lightColor{
+                                190.0f,
+                                120.0f,
+                                60.0f
+                            };
+
+                            compute.pushConsts.lightColor = lightColor;
+                        }
 
                         hardware_->uniformBuffer.copyFromData(&hardware_->uniformBufferObjects,
                                                               sizeof(hardware_->uniformBufferObjects));
-                        const uint32_t uboDescriptor = hardware_->uniformBuffer.storeDescriptor();
-                        const uint32_t depthDescriptor = rasterizer.getDepthImage().storeDescriptor();
-                        const uint32_t finalOutputDescriptor = hardware_->finalOutputImage.storeDescriptor();
-
-                        // === Lighting pass: PBR direct illumination (geometry pixels only) ===
-                        lighting.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        lighting.pushConsts.gbufferPostionImage = hardware_->gbufferPostionImage.storeDescriptor();
-                        lighting.pushConsts.gbufferBaseColorImage = hardware_->gbufferBaseColorImage.storeDescriptor();
-                        lighting.pushConsts.gbufferNormalImage = hardware_->gbufferNormalImage.storeDescriptor();
-                        lighting.pushConsts.gbufferDepthImage = depthDescriptor;
-                        lighting.pushConsts.finalOutputImage = finalOutputDescriptor;
-                        lighting.pushConsts.uniformBufferIndex = uboDescriptor;
-                        lighting.pushConsts.sun_dir = sun_dir;
-                        {
-                            static const ktm::fvec3 lightColor{190.0f, 120.0f, 60.0f};
-                            lighting.pushConsts.lightColor = lightColor;
-                        }
-
-                        // === Sky pass: atmospheric scattering + floor grid (background pixels only) ===
-                        sky.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        sky.pushConsts.gbufferDepthImage = depthDescriptor;
-                        sky.pushConsts.finalOutputImage = finalOutputDescriptor;
-                        sky.pushConsts.uniformBufferIndex = uboDescriptor;
-                        sky.pushConsts.sun_dir = sun_dir;
-                        sky.pushConsts.floor_grid_enabled = floor_grid_enabled;
-
-                        // === Tonemap pass: ACES filmic HDR -> LDR (full screen) ===
-                        tonemap.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        tonemap.pushConsts.inputImage = finalOutputDescriptor;
-                        tonemap.pushConsts.outputImage = finalOutputDescriptor;
+                        compute.pushConsts.uniformBufferIndex = hardware_->uniformBuffer.storeDescriptor();
 
                         // GPU sync: wait for Display to finish consuming our image
                         // before we overwrite it with new rendering output.
@@ -327,12 +319,8 @@ namespace Corona::Systems
                             }
                         }
 
-                        const uint32_t dispatchX = hardware_->gbufferSize.x / 8;
-                        const uint32_t dispatchY = hardware_->gbufferSize.y / 8;
                         hardware_->executor << rasterizer(1920, 1080)
-                            << lighting(dispatchX, dispatchY, 1)
-                            << sky(dispatchX, dispatchY, 1)
-                            << tonemap(dispatchX, dispatchY, 1)
+                            << compute(1920 / 8, 1080 / 8, 1)
                             << hardware_->executor.commit();
 
                         if (image_handle_ != 0)
@@ -436,7 +424,7 @@ namespace Corona::Systems
             HardwareImage* src_image = &hardware_->finalOutputImage;
             bool is_normal = false;
             if (buf_type == "object_id") {
-                src_image = &hardware_->gbufferObjectIDImage;
+                src_image = &hardware_->objectIDOutputImage;
             } else if (buf_type == "base_color") {
                 src_image = &hardware_->gbufferBaseColorImage;
             } else if (buf_type == "normal") {

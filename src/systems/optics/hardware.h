@@ -6,9 +6,7 @@
 
 #include GLSL(../../../assets/shaders/test.vert.glsl)
 #include GLSL(../../../assets/shaders/test.frag.glsl)
-#include GLSL(../../../assets/shaders/lighting.comp.glsl)
-#include GLSL(../../../assets/shaders/sky.comp.glsl)
-#include GLSL(../../../assets/shaders/tonemap.comp.glsl)
+#include GLSL(../../../assets/shaders/test.comp.glsl)
 
 struct Hardware {
     HardwareImage gbufferPostionImage;
@@ -18,18 +16,18 @@ struct Hardware {
     HardwareImage gbufferDepthImage;
 
     HardwareImage gbufferObjectIDImage;
+    HardwareImage objectIDOutputImage;
 
     HardwareImage finalOutputImage;
     HardwareExecutor executor;
 
     HardwareBuffer uniformBuffer;
     HardwareBuffer gbufferUniformBuffer;
+    HardwareBuffer computeUniformBuffer;
 
     bool shaderHasInit = false;
     std::optional<RasterizerPipeline<test_vert_glsl, test_frag_glsl>> rasterizerPipeline;
-    std::optional<ComputePipeline<lighting_comp_glsl>> lightingPipeline;
-    std::optional<ComputePipeline<sky_comp_glsl>> skyPipeline;
-    std::optional<ComputePipeline<tonemap_comp_glsl>> tonemapPipeline;
+    std::optional<ComputePipeline<test_comp_glsl>> computePipeline;
 
     struct UniformBufferObject {
         // Light data (for shadow mapping, etc.)
@@ -50,6 +48,13 @@ struct Hardware {
     struct gbufferUniformBufferObject {
         ktm::fmat4x4 viewProjMatrix;
     } gbufferUniformBufferObjects{};
+
+    struct ComputeUniformBufferObject {
+        float time;
+        ktm::fvec2 imageSize;
+        uint32_t inputImageID;
+        uint32_t outputImageID;
+    } computeUniformBufferObjects{};
 
     // 渲染大小
     ktm::uvec2 gbufferSize{};
