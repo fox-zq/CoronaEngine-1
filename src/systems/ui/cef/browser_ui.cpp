@@ -327,16 +327,14 @@ void BrowserRenderer::render_single_tab(int tab_id,
 
     std::string window_id = tab->name + "##" + std::to_string(tab_id);
 
-    // 窗口标志：始终加上 NoMove（禁止移动）
     ImGuiWindowFlags browser_window_flags = ImGuiWindowFlags_NoTitleBar |
                                             ImGuiWindowFlags_NoScrollbar |
                                             ImGuiWindowFlags_NoNavInputs |
-                                            ImGuiWindowFlags_NoNavFocus |
-                                            ImGuiWindowFlags_NoMove;  // 强制禁止移动
+                                            ImGuiWindowFlags_NoNavFocus;
 
     bool is_main_tab = (tab->docking_pos == "main");
     if (is_main_tab) {
-        browser_window_flags |= ImGuiWindowFlags_NoMove;  // 主窗口始终禁止
+        browser_window_flags |= ImGuiWindowFlags_NoMove;  // 主窗口始终禁止移动
     }
 
     setup_window_transform(tab, dock_space_id, is_main_tab);
@@ -404,17 +402,14 @@ void BrowserRenderer::render_single_tab(int tab_id,
                         window = ImGui::GetCurrentWindow();  // 分离后窗口可能重建
                     }
 
-                    // 临时移除 NoMove 标志，使窗口可移动
-                    window->Flags &= ~ImGuiWindowFlags_NoMove;
-
-                    // 启动 ImGui 内置窗口移动（会显示停靠预览）
+                    // 启动 ImGui 内置窗口移动（支持Multi-Viewport跨窗口拖拽）
                     ImGui::StartMouseMovingWindow(window);
                 } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                     tab->drag_pending = false;  // 视为点击
                 }
             }
 
-            // 拖拽结束：重置状态（下一帧窗口会重新加上 NoMove）
+            // 拖拽结束：重置状态
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
                 tab->dragging_window = false;
                 tab->drag_pending = false;

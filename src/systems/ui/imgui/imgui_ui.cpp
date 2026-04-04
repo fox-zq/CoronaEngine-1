@@ -91,6 +91,9 @@ namespace Corona::Systems::UI
 
         ImGui_ImplSDL3_InitForOther(window);
 
+        // Register renderer viewport callbacks now that ImGui context and SDL3 platform are ready.
+        vulkan_backend->register_viewport_callbacks();
+
         return true;
     }
 
@@ -207,8 +210,9 @@ namespace Corona::Systems::UI
         context.vulkan_backend->new_frame();
         ImGui_ImplSDL3_NewFrame();
 
-        // TODO: 字体Bug，随便修一个，后面看你们怎么改
-        if (context.io) 
+        // Ensure RendererHasTextures stays disabled — our custom renderer does not
+        // implement the ImGui texture management API (font atlas is manual).
+        if (context.io)
         {
             context.io->BackendFlags &= ~ImGuiBackendFlags_RendererHasTextures;
         }
