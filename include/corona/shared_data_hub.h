@@ -120,6 +120,14 @@ struct ActorDevice {
     std::vector<std::uintptr_t> profile_handles;
 };
 
+enum class CameraOutputMode : uint8_t {
+    FinalColor,
+    BaseColor,
+    Normal,
+    WorldPosition,
+    ObjectID,
+};
+
 struct CameraDevice {
     void* surface{};
 
@@ -130,6 +138,7 @@ struct CameraDevice {
     float aspect{16.0f / 9.0f};
     float near_plane{0.1f};
     float far_plane{100.0f};
+    CameraOutputMode output_mode{CameraOutputMode::FinalColor};
 
     CameraDevice() {
         position.x = 0.0f;

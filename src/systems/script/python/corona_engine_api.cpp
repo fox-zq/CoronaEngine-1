@@ -1541,26 +1541,47 @@ void Corona::API::Camera::save_screenshot(const std::string& path) const {
     }
 }
 
-void Corona::API::Camera::save_gbuffer(const std::string& path, const std::string& buffer_type) const {
+void Corona::API::Camera::set_output_mode(const std::string& mode) {
     if (handle_ == 0) {
-        CFW_LOG_WARNING("[Camera::save_gbuffer] Invalid camera handle");
+        CFW_LOG_WARNING("[Camera::set_output_mode] Invalid camera handle");
         return;
     }
 
-    void* surface = nullptr;
+    CameraOutputMode output_mode = CameraOutputMode::FinalColor;
+    if (mode == "base_color") {
+        output_mode = CameraOutputMode::BaseColor;
+    } else if (mode == "normal") {
+        output_mode = CameraOutputMode::Normal;
+    } else if (mode == "position") {
+        output_mode = CameraOutputMode::WorldPosition;
+    } else if (mode == "object_id") {
+        output_mode = CameraOutputMode::ObjectID;
+    } else if (mode != "final_color") {
+        CFW_LOG_WARNING("[Camera::set_output_mode] Unknown mode '{}', defaulting to final_color", mode);
+    }
+
+    if (auto accessor = SharedDataHub::instance().camera_storage().acquire_write(handle_)) {
+        accessor->output_mode = output_mode;
+    }
+    CFW_LOG_INFO("[Camera::set_output_mode] Mode set to '{}'", mode);
+}
+
+std::string Corona::API::Camera::get_output_mode() const {
+    if (handle_ == 0) {
+        return "final_color";
+    }
+
     if (auto accessor = SharedDataHub::instance().camera_storage().acquire_read(handle_)) {
-        surface = accessor->surface;
+        switch (accessor->output_mode) {
+            case CameraOutputMode::BaseColor:     return "base_color";
+            case CameraOutputMode::Normal:        return "normal";
+            case CameraOutputMode::WorldPosition: return "position";
+            case CameraOutputMode::ObjectID:      return "object_id";
+            case CameraOutputMode::FinalColor:    [[fallthrough]];
+            default:                              return "final_color";
+        }
     }
-
-    if (surface == nullptr) {
-        CFW_LOG_WARNING("[Camera::save_gbuffer] Camera has no associated surface");
-        return;
-    }
-
-    if (auto* event_bus = Kernel::KernelContext::instance().event_bus()) {
-        event_bus->publish<Events::ScreenshotRequestEvent>({surface, path, buffer_type});
-        CFW_LOG_INFO("[Camera::save_gbuffer] GBuffer ({}) request queued: {}", buffer_type, path);
-    }
+    return "final_color";
 }
 
 // ########################

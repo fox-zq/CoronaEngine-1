@@ -223,7 +223,9 @@ class Camera {
              const std::array<float, 3>& world_up, float fov);
     void set_surface(void* surface);
     void save_screenshot(const std::string& path) const;
-    void save_gbuffer(const std::string& path, const std::string& buffer_type) const;
+
+    void set_output_mode(const std::string& mode);
+    [[nodiscard]] std::string get_output_mode() const;
 
     [[nodiscard]] std::array<float, 3> get_position() const;
     [[nodiscard]] std::array<float, 3> get_forward() const;
