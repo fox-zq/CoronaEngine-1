@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace nb = nanobind;
 using namespace Corona::API;
@@ -33,21 +34,90 @@ void BindAll(nanobind::module_& m) {
         .def("get_rotation", &Geometry::get_rotation,
              "Get local rotation (Euler angles) [pitch, yaw, roll]")
         .def("get_scale", &Geometry::get_scale,
-             "Get local scale [x, y, z]");
+             "Get local scale [x, y, z]")
+        .def("get_aabb", &Geometry::get_aabb,
+             "Get model AABB [min_x, min_y, min_z, max_x, max_y, max_z]");
 
     // ============================================================================
     // Mechanics: 物理/力学组件
     // ============================================================================
     nb::class_<Mechanics>(m, "Mechanics")
         .def(nb::init<Geometry&>(), nb::arg("geometry"),
-             "Create a Mechanics component attached to a Geometry");
+             "Create a Mechanics component attached to a Geometry")
+        .def("set_mass", &Mechanics::set_mass, nb::arg("mass"),
+             "Set object mass")
+        .def("get_mass", &Mechanics::get_mass,
+             "Get object mass")
+        .def("set_restitution", &Mechanics::set_restitution, nb::arg("restitution"),
+             "Set object restitution (bounciness)")
+        .def("get_restitution", &Mechanics::get_restitution,
+             "Get object restitution")
+        .def("set_damping", &Mechanics::set_damping, nb::arg("damping"),
+             "Set velocity damping factor")
+        .def("get_damping", &Mechanics::get_damping,
+             "Get velocity damping factor")
+        .def("set_collision_callback",
+             // Wrap Python callable into a std::function expected by the C++ API.
+             [](Mechanics& self, nb::object callback) {
+                 using CallbackType = std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)>;
+
+                 if (callback.is_none()) {
+                     // Clear callback
+                     self.set_collision_callback(CallbackType{});
+                     return;
+                 }
+
+                // Capture Python callable as a shared_ptr to nb::object with a deleter
+                // that acquires the GIL before destroying the nb::object. This ensures
+                // Py_DECREF runs with the GIL held even if the callback is cleared
+                // from another thread.
+                auto func_ptr = std::shared_ptr<nb::object>(new nb::object(callback), [](nb::object* p) {
+                    try {
+                        nb::gil_scoped_acquire gil;
+                        delete p;
+                    } catch (...) {
+                        // If GIL acquisition fails, try to delete anyway to avoid leak.
+                        delete p;
+                    }
+                });
+
+                CallbackType cb = [func_ptr](std::uintptr_t other, bool began, const std::array<float, 3>& normal, const std::array<float, 3>& point) mutable {
+                    // Acquire Python GIL because this callback may be invoked from another thread
+                    nb::gil_scoped_acquire gil;
+                    try {
+                        // Try calling new-style callback with (other, began, normal, point)
+                        (*func_ptr).attr("__call__")(other, began, normal, point);
+                    }  catch (const std::exception &e) {
+                        CFW_LOG_ERROR("[Bindings::collision_callback] std::exception when invoking Python callback: {}", e.what());
+                    } catch (...) {
+                        CFW_LOG_ERROR("[Bindings::collision_callback] Unknown exception when invoking Python callback");
+                    }
+                };
+
+                 self.set_collision_callback(cb);
+             },
+
+             nb::arg("callback"),
+             "Set collision callback. Callback receives (other_handle, normal, point) where normal and point are (x,y,z) tuples.");
 
     // ============================================================================
     // Optics: 光学/渲染组件
     // ============================================================================
     nb::class_<Optics>(m, "Optics")
         .def(nb::init<Geometry&>(), nb::arg("geometry"),
-             "Create an Optics component attached to a Geometry");
+             "Create an Optics component attached to a Geometry")
+        .def("set_metallic", &Optics::set_metallic, nb::arg("metallic"))
+        .def("get_metallic", &Optics::get_metallic)
+        .def("set_roughness", &Optics::set_roughness, nb::arg("roughness"))
+        .def("get_roughness", &Optics::get_roughness)
+        .def("set_ambient", &Optics::set_ambient, nb::arg("ambient"))
+        .def("get_ambient", &Optics::get_ambient)
+        .def("set_diffuse", &Optics::set_diffuse, nb::arg("diffuse"))
+        .def("get_diffuse", &Optics::get_diffuse)
+        .def("set_specular", &Optics::set_specular, nb::arg("specular"))
+        .def("get_specular", &Optics::get_specular)
+        .def("set_shininess", &Optics::set_shininess, nb::arg("shininess"))
+        .def("get_shininess", &Optics::get_shininess);
 
     // ============================================================================
     // Acoustics: 声学组件
@@ -101,10 +171,11 @@ void BindAll(nanobind::module_& m) {
              "Get the currently active profile",
              nb::rv_policy::reference_internal)
         .def("profile_count", &Actor::profile_count,
-             "Get number of profiles in this actor");
+             "Get number of profiles in this actor")
+        .def("get_handle", &Actor::get_handle, "Get the underlying handle of this actor");
 
     // ============================================================================
-    // Camera: 相机类
+    // Camera: 相机类（合并了原 Viewport 功能）
     // ============================================================================
     nb::class_<Camera>(m, "Camera")
         .def(nb::init<>(), "Create a default Camera")
@@ -117,54 +188,36 @@ void BindAll(nanobind::module_& m) {
              "Set all camera parameters at once")
         .def("save_screenshot", &Camera::save_screenshot, nb::arg("path"),
              "Save a screenshot from this camera's perspective to file")
+        .def("save_gbuffer", &Camera::save_gbuffer, nb::arg("path"), nb::arg("buffer_type"),
+             "Save a GBuffer pass to file. buffer_type: 'final_color', 'object_id', 'base_color', 'normal', 'position'")
         .def("set_surface", [](Camera& self, std::uintptr_t surface) { self.set_surface(reinterpret_cast<void*>(surface)); }, nb::arg("surface"), "Set render surface (pass window ID as integer)")
         .def("get_position", &Camera::get_position, "Get camera position [x, y, z]")
         .def("get_forward", &Camera::get_forward, "Get camera forward direction [x, y, z]")
         .def("get_world_up", &Camera::get_world_up, "Get camera world up vector [x, y, z]")
-        .def("get_fov", &Camera::get_fov, "Get field of view in degrees");
+        .def("get_fov", &Camera::get_fov, "Get field of view in degrees")
+        .def("set_image_effects", &Camera::set_image_effects, nb::arg("effects"),
+             "Set image effects for this camera")
+        .def("get_image_effects", &Camera::get_image_effects,
+             "Get image effects attached to this camera",
+             nb::rv_policy::reference)
+        .def("has_image_effects", &Camera::has_image_effects,
+             "Check if camera has image effects")
+        .def("remove_image_effects", &Camera::remove_image_effects,
+             "Remove image effects from this camera")
+        .def("set_size", &Camera::set_size, nb::arg("width"), nb::arg("height"),
+             "Set camera render dimensions")
+        .def("set_viewport_rect", &Camera::set_viewport_rect,
+             nb::arg("x"), nb::arg("y"), nb::arg("width"), nb::arg("height"),
+             "Set viewport rectangle")
+        .def("pick_actor_at_pixel", &Camera::pick_actor_at_pixel,
+             nb::arg("x"), nb::arg("y"),
+             "Pick actor at pixel coordinates");
 
     // ============================================================================
     // ImageEffects: 图像效果类
     // ============================================================================
     nb::class_<ImageEffects>(m, "ImageEffects")
         .def(nb::init<>(), "Create an ImageEffects instance");
-
-    // ============================================================================
-    // Viewport: 视口类
-    // ============================================================================
-    nb::class_<Viewport>(m, "Viewport")
-        .def(nb::init<>(), "Create a default Viewport")
-        .def(nb::init<int, int, bool>(),
-             nb::arg("width"), nb::arg("height"), nb::arg("light_field") = false,
-             "Create a Viewport with specified dimensions")
-        .def("set_camera", &Viewport::set_camera, nb::arg("camera"),
-             "Set the camera for this viewport")
-        .def("get_camera", &Viewport::get_camera,
-             "Get the camera attached to this viewport",
-             nb::rv_policy::reference)
-        .def("has_camera", &Viewport::has_camera,
-             "Check if viewport has a camera")
-        .def("remove_camera", &Viewport::remove_camera,
-             "Remove camera from this viewport")
-        .def("set_image_effects", &Viewport::set_image_effects, nb::arg("effects"),
-             "Set image effects for this viewport")
-        .def("get_image_effects", &Viewport::get_image_effects,
-             "Get image effects attached to this viewport",
-             nb::rv_policy::reference)
-        .def("has_image_effects", &Viewport::has_image_effects,
-             "Check if viewport has image effects")
-        .def("remove_image_effects", &Viewport::remove_image_effects,
-             "Remove image effects from this viewport")
-        .def("set_size", &Viewport::set_size, nb::arg("width"), nb::arg("height"),
-             "Set viewport dimensions")
-        .def("set_viewport_rect", &Viewport::set_viewport_rect,
-             nb::arg("x"), nb::arg("y"), nb::arg("width"), nb::arg("height"),
-             "Set viewport rectangle")
-        .def("pick_actor_at_pixel", &Viewport::pick_actor_at_pixel,
-             nb::arg("x"), nb::arg("y"),
-             "Pick actor at pixel coordinates")
-        .def("save_screenshot", &Viewport::save_screenshot, nb::arg("path"),
-             "Save a screenshot from this viewport's camera to file");
 
     // ============================================================================
     // Environment: 环境类
@@ -174,7 +227,23 @@ void BindAll(nanobind::module_& m) {
         .def("set_sun_direction", &Environment::set_sun_direction, nb::arg("direction"),
              "Set sun light direction [x, y, z]")
         .def("set_floor_grid", &Environment::set_floor_grid, nb::arg("enabled"),
-             "Enable or disable floor grid rendering");
+             "Enable or disable floor grid rendering")
+        .def("set_gravity", &Environment::set_gravity, nb::arg("gravity"),
+             "Set gravity vector [x, y, z]")
+        .def("get_gravity", &Environment::get_gravity,
+             "Get gravity vector [x, y, z]")
+        .def("set_floor_y", &Environment::set_floor_y, nb::arg("y"),
+             "Set floor plane Y height")
+        .def("get_floor_y", &Environment::get_floor_y,
+             "Get floor plane Y height")
+        .def("set_floor_restitution", &Environment::set_floor_restitution, nb::arg("restitution"),
+             "Set floor restitution (bounciness)")
+        .def("get_floor_restitution", &Environment::get_floor_restitution,
+             "Get floor restitution")
+        .def("set_fixed_dt", &Environment::set_fixed_dt, nb::arg("dt"),
+             "Set physics fixed time step")
+        .def("get_fixed_dt", &Environment::get_fixed_dt,
+             "Get physics fixed time step");
 
     // ============================================================================
     // Scene: 场景类
@@ -202,17 +271,19 @@ void BindAll(nanobind::module_& m) {
              "Get number of actors in the scene")
         .def("has_actor", &Scene::has_actor, nb::arg("actor"),
              "Check if actor is in the scene")
-        // Viewport management
-        .def("add_viewport", &Scene::add_viewport, nb::arg("viewport"),
-             "Add a viewport to the scene")
-        .def("remove_viewport", &Scene::remove_viewport, nb::arg("viewport"),
-             "Remove a viewport from the scene")
-        .def("clear_viewports", &Scene::clear_viewports,
-             "Remove all viewports from the scene")
-        .def("viewport_count", &Scene::viewport_count,
-             "Get number of viewports in the scene")
-        .def("has_viewport", &Scene::has_viewport, nb::arg("viewport"),
-             "Check if viewport is in the scene");
+        // Camera management
+        .def("add_camera", &Scene::add_camera, nb::arg("camera"),
+             "Add a camera to the scene")
+        .def("remove_camera", &Scene::remove_camera, nb::arg("camera"),
+             "Remove a camera from the scene")
+        .def("clear_cameras", &Scene::clear_cameras,
+             "Remove all cameras from the scene")
+        .def("camera_count", &Scene::camera_count,
+             "Get number of cameras in the scene")
+        .def("has_camera", &Scene::has_camera, nb::arg("camera"),
+             "Check if camera is in the scene")
+        .def("get_aabb", &Scene::get_aabb,
+             "Get scene world AABB as [min_x, min_y, min_z, max_x, max_y, max_z]");
 
     // ============================================================================
     // Scene I/O utilities

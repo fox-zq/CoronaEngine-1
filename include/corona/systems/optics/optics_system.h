@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <CabbageHardware.h>
 #include <corona/events/optics_system_events.h>
@@ -64,10 +64,7 @@ class OpticsSystem : public Kernel::SystemBase {
    private:
     bool initialize_vision_backend_if_enabled();
     bool initialize_hardware_resources();
-    bool load_shader_texts(std::string& vert_source, std::string& frag_source, std::string& compute_source);
-    bool initialize_render_pipelines(const std::string& vert_source,
-                                     const std::string& frag_source,
-                                     const std::string& compute_source);
+    bool initialize_render_pipelines();
 
     void optics_pipeline(float frame_count, uint64_t frame_index);
     void process_pending_screenshots(void* surface);
@@ -79,6 +76,7 @@ class OpticsSystem : public Kernel::SystemBase {
     {
         void* surface = nullptr;
         std::string file_path;
+        std::string buffer_type;
     };
     std::vector<PendingScreenshot> pending_screenshots_;
     std::mutex screenshot_mutex_;

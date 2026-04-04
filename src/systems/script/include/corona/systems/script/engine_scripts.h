@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <corona/systems/script/corona_engine_api.h>
 #include <nanobind/nanobind.h>

@@ -38,6 +38,7 @@ struct ScreenshotRequestEvent
 {
     void* surface = nullptr;
     std::string file_path;
+    std::string buffer_type;  // "final_color", "object_id", "base_color", "normal", "position"
 };
 
 }  // namespace Corona::Events

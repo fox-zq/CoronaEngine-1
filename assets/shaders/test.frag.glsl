@@ -7,6 +7,7 @@ layout(push_constant) uniform PushConsts
     uint uniformBufferIndex;
     mat4 modelMatrix;
     vec4 materialColor;
+    uint objectID;
 } pushConsts;
 
 layout(set = 1, binding = 0) buffer UniformBufferObject
@@ -26,6 +27,7 @@ layout(location = 0) out vec3 gbufferPostion;
 layout(location = 1) out vec3 gbufferNormal;
 layout(location = 2) out vec4 gbufferBaseColor;
 layout(location = 3) out vec2 gbufferMotionVector;
+layout(location = 4) out vec4 gbufferObjectID;
 
 void main()
 {
@@ -45,4 +47,5 @@ void main()
     
     gbufferPostion = fragPos;
     gbufferMotionVector = fragMotionVector;
+    gbufferObjectID = vec4(float(pushConsts.objectID), 0.0, 0.0, 1.0);
 }

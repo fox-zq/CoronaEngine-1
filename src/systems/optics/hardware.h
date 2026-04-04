@@ -1,6 +1,12 @@
-#pragma once
+﻿#pragma once
 
+#include <corona/shader_include.h>
 #include <CabbageHardware.h>
+#include <optional>
+
+#include GLSL(../../../assets/shaders/test.vert.glsl)
+#include GLSL(../../../assets/shaders/test.frag.glsl)
+#include GLSL(../../../assets/shaders/test.comp.glsl)
 
 struct Hardware {
     HardwareImage gbufferPostionImage;
@@ -8,6 +14,9 @@ struct Hardware {
     HardwareImage gbufferNormalImage;
     HardwareImage gbufferMotionVectorImage;
     HardwareImage gbufferDepthImage;
+
+    HardwareImage gbufferObjectIDImage;
+    HardwareImage objectIDOutputImage;
 
     HardwareImage finalOutputImage;
     HardwareExecutor executor;
@@ -17,8 +26,8 @@ struct Hardware {
     HardwareBuffer computeUniformBuffer;
 
     bool shaderHasInit = false;
-    RasterizerPipeline rasterizerPipeline;
-    ComputePipeline computePipeline;
+    std::optional<RasterizerPipeline<test_vert_glsl, test_frag_glsl>> rasterizerPipeline;
+    std::optional<ComputePipeline<test_comp_glsl>> computePipeline;
 
     struct UniformBufferObject {
         // Light data (for shadow mapping, etc.)

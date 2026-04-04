@@ -7,6 +7,7 @@
 #include <corona/kernel/core/i_logger.h>
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
+#include <corona/systems/mechanics/mechanics_system.h>
 #include <set>
 #include <algorithm>
 #include <array>
@@ -20,11 +21,23 @@
 
 #include "corona/shared_data_hub.h"
 #include "ktm/ktm.h"
+// Note: do not depend on nanobind in the mechanics system. Callbacks provided
+// from the scripting layer are expected to manage GIL acquisition themselves.
 
+namespace {
 
-namespace Corona::Kernel {
-class ISystemContext;
-}
+struct PairHash {
+    std::size_t operator()(const std::pair<std::uintptr_t, std::uintptr_t>& p) const noexcept {
+        // combine hashes
+        std::size_t h1 = std::hash<std::uintptr_t>{}(p.first);
+        std::size_t h2 = std::hash<std::uintptr_t>{}(p.second);
+        return h1 ^ (h2 << 1);
+    }
+};
+
+// Persistent set of active collision pairs from previous frame
+static std::unordered_set<std::pair<std::uintptr_t, std::uintptr_t>, PairHash> g_prev_active_collisions;
+
 
 
 constexpr ktm::fvec3 make_fvec3(float x, float y, float z) {
@@ -238,90 +251,11 @@ struct MechanicsWorldAABB {
     ktm::fvec3 center_world;          //世界AABB中心
 };
 
+}  // anonymous namespace
 
 namespace Corona::Systems {
 
-class MechanicsSystem final {
-public:
-    //构造/析构
-    MechanicsSystem() = default;
-    ~MechanicsSystem() = default;
-
-
-    static MechanicsSystem* get_instance() {
-
-        static std::unique_ptr<MechanicsSystem> instance = std::make_unique<MechanicsSystem>();
-        return instance.get();
-    }
-
-
-    bool initialize(Corona::Kernel::ISystemContext* ctx);
-    void update();
-    void shutdown();
-
-    //物理参数get/set接口
-
-    float get_fixed_dt() const { return kFixedDt; }
-
-    //设置更新时间步长（必须>0）
-
-    void set_fixed_dt(float fixed_dt) { if (fixed_dt > 0.0f) kFixedDt = fixed_dt; }
-
-    //获取重力向量
-
-    ktm::fvec3 get_gravity() const { return kGravity; }
-    // 设置重力向量（限制Z轴不能为正，避免重力向上）
-    void set_gravity(const ktm::fvec3& gravity) { if (gravity.z > 0) return; kGravity = gravity; }
-    //获取物体间反弹系数 反弹系数（0~1）
-    float get_restitution() const { return kRestitution; }
-
-    //设置物体间反弹系数限制0~1
-
-    void set_restitution(float restitution) { if (restitution >= 0.0f && restitution <= 1.0f) kRestitution = restitution; }
-
-    //地板反弹系数（0~1）
-
-    float get_floor_restitution() const { return kFloorRestitution; }
-
-    //设置地板反弹系数（限制0~1）
-
-    void set_floor_restitution(float floor_restitution) { if (floor_restitution >= 0.0f && floor_restitution <= 1.0f) kFloorRestitution = floor_restitution; }
-
-    //获取全局阻尼（空气阻力）
-
-    float get_damping() const { return kDefaultDamping; }
-
-    //设置全局阻尼（限制0~1）
-
-    void set_damping(float damping) { if (damping >= 0.0f && damping <= 1.0f) kDefaultDamping = damping; }
-
-    //获取物体默认质量
-
-    float get_default_mass() const { return kDefaultMass; }
-
-
-    void set_default_mass(float default_mass) { if (default_mass > 0.0f) kDefaultMass = default_mass; }
-
-
-    float get_floor_z() const { return kFloorZ; }
-
-
-    void set_floor_z(float floor_z) { kFloorZ = floor_z; }
-
-private:
-    //物理更新函数
-    void update_physics();
-
-    //物理参数
-    float kFixedDt = 1.0f / 60.0f;       //物理更新固定时间步长
-    ktm::fvec3 kGravity = make_fvec3(0.0f, 0.0f, -9.8f); // 默认重力（9.8m）
-    float kRestitution = 0.8f;           //物体间反弹系数
-    float kFloorRestitution = 0.6f;      //地板反弹系数
-    float kDefaultDamping = 0.99f;       //阻尼
-    float kDefaultMass = 1.0f;           //物体默认质量（
-    float kFloorZ = 0.0f;                //地板Z轴高度（默认0）
-};
-bool MechanicsSystem::initialize(Corona::Kernel::ISystemContext* ctx) {
+bool MechanicsSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("MechanicsSystem: Initializing...");
     return true;
 }
@@ -336,20 +270,14 @@ void MechanicsSystem::shutdown() {
 
 
 void MechanicsSystem::update_physics() {
-    //获取物理参数
-    const float fixed_dt          = get_fixed_dt();          //固定时间步长      场景参数
-    const ktm::fvec3 gravity      = get_gravity();           //重力向量         场景参数
-    const float restitution       = get_restitution();       //物体间反弹系数    物体参数
-    const float floor_restitution = get_floor_restitution(); //地板反弹系数      场景参数
-    const float default_damping   = get_damping();           //全局阻尼         场景参数
-    const float default_mass      = get_default_mass();      //质量            物体参数
-    const float floor_z           = get_floor_z();           //地板高度         场景参数
-    const float floor_eps         = 0.01f;                   //地板碰撞容差（防止抖动）
+    const float floor_eps = 0.01f;  //地板碰撞容差（防止抖动）
 
     //存储物体的速度质量阻尼
     std::unordered_map<std::uintptr_t, ktm::fvec3> handle_to_velocity; // 物体句柄→速度
     std::unordered_map<std::uintptr_t, float> handle_to_mass;         // 物体句柄→质量
     std::unordered_map<std::uintptr_t, float> handle_to_damping;      // 物体句柄→阻尼
+    std::unordered_map<std::uintptr_t, float> handle_to_restitution;  // 物体句柄→反弹系数
+    std::unordered_map<std::uintptr_t, std::uintptr_t> mech_to_actor;  // mechanics_handle -> actor_handle
 
 
     auto& mechanics_storage = SharedDataHub::instance().mechanics_storage();
@@ -358,13 +286,33 @@ void MechanicsSystem::update_physics() {
     auto& scene_storage = SharedDataHub::instance().scene_storage();
     auto& actor_storage = SharedDataHub::instance().actor_storage();
     auto& profile_storage = SharedDataHub::instance().profile_storage();
+    auto& environment_storage = SharedDataHub::instance().environment_storage();
 
+    // 场景级物理参数（从第一个有效 EnvironmentDevice 读取，缺省使用默认值）
+    float fixed_dt          = 1.0f / 60.0f;
+    ktm::fvec3 gravity      = make_fvec3(0.0f, -9.8f, 0.0f);
+    float floor_restitution = 0.6f;
+    float floor_y           = 0.0f;
 
     std::vector<std::uintptr_t> mechanics_handles;
     mechanics_handles.reserve(64);
 
+    std::vector<std::uintptr_t> scene_handles;
+    scene_handles.reserve(4);
+
     //遍历所有场景所有物体
     for (const auto& scene : scene_storage) {
+        scene_handles.push_back(reinterpret_cast<std::uintptr_t>(&scene));
+        // 从场景的 EnvironmentDevice 读取物理参数
+        if (scene.environment != 0) {
+            if (auto env = environment_storage.acquire_read(scene.environment)) {
+                gravity           = env->gravity;
+                floor_y           = env->floor_y;
+                floor_restitution = env->floor_restitution;
+                fixed_dt          = env->fixed_dt;
+            }
+        }
+
         for (auto actor_handle : scene.actor_handles) {
             if (auto actor = actor_storage.acquire_read(actor_handle)) {
                 for (auto profile_handle : actor->profile_handles) {
@@ -372,10 +320,20 @@ void MechanicsSystem::update_physics() {
                         //过滤有效物理物体
                         if (profile->mechanics_handle != 0) {
                             mechanics_handles.push_back(profile->mechanics_handle);
-                            //初始化速度质量阻尼
+                            // record mapping from mechanics handle to its owning actor handle
+                            mech_to_actor[profile->mechanics_handle] = actor_handle;
+                            //初始化速度
                             handle_to_velocity[profile->mechanics_handle] = make_fvec3(0.0f, 0.0f, 0.0f);
-                            handle_to_mass[profile->mechanics_handle] = default_mass;
-                            handle_to_damping[profile->mechanics_handle] = default_damping;
+                            // 从 MechanicsDevice 读取物体级参数
+                            if (auto m_acc = mechanics_storage.acquire_read(profile->mechanics_handle)) {
+                                handle_to_mass[profile->mechanics_handle]        = m_acc->mass;
+                                handle_to_damping[profile->mechanics_handle]     = m_acc->damping;
+                                handle_to_restitution[profile->mechanics_handle] = m_acc->restitution;
+                            } else {
+                                handle_to_mass[profile->mechanics_handle]        = 1.0f;
+                                handle_to_damping[profile->mechanics_handle]     = 0.99f;
+                                handle_to_restitution[profile->mechanics_handle] = 0.8f;
+                            }
                         }
                     }
                 }
@@ -389,8 +347,11 @@ void MechanicsSystem::update_physics() {
 
     //无物理物体时直接返回
     if (mechanics_handles.size() < 1) {
+        CFW_LOG_TRACE("MechanicsSystem: No physics objects found.");
         return;
     }
+
+    CFW_LOG_TRACE("MechanicsSystem: {} physics objects found.", mechanics_handles.size());
 
     // 速度更新 重力+阻尼+位置更新+地板碰撞检测
     for (std::uintptr_t h : mechanics_handles) {
@@ -419,14 +380,14 @@ void MechanicsSystem::update_physics() {
         tx_acc->position.z += handle_to_velocity[h].z * fixed_dt;
 
         //地板碰撞检测与响应
-        if (tx_acc->position.z < floor_z - floor_eps) {
+        if (tx_acc->position.y < floor_y - floor_eps) {
             // 修正位置：防止穿透地板
-            tx_acc->position.z = floor_z;
-            // 速度反弹（Z轴反向*地板反弹系数）
-            handle_to_velocity[h].z = -handle_to_velocity[h].z * floor_restitution;
+            tx_acc->position.y = floor_y;
+            // 速度反弹（Y轴反向*地板反弹系数）
+            handle_to_velocity[h].y = -handle_to_velocity[h].y * floor_restitution;
             // 速度过小0（防止抖动）
-            if (std::abs(handle_to_velocity[h].z) < floor_eps * 10) {
-                handle_to_velocity[h].z = 0.0f;
+            if (std::abs(handle_to_velocity[h].y) < floor_eps * 10) {
+                handle_to_velocity[h].y = 0.0f;
             }
         }
     }
@@ -484,6 +445,32 @@ void MechanicsSystem::update_physics() {
         mechanics_data.push_back(entry);
     }
 
+    // 计算场景级世界 AABB 并写入 scene_storage
+    if (!mechanics_data.empty()) {
+        ktm::fvec3 scene_min = mechanics_data[0].min_world;
+        ktm::fvec3 scene_max = mechanics_data[0].max_world;
+        for (const auto& e : mechanics_data) {
+            scene_min.x = std::min(scene_min.x, e.min_world.x);
+            scene_min.y = std::min(scene_min.y, e.min_world.y);
+            scene_min.z = std::min(scene_min.z, e.min_world.z);
+            scene_max.x = std::max(scene_max.x, e.max_world.x);
+            scene_max.y = std::max(scene_max.y, e.max_world.y);
+            scene_max.z = std::max(scene_max.z, e.max_world.z);
+        }
+        ktm::fvec3 scene_center;
+        scene_center.x = (scene_min.x + scene_max.x) * 0.5f;
+        scene_center.y = (scene_min.y + scene_max.y) * 0.5f;
+        scene_center.z = (scene_min.z + scene_max.z) * 0.5f;
+
+        for (auto sh : scene_handles) {
+            if (auto s_w = scene_storage.acquire_write(sh)) {
+                s_w->min_world    = scene_min;
+                s_w->max_world    = scene_max;
+                s_w->center_world = scene_center;
+            }
+        }
+    }
+
     //少于2个物体无需碰撞检测
     if (mechanics_data.size() < 2) {
         return;
@@ -497,7 +484,7 @@ void MechanicsSystem::update_physics() {
     for (const auto& e : mechanics_data) {
         root_min.x = std::min(root_min.x, e.min_world.x);
         root_min.y = std::min(root_min.y, e.min_world.y);
-        root_min.z = std::max(root_min.z, floor_z); // 根节点Z轴下限不低于地板
+        root_min.y = std::max(root_min.y, floor_y); // 根节点Y轴下限不低于地板
         root_max.x = std::max(root_max.x, e.max_world.x);
         root_max.y = std::max(root_max.y, e.max_world.y);
         root_max.z = std::max(root_max.z, e.max_world.z);
@@ -528,6 +515,9 @@ void MechanicsSystem::update_physics() {
 
     //去重碰撞对
     octree_dedupe_pairs(pairs);
+
+    // Build current active collision set (actor pairs)
+    std::unordered_set<std::pair<std::uintptr_t, std::uintptr_t>, PairHash> curr_active_collisions;
 
     //窄相位碰撞检测与响应
     constexpr float eps = 1e-6f;               //容差
@@ -570,6 +560,71 @@ void MechanicsSystem::update_physics() {
         //重叠量过小，忽略
         if (min_overlap < min_separation) continue;
 
+        ktm::fvec3 point;
+        point.x = (a.center_world.x + b.center_world.x) * 0.5f;
+        point.y = (a.center_world.y + b.center_world.y) * 0.5f;
+        point.z = (a.center_world.z + b.center_world.z) * 0.5f;
+
+        // Acquire accessors and copy callbacks out while holding the accessor to
+        // avoid races with writers. Call the copied callbacks outside the
+        // accessor scope so we don't hold engine locks while invoking Python.
+        std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> cb_a;
+        std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> cb_b;
+
+        {
+            auto mech_a_acc = mechanics_storage.acquire_read(ha);
+            if (mech_a_acc && mech_a_acc->collision_callback) {
+                cb_a = mech_a_acc->collision_callback; // copy under read lock
+            }
+        }
+
+        {
+            auto mech_b_acc = mechanics_storage.acquire_read(hb);
+            if (mech_b_acc && mech_b_acc->collision_callback) {
+                cb_b = mech_b_acc->collision_callback; // copy under read lock
+            }
+        }
+
+        // Prepare arrays for callback arguments
+        std::array<float, 3> normal_arr = {normal.x, normal.y, normal.z};
+        std::array<float, 3> point_arr = {point.x, point.y, point.z};
+
+        // Translate mechanics handles to actor handles (fallback to mechanics handle if mapping missing)
+        std::uintptr_t actor_a_handle = ha;
+        std::uintptr_t actor_b_handle = hb;
+        auto it_map_a = mech_to_actor.find(ha);
+        if (it_map_a != mech_to_actor.end()) actor_a_handle = it_map_a->second;
+        auto it_map_b = mech_to_actor.find(hb);
+        if (it_map_b != mech_to_actor.end()) actor_b_handle = it_map_b->second;
+
+        // Insert actor pair into current active collisions set (order normalized)
+        std::pair<std::uintptr_t, std::uintptr_t> actor_pair = actor_a_handle <= actor_b_handle ? std::make_pair(actor_a_handle, actor_b_handle) : std::make_pair(actor_b_handle, actor_a_handle);
+        curr_active_collisions.insert(actor_pair);
+
+        // Determine if this pair was newly started this frame
+        bool was_active = (g_prev_active_collisions.find(actor_pair) != g_prev_active_collisions.end());
+
+        // Only notify on collision start (was not active previously). Sustained collisions are ignored.
+        if (!was_active) {
+            if (cb_a) {
+                try {
+                    // cb_a is callback for object A; pass other actor handle (B) and began=true
+                    cb_a(actor_b_handle, true, normal_arr, point_arr);
+                } catch (...) {
+                    CFW_LOG_ERROR("MechanicsSystem: Exception occurred in collision callback for actor {}.", actor_a_handle);
+                }
+            }
+
+            if (cb_b) {
+                std::array<float, 3> reverse_normal_arr = {-normal.x, -normal.y, -normal.z};
+                try {
+                    cb_b(actor_a_handle, true, reverse_normal_arr, point_arr);
+                } catch (...) {
+                    CFW_LOG_ERROR("MechanicsSystem: Exception occurred in collision callback for actor {}.", actor_b_handle);
+                }
+            }
+        }
+
         //穿透修复：根据质量分配位移（质量大的物体位移少）
         float mass_a = handle_to_mass[ha];
         float mass_b = handle_to_mass[hb];
@@ -600,9 +655,9 @@ void MechanicsSystem::update_physics() {
             a.max_world.z -= push_vec_a.z;
 
             //修复后检测是否穿透地板
-            if (txa->position.z < floor_z - floor_eps) {
-                txa->position.z = floor_z;
-                handle_to_velocity[ha].z = std::max(0.0f, handle_to_velocity[ha].z);
+            if (txa->position.y < floor_y - floor_eps) {
+                txa->position.y = floor_y;
+                handle_to_velocity[ha].y = std::max(0.0f, handle_to_velocity[ha].y);
             }
         }
 
@@ -630,9 +685,9 @@ void MechanicsSystem::update_physics() {
             b.max_world.z += push_vec_b.z;
 
             //修复后检测是否穿透地板
-            if (txb->position.z < floor_z - floor_eps) {
-                txb->position.z = floor_z;
-                handle_to_velocity[hb].z = std::max(0.0f, handle_to_velocity[hb].z);
+            if (txb->position.y < floor_y - floor_eps) {
+                txb->position.y = floor_y;
+                handle_to_velocity[hb].y = std::max(0.0f, handle_to_velocity[hb].y);
             }
         }
 
@@ -643,6 +698,9 @@ void MechanicsSystem::update_physics() {
         //计算速度在法线上的投影
         float vel_a_normal = ktm::dot(vel_a, normal);
         float vel_b_normal = ktm::dot(vel_b, normal);
+
+        //取两物体反弹系数的平均值
+        float restitution = (handle_to_restitution[ha] + handle_to_restitution[hb]) * 0.5f;
 
         //冲量计算
         float j = (-(1 + restitution) * (vel_a_normal - vel_b_normal)) / (1/mass_a + 1/mass_b);

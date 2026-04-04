@@ -80,6 +80,16 @@ struct MechanicsDevice {
     std::uintptr_t geometry_handle{};
     ktm::fvec3 max_xyz;
     ktm::fvec3 min_xyz;
+
+    // 物体级物理参数
+    float mass{1.0f};
+    float restitution{0.8f};
+    float damping{0.99f};
+
+    // Use std::array<float,3> for callback parameters so scripting bindings (nanobind)
+    // can convert Python tuples/lists directly without depending on engine internal types.
+    // New signature includes a "began" flag to indicate collision start (true) or end (false).
+    std::function<void(std::uintptr_t, bool, const std::array<float, 3>&, const std::array<float, 3>&)> collision_callback;
 };
 
 struct AcousticsDevice {
@@ -89,6 +99,13 @@ struct AcousticsDevice {
 
 struct OpticsDevice {
     std::uintptr_t geometry_handle{};
+
+    float metallic{0.0f};
+    float roughness{0.5f};
+    ktm::fvec3 ambient{0.2f, 0.2f, 0.2f};
+    ktm::fvec3 diffuse{0.8f, 0.8f, 0.8f};
+    ktm::fvec3 specular{1.0f, 1.0f, 1.0f};
+    float shininess{32.0f};
 };
 
 struct ProfileDevice {
@@ -145,19 +162,26 @@ struct CameraDevice {
     }
 };
 
-struct ViewportDevice {
-    std::uintptr_t camera{};
-};
-
 struct EnvironmentDevice {
     ktm::fvec3 sun_position;
     std::uint32_t floor_grid_enabled{1};
+
+    // 物理场景参数
+    ktm::fvec3 gravity{0.0f, -9.8f, 0.0f};
+    float floor_y{0.0f};
+    float floor_restitution{0.6f};
+    float fixed_dt{1.0f / 60.0f};
 };
 
 struct SceneDevice {
     std::uintptr_t environment{};
     std::vector<std::uintptr_t> actor_handles;
-    std::vector<std::uintptr_t> viewport_handles;
+    std::vector<std::uintptr_t> camera_handles;
+
+    // 场景世界空间 AABB（由 MechanicsSystem 每帧更新）
+    ktm::fvec3 min_world;
+    ktm::fvec3 max_world;
+    ktm::fvec3 center_world;
 };
 
 struct ImageDevice {
@@ -195,7 +219,6 @@ class SharedDataHub {
     using ProfileStorage = Kernel::Utils::Storage<ProfileDevice, 128, 2>;
     using ActorStorage = Kernel::Utils::Storage<ActorDevice, 128, 2>;
     using CameraStorage = Kernel::Utils::Storage<CameraDevice, 128, 2>;
-    using ViewportStorage = Kernel::Utils::Storage<ViewportDevice, 128, 2>;
     using EnvironmentStorage = Kernel::Utils::Storage<EnvironmentDevice, 128, 2>;
     using SceneStorage = Kernel::Utils::Storage<SceneDevice, 128, 2>;
     using ImageStorage = Kernel::Utils::Storage<ImageDevice, 128, 2>;
@@ -230,9 +253,6 @@ class SharedDataHub {
     CameraStorage& camera_storage();
     const CameraStorage& camera_storage() const;
 
-    ViewportStorage& viewport_storage();
-    const ViewportStorage& viewport_storage() const;
-
     EnvironmentStorage& environment_storage();
     const EnvironmentStorage& environment_storage() const;
 
@@ -254,7 +274,6 @@ class SharedDataHub {
     ActorStorage actor_storage_;
     EnvironmentStorage environment_storage_;
     CameraStorage camera_storage_;
-    ViewportStorage viewport_storage_;
     SceneStorage scene_storage_;
     ImageStorage image_storage_;
 };

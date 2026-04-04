@@ -4,9 +4,12 @@
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/kernel/system/system_base.h>
-#include <corona/systems/script/python_api.h>
 
 #include <memory>
+
+namespace Corona::Script::Python {
+struct PythonAPI;
+}
 
 namespace Corona::Systems {
 
@@ -18,11 +21,9 @@ namespace Corona::Systems {
  */
 class ScriptSystem : public Kernel::SystemBase {
 public:
-    ScriptSystem() {
-        set_target_fps(60);  // 显示系统高刷新率以提升响应速度
-    }
+    ScriptSystem();
 
-    ~ScriptSystem() override = default;
+    ~ScriptSystem() override;
 
     // ========================================
     // ISystem 接口实现
@@ -58,7 +59,7 @@ public:
     void shutdown() override;
 
 private:
-    Script::Python::PythonAPI python_api_;
+    std::unique_ptr<Script::Python::PythonAPI> python_api_;
 
     Kernel::EventId python_start_id_ = 0;
     Kernel::EventId js_call_python_id_ = 0;

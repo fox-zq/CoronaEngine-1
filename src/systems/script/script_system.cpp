@@ -4,8 +4,18 @@
 #include <corona/kernel/event/i_event_bus.h>
 #include <corona/kernel/event/i_event_stream.h>
 #include <corona/systems/script/script_system.h>
+#include <corona/systems/script/python_api.h>
+
+#include <nanobind/nanobind.h>
 
 namespace Corona::Systems {
+
+ScriptSystem::ScriptSystem()
+    : python_api_(std::make_unique<Script::Python::PythonAPI>()) {
+    set_target_fps(60);  // 显示系统高刷新率以提升响应速度
+}
+
+ScriptSystem::~ScriptSystem() = default;
 
 bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
     CFW_LOG_NOTICE("ScriptSystem: Initializing...");
@@ -16,29 +26,29 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
         python_start_id_ = event_bus->subscribe<Events::ImguiToPythonEvent>(
             [this](const Events::ImguiToPythonEvent& event) {
                 // 检查是否正在关闭
-                if (python_api_.is_shutting_down()) {
+                if (python_api_->is_shutting_down()) {
                     return;
                 }
                 CFW_LOG_INFO("ScriptSystem: Received ImguiToPythonEvent start");
                 nanobind::gil_scoped_acquire gil;
-                if (!python_api_.pStartFunc.is_valid()) {
+                if (!python_api_->pStartFunc.is_valid()) {
                     return;
                 }
-                python_api_.pStartFunc();
+                python_api_->pStartFunc();
             });
 
         js_call_python_id_ = event_bus->subscribe<Events::ImguiCallPythonEvent>(
             [this](const Events::ImguiCallPythonEvent& event) {
                 // 检查是否正在关闭
-                if (python_api_.is_shutting_down()) {
+                if (python_api_->is_shutting_down()) {
                     return;
                 }
                 CFW_LOG_INFO("ScriptSystem: Received ImguiCallPythonEvent js_call");
                 nanobind::gil_scoped_acquire gil;
-                if (!python_api_.pJsCallFunc.is_valid()) {
+                if (!python_api_->pJsCallFunc.is_valid()) {
                     return;
                 }
-                python_api_.pJsCallFunc(event.args);
+                python_api_->pJsCallFunc(event.args);
             });
 
 
@@ -53,7 +63,7 @@ bool ScriptSystem::initialize(Kernel::ISystemContext* ctx) {
 void ScriptSystem::update() {
 
 #ifdef CORONA_ENABLE_PYTHON_API
-     python_api_.runPythonScript();
+    python_api_->runPythonScript();
 #endif
 
 }
@@ -73,7 +83,7 @@ void ScriptSystem::shutdown() {
     }
 
     // 主动关闭 Python 解释器，避免在析构时阻塞
-    python_api_.shutdown();
+    python_api_->shutdown();
 }
 
 }  // namespace Corona::Systems
