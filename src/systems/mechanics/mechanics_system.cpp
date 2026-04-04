@@ -507,7 +507,7 @@ void MechanicsSystem::update_physics() {
     root_max.y += pad;
     root_max.z += pad;
 
-    //八叉树碰撞检测：插入物体→收集碰撞对→去重
+    //八叉树碰撞检测：插入物体→收集碰撞对→去重1
     OctreeNode octree_root;
     octree_root.min_bounds = root_min;
     octree_root.max_bounds = root_max;
