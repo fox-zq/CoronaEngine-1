@@ -906,6 +906,62 @@ float Corona::API::Optics::get_roughness() const {
     if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->roughness;
     return 0.5f;
 }
+void Corona::API::Optics::set_subsurface(float subsurface) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->subsurface = subsurface;
+}
+float Corona::API::Optics::get_subsurface() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->subsurface;
+    return 0.0f;
+}
+void Corona::API::Optics::set_specular(float specular) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->specular = specular;
+}
+float Corona::API::Optics::get_specular() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->specular;
+    return 0.5f;
+}
+void Corona::API::Optics::set_specular_tint(float specularTint) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->specularTint = specularTint;
+}
+float Corona::API::Optics::get_specular_tint() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->specularTint;
+    return 0.0f;
+}
+void Corona::API::Optics::set_anisotropic(float anisotropic) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->anisotropic = anisotropic;
+}
+float Corona::API::Optics::get_anisotropic() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->anisotropic;
+    return 0.0f;
+}
+void Corona::API::Optics::set_sheen(float sheen) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->sheen = sheen;
+}
+float Corona::API::Optics::get_sheen() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->sheen;
+    return 0.0f;
+}
+void Corona::API::Optics::set_sheen_tint(float sheenTint) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->sheenTint = sheenTint;
+}
+float Corona::API::Optics::get_sheen_tint() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->sheenTint;
+    return 0.5f;
+}
+void Corona::API::Optics::set_clearcoat(float clearcoat) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->clearcoat = clearcoat;
+}
+float Corona::API::Optics::get_clearcoat() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->clearcoat;
+    return 0.0f;
+}
+void Corona::API::Optics::set_clearcoat_gloss(float clearcoatGloss) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->clearcoatGloss = clearcoatGloss;
+}
+float Corona::API::Optics::get_clearcoat_gloss() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->clearcoatGloss;
+    return 1.0f;
+}
 void Corona::API::Optics::set_ambient(const std::array<float, 3>& ambient) {
     if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->ambient = {ambient[0], ambient[1], ambient[2]};
 }
@@ -920,11 +976,11 @@ std::array<float, 3> Corona::API::Optics::get_diffuse() const {
     if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return {r->diffuse.x, r->diffuse.y, r->diffuse.z};
     return {0.8f, 0.8f, 0.8f};
 }
-void Corona::API::Optics::set_specular(const std::array<float, 3>& specular) {
-    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->specular = {specular[0], specular[1], specular[2]};
+void Corona::API::Optics::set_specular_color(const std::array<float, 3>& specular) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->specular_color = {specular[0], specular[1], specular[2]};
 }
-std::array<float, 3> Corona::API::Optics::get_specular() const {
-    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return {r->specular.x, r->specular.y, r->specular.z};
+std::array<float, 3> Corona::API::Optics::get_specular_color() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return {r->specular_color.x, r->specular_color.y, r->specular_color.z};
     return {1.0f, 1.0f, 1.0f};
 }
 void Corona::API::Optics::set_shininess(float shininess) {

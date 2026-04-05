@@ -258,6 +258,14 @@ namespace Corona::Systems
                                         : 0;
                                     mat_info.metallic = optics.metallic;
                                     mat_info.roughness = optics.roughness;
+                                    mat_info.subsurface = optics.subsurface;
+                                    mat_info.specular = optics.specular;
+                                    mat_info.specularTint = optics.specularTint;
+                                    mat_info.anisotropic = optics.anisotropic;
+                                    mat_info.sheen = optics.sheen;
+                                    mat_info.sheenTint = optics.sheenTint;
+                                    mat_info.clearcoat = optics.clearcoat;
+                                    mat_info.clearcoatGloss = optics.clearcoatGloss;
                                     mat_info.padding0 = 0.0f;
                                     mat_info.materialColor = ktm::fvec4{
                                         m.materialColor[0], m.materialColor[1],

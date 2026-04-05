@@ -102,7 +102,7 @@ InstanceInfo loadInstanceInfo(uint instanceID)
 }
 
 // ============================================================================
-// MaterialInfo layout (32 bytes = 8 uints)
+// MaterialInfo layout (64 bytes = 16 uints)
 // ============================================================================
 
 struct MaterialInfo
@@ -110,17 +110,34 @@ struct MaterialInfo
     uint  textureDescriptor;
     float metallic;
     float roughness;
+    float subsurface;
+    float specular;
+    float specularTint;
+    float anisotropic;
+    float sheen;
+    float sheenTint;
+    float clearcoat;
+    float clearcoatGloss;
     vec4  materialColor;
 };
 
 MaterialInfo loadMaterialInfo(uint materialID)
 {
-    uint base = materialID * 8u;
+    uint base = materialID * 16u;
     MaterialInfo mat;
     mat.textureDescriptor = readUint(pushConsts.materialTableBufferIndex, base);
     mat.metallic          = readFloat(pushConsts.materialTableBufferIndex, base + 1u);
     mat.roughness         = readFloat(pushConsts.materialTableBufferIndex, base + 2u);
-    mat.materialColor     = readVec4(pushConsts.materialTableBufferIndex, base + 4u);
+    mat.subsurface        = readFloat(pushConsts.materialTableBufferIndex, base + 3u);
+    mat.specular          = readFloat(pushConsts.materialTableBufferIndex, base + 4u);
+    mat.specularTint      = readFloat(pushConsts.materialTableBufferIndex, base + 5u);
+    mat.anisotropic       = readFloat(pushConsts.materialTableBufferIndex, base + 6u);
+    mat.sheen             = readFloat(pushConsts.materialTableBufferIndex, base + 7u);
+    mat.sheenTint         = readFloat(pushConsts.materialTableBufferIndex, base + 8u);
+    mat.clearcoat         = readFloat(pushConsts.materialTableBufferIndex, base + 9u);
+    mat.clearcoatGloss    = readFloat(pushConsts.materialTableBufferIndex, base + 10u);
+    // [11] padding
+    mat.materialColor     = readVec4(pushConsts.materialTableBufferIndex, base + 12u);
     return mat;
 }
 
@@ -163,47 +180,52 @@ vec2 worldToScreen(vec3 worldPos, mat4 viewProjMatrix, vec2 resolution, out floa
 }
 
 // ============================================================================
-// PBR: GGX/Cook-Torrance BRDF
+// Disney Principled BRDF
+// Reference: Brent Burley, "Physically Based Shading at Disney", SIGGRAPH 2012
 // ============================================================================
 
-float DistributionGGX(vec3 N, vec3 H, float roughness)
+#define PI 3.14159265359
+
+float sqr(float x) { return x * x; }
+
+float luminance(vec3 color)
 {
-    float a = roughness * roughness;
+    return dot(color, vec3(0.299, 0.587, 0.114));
+}
+
+float SchlickFresnel(float x)
+{
+    x = clamp(1.0 - x, 0.0, 1.0);
+    float x2 = x * x;
+    return x2 * x2 * x; // pow(1 - x, 5)
+}
+
+// Isotropic GTR with gamma == 1 (used for clearcoat)
+float GTR1(float ndoth, float a)
+{
     float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float nom   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = 3.14159265359 * denom * denom;
-
-    return nom / denom;
+    float t = 1.0 + (a2 - 1.0) * ndoth * ndoth;
+    return (a2 - 1.0) / (PI * log(a2) * t);
 }
 
-float GeometrySchlickGGX(float NdotV, float roughness)
+// Anisotropic GTR with gamma == 2 (equivalent to anisotropic GGX)
+float AnisotropicGTR2(float ndoth, float hdotx, float hdoty, float ax, float ay)
 {
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-
-    float nom   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
+    return 1.0 / (PI * ax * ay * sqr(sqr(hdotx / ax) + sqr(hdoty / ay) + sqr(ndoth)));
 }
 
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+// Isotropic Smith GGX geometric attenuation (used for clearcoat)
+float SmithGGX(float alphaSquared, float ndotl, float ndotv)
 {
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
+    float a = ndotv * sqrt(alphaSquared + ndotl * (ndotl - alphaSquared * ndotl));
+    float b = ndotl * sqrt(alphaSquared + ndotv * (ndotv - alphaSquared * ndotv));
+    return 0.5 / (a + b);
 }
 
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
+// Anisotropic Smith GGX geometric attenuation
+float AnisotropicSmithGGX(float ndots, float sdotx, float sdoty, float ax, float ay)
 {
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+    return 1.0 / (ndots + sqrt(sqr(sdotx * ax) + sqr(sdoty * ay) + sqr(ndots)));
 }
 
 // UBO layout offsets (in uint units):
@@ -218,44 +240,74 @@ vec3 fresnelSchlick(float cosTheta, vec3 F0)
 //   [44..59] eyeViewMatrix (mat4)
 //   [60..75] eyeProjMatrix (mat4)
 
-vec3 calculateColor(vec3 WorldPos, vec3 Normal,
-    vec3 lightColor,
-    vec3 albedo,
-    float metallic,
-    float roughness)
+vec3 DisneyBRDF(vec3 WorldPos, vec3 Normal, vec3 Tangent, vec3 Bitangent,
+    vec3 lightColor, vec3 albedo, MaterialInfo matl)
 {
     vec3 N = normalize(Normal);
+    vec3 X = normalize(Tangent);
+    vec3 Y = normalize(Bitangent);
     vec3 eyePos = readVec3(pushConsts.uniformBufferIndex, 36u);
     vec3 V = normalize(eyePos - WorldPos);
+    vec3 L = normalize(pushConsts.sun_dir);
+    vec3 H = normalize(V + L);
 
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo, metallic);
+    float ndotl = max(dot(N, L), 0.0);
+    float ndotv = max(dot(N, V), 0.0);
+    float ndoth = max(dot(N, H), 0.0);
+    float ldoth = max(dot(L, H), 0.0);
 
-    vec3 Lo = vec3(0.0);
-    {
-        vec3 L = normalize(pushConsts.sun_dir);
-        vec3 H = normalize(V + L);
-        float attenuation = 1.0;
-        vec3 radiance = lightColor * attenuation;
+    if (ndotl <= 0.0) return vec3(0.03) * albedo;
 
-        float NDF = DistributionGGX(N, H, roughness);
-        float G   = GeometrySmith(N, V, L, roughness);
-        vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
+    // --- Derived color values ---
+    float Cdlum = luminance(albedo);
+    vec3 Ctint = Cdlum > 0.0 ? albedo / Cdlum : vec3(1.0);
+    vec3 Cspec0 = mix(matl.specular * 0.08 * mix(vec3(1.0), Ctint, matl.specularTint),
+                      albedo, matl.metallic);
+    vec3 Csheen = mix(vec3(1.0), Ctint, matl.sheenTint);
 
-        vec3 numerator    = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        vec3 specular = numerator / denominator;
+    // === Diffuse lobe (Disney retro-reflective diffuse) ===
+    float FL = SchlickFresnel(ndotl);
+    float FV = SchlickFresnel(ndotv);
+    float Fss90 = ldoth * ldoth * matl.roughness;
+    float Fd90 = 0.5 + 2.0 * Fss90;
+    float Fd = mix(1.0, Fd90, FL) * mix(1.0, Fd90, FV);
 
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
+    // Subsurface approximation (Hanrahan-Krueger)
+    float Fss = mix(1.0, Fss90, FL) * mix(1.0, Fss90, FV);
+    float ss = 1.25 * (Fss * (1.0 / (ndotl + ndotv + 1e-4) - 0.5) + 0.5);
 
-        float NdotL = max(dot(N, L), 0.0);
-        Lo += (kD * albedo / 3.14159265359 + specular) * radiance * NdotL;
-    }
+    // === Specular lobe (anisotropic GGX) ===
+    float aspect = sqrt(1.0 - matl.anisotropic * 0.9);
+    float alphaSquared = matl.roughness * matl.roughness;
+    float ax = max(0.001, alphaSquared / aspect);
+    float ay = max(0.001, alphaSquared * aspect);
+    float Ds = AnisotropicGTR2(ndoth, dot(H, X), dot(H, Y), ax, ay);
+
+    float GalphaSquared = sqr(0.5 + matl.roughness * 0.5);
+    float Gax = max(0.001, GalphaSquared / aspect);
+    float Gay = max(0.001, GalphaSquared * aspect);
+    float G = AnisotropicSmithGGX(ndotl, dot(L, X), dot(L, Y), Gax, Gay)
+            * AnisotropicSmithGGX(ndotv, dot(V, X), dot(V, Y), Gax, Gay);
+
+    float FH = SchlickFresnel(ldoth);
+    vec3 F = mix(Cspec0, vec3(1.0), FH);
+
+    // === Sheen lobe ===
+    vec3 Fsheen = FH * matl.sheen * Csheen;
+
+    // === Clearcoat lobe (fixed IOR 1.5, F0 = 0.04) ===
+    float Dr = GTR1(ndoth, mix(0.1, 0.001, matl.clearcoatGloss));
+    float Fr = mix(0.04, 1.0, FH);
+    float Gr = SmithGGX(0.25, ndotl, ndotv);
+
+    // === Combine all lobes ===
+    vec3 diffuse = (1.0 / PI) * (mix(Fd, ss, matl.subsurface) * albedo + Fsheen)
+                   * (1.0 - matl.metallic);
+    vec3 specular = Ds * F * G;
+    vec3 clearcoat = vec3(0.25 * matl.clearcoat * Gr * Fr * Dr);
 
     vec3 ambient = vec3(0.03) * albedo;
-    return ambient + Lo;
+    return ambient + (diffuse + specular + clearcoat) * lightColor * ndotl;
 }
 
 // ============================================================================
@@ -356,6 +408,30 @@ void main()
 
     vec2 interpUV = bary.x * v0.texCoord + bary.y * v1.texCoord + bary.z * v2.texCoord;
 
+    // --- Compute tangent frame from triangle edges and UVs ---
+    vec3 edge1 = worldPos1 - worldPos0;
+    vec3 edge2 = worldPos2 - worldPos0;
+    vec2 dUV1 = v1.texCoord - v0.texCoord;
+    vec2 dUV2 = v2.texCoord - v0.texCoord;
+
+    float denom = dUV1.x * dUV2.y - dUV2.x * dUV1.y;
+    vec3 T, B;
+    if (abs(denom) > 1e-6)
+    {
+        float inv = 1.0 / denom;
+        T = normalize(inv * (dUV2.y * edge1 - dUV1.y * edge2));
+        B = normalize(inv * (-dUV2.x * edge1 + dUV1.x * edge2));
+    }
+    else
+    {
+        // Fallback: construct arbitrary tangent frame from normal
+        T = normalize(edge1);
+        B = normalize(cross(interpNormal, T));
+    }
+    // Re-orthogonalize
+    T = normalize(T - dot(T, interpNormal) * interpNormal);
+    B = normalize(cross(interpNormal, T));
+
     // --- Sample material ---
     vec4 baseColor = matl.materialColor;
     if (matl.textureDescriptor != 0u)
@@ -364,10 +440,9 @@ void main()
         baseColor.rgb *= texSample.rgb;
     }
 
-    // --- PBR lighting ---
-    vec3 renderResult = calculateColor(interpPos, interpNormal,
-        pushConsts.lightColor,
-        baseColor.rgb, matl.metallic, matl.roughness);
+    // --- Disney Principled BRDF lighting ---
+    vec3 renderResult = DisneyBRDF(interpPos, interpNormal, T, B,
+        pushConsts.lightColor, baseColor.rgb, matl);
     renderResult = max(renderResult, vec3(0.01, 0.01, 0.01));
 
     imageStore(imagesRGBA16[pushConsts.finalOutputImage], pixel, vec4(renderResult, 1.0));

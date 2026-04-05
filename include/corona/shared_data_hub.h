@@ -105,11 +105,22 @@ struct AcousticsDevice {
 struct OpticsDevice {
     std::uintptr_t geometry_handle{};
 
+    // Disney Principled BRDF parameters
     float metallic{0.0f};
     float roughness{0.5f};
+    float subsurface{0.0f};
+    float specular{0.5f};
+    float specularTint{0.0f};
+    float anisotropic{0.0f};
+    float sheen{0.0f};
+    float sheenTint{0.5f};
+    float clearcoat{0.0f};
+    float clearcoatGloss{1.0f};
+
+    // Legacy parameters (kept for backward compatibility)
     ktm::fvec3 ambient{0.2f, 0.2f, 0.2f};
     ktm::fvec3 diffuse{0.8f, 0.8f, 0.8f};
-    ktm::fvec3 specular{1.0f, 1.0f, 1.0f};
+    ktm::fvec3 specular_color{1.0f, 1.0f, 1.0f};
     float shininess{32.0f};
 };
 

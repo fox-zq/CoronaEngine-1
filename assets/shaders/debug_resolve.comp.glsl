@@ -98,7 +98,7 @@ InstanceInfo loadInstanceInfo(uint instanceID)
 }
 
 // ============================================================================
-// MaterialInfo layout (32 bytes = 8 uints)
+// MaterialInfo layout (64 bytes = 16 uints)
 // ============================================================================
 
 struct MaterialInfo
@@ -106,17 +106,34 @@ struct MaterialInfo
     uint  textureDescriptor;
     float metallic;
     float roughness;
+    float subsurface;
+    float specular;
+    float specularTint;
+    float anisotropic;
+    float sheen;
+    float sheenTint;
+    float clearcoat;
+    float clearcoatGloss;
     vec4  materialColor;
 };
 
 MaterialInfo loadMaterialInfo(uint materialID)
 {
-    uint base = materialID * 8u;
+    uint base = materialID * 16u;
     MaterialInfo mat;
     mat.textureDescriptor = readUint(pushConsts.materialTableBufferIndex, base);
     mat.metallic          = readFloat(pushConsts.materialTableBufferIndex, base + 1u);
     mat.roughness         = readFloat(pushConsts.materialTableBufferIndex, base + 2u);
-    mat.materialColor     = readVec4(pushConsts.materialTableBufferIndex, base + 4u);
+    mat.subsurface        = readFloat(pushConsts.materialTableBufferIndex, base + 3u);
+    mat.specular          = readFloat(pushConsts.materialTableBufferIndex, base + 4u);
+    mat.specularTint      = readFloat(pushConsts.materialTableBufferIndex, base + 5u);
+    mat.anisotropic       = readFloat(pushConsts.materialTableBufferIndex, base + 6u);
+    mat.sheen             = readFloat(pushConsts.materialTableBufferIndex, base + 7u);
+    mat.sheenTint         = readFloat(pushConsts.materialTableBufferIndex, base + 8u);
+    mat.clearcoat         = readFloat(pushConsts.materialTableBufferIndex, base + 9u);
+    mat.clearcoatGloss    = readFloat(pushConsts.materialTableBufferIndex, base + 10u);
+    // [11] padding
+    mat.materialColor     = readVec4(pushConsts.materialTableBufferIndex, base + 12u);
     return mat;
 }
 

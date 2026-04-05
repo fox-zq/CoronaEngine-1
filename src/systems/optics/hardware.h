@@ -79,16 +79,32 @@ struct Hardware {
     std::vector<InstanceInfo> instanceInfoData;
 
     // === GPU-side material table (matches GLSL MaterialInfo layout) ===
-    // 32 bytes = 8 uints per entry:
-    //   [0]     textureDescriptor
-    //   [1]     metallic  (as float bits)
-    //   [2]     roughness (as float bits)
-    //   [3]     padding
-    //   [4..7]  materialColor (vec4)
+    // 64 bytes = 16 uints per entry:
+    //   [0]      textureDescriptor
+    //   [1]      metallic  (as float bits)
+    //   [2]      roughness (as float bits)
+    //   [3]      subsurface
+    //   [4]      specular
+    //   [5]      specularTint
+    //   [6]      anisotropic
+    //   [7]      sheen
+    //   [8]      sheenTint
+    //   [9]      clearcoat
+    //   [10]     clearcoatGloss
+    //   [11]     padding
+    //   [12..15] materialColor (vec4)
     struct MaterialInfo {
         uint32_t textureDescriptor;
         float metallic;
         float roughness;
+        float subsurface;
+        float specular;
+        float specularTint;
+        float anisotropic;
+        float sheen;
+        float sheenTint;
+        float clearcoat;
+        float clearcoatGloss;
         float padding0;
         ktm::fvec4 materialColor;
     };
