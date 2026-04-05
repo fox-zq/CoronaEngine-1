@@ -96,12 +96,6 @@ namespace Corona::Systems
             hardware_->visibilityImage = HardwareImage(w, h, ImageFormat::RGBA32_UINT, ImageUsage::StorageImage);
             hardware_->depthImage = HardwareImage(w, h, ImageFormat::D32_FLOAT, ImageUsage::DepthImage);
 
-            // --- Resolved attribute images (Material Resolve → Lighting) ---
-            hardware_->resolvedPositionImage  = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->resolvedBaseColorImage = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->resolvedNormalImage    = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->resolvedObjectIDImage  = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-
             // --- Uniform buffers ---
             hardware_->uniformBuffer =
                 HardwareBuffer(sizeof(Hardware::UniformBufferObject), BufferUsage::StorageBuffer);
@@ -134,13 +128,13 @@ namespace Corona::Systems
         try
         {
             hardware_->visibilityPipeline.emplace();
-            hardware_->materialResolvePipeline.emplace();
             hardware_->lightingPipeline.emplace();
             hardware_->skyPipeline.emplace();
             hardware_->tonemapPipeline.emplace();
+            hardware_->debugResolvePipeline.emplace();
             hardware_->shaderHasInit = true;
             CFW_LOG_INFO("OpticsSystem: VBuffer pipelines created successfully "
-                         "(visibility + materialResolve + lighting + sky + tonemap)");
+                         "(visibility + lighting + sky + tonemap + debugResolve)");
         }
         catch (const std::exception& e)
         {
@@ -190,8 +184,8 @@ namespace Corona::Systems
     void OpticsSystem::update()
     {
         if (!hardware_->shaderHasInit || !hardware_->visibilityPipeline ||
-            !hardware_->materialResolvePipeline ||
-            !hardware_->lightingPipeline || !hardware_->skyPipeline || !hardware_->tonemapPipeline)
+            !hardware_->lightingPipeline || !hardware_->skyPipeline || !hardware_->tonemapPipeline ||
+            !hardware_->debugResolvePipeline)
         {
             return;
         }
@@ -209,7 +203,6 @@ namespace Corona::Systems
     void OpticsSystem::optics_pipeline(float frame_count, uint64_t frame_index)
     {
         auto& visibility     = *hardware_->visibilityPipeline;
-        auto& materialResolve = *hardware_->materialResolvePipeline;
         auto& lighting       = *hardware_->lightingPipeline;
         auto& sky            = *hardware_->skyPipeline;
         auto& tonemap        = *hardware_->tonemapPipeline;
@@ -354,38 +347,18 @@ namespace Corona::Systems
                     const uint32_t finalOutputDescriptor = hardware_->finalOutputImage.storeDescriptor();
 
                     // ================================================================
-                    // 5. Material Resolve pass: VBuffer decode → resolved attributes
-                    // ================================================================
-                    materialResolve.pushConsts.gbufferSize = hardware_->gbufferSize;
-                    materialResolve.pushConsts.visibilityImageIndex =
-                        hardware_->visibilityImage.storeDescriptor();
-                    materialResolve.pushConsts.depthImageIndex = depthDescriptor;
-                    materialResolve.pushConsts.instanceInfoBufferIndex =
-                        hardware_->instanceInfoBuffer.storeDescriptor();
-                    materialResolve.pushConsts.materialTableBufferIndex =
-                        hardware_->materialTableBuffer.storeDescriptor();
-                    materialResolve.pushConsts.vpBufferIndex =
-                        hardware_->vpUniformBuffer.storeDescriptor();
-                    materialResolve.pushConsts.resolvedPositionImageIndex =
-                        hardware_->resolvedPositionImage.storeDescriptor();
-                    materialResolve.pushConsts.resolvedBaseColorImageIndex =
-                        hardware_->resolvedBaseColorImage.storeDescriptor();
-                    materialResolve.pushConsts.resolvedNormalImageIndex =
-                        hardware_->resolvedNormalImage.storeDescriptor();
-                    materialResolve.pushConsts.resolvedObjectIDImageIndex =
-                        hardware_->resolvedObjectIDImage.storeDescriptor();
-
-                    // ================================================================
-                    // 6. Lighting pass: PBR direct illumination (geometry pixels only)
+                    // 5. Lighting pass: VBuffer decode + PBR direct illumination
                     // ================================================================
                     lighting.pushConsts.gbufferSize = hardware_->gbufferSize;
-                    lighting.pushConsts.gbufferPostionImage =
-                        hardware_->resolvedPositionImage.storeDescriptor();
-                    lighting.pushConsts.gbufferBaseColorImage =
-                        hardware_->resolvedBaseColorImage.storeDescriptor();
-                    lighting.pushConsts.gbufferNormalImage =
-                        hardware_->resolvedNormalImage.storeDescriptor();
-                    lighting.pushConsts.gbufferDepthImage = depthDescriptor;
+                    lighting.pushConsts.visibilityImageIndex =
+                        hardware_->visibilityImage.storeDescriptor();
+                    lighting.pushConsts.depthImageIndex = depthDescriptor;
+                    lighting.pushConsts.instanceInfoBufferIndex =
+                        hardware_->instanceInfoBuffer.storeDescriptor();
+                    lighting.pushConsts.materialTableBufferIndex =
+                        hardware_->materialTableBuffer.storeDescriptor();
+                    lighting.pushConsts.vpBufferIndex =
+                        hardware_->vpUniformBuffer.storeDescriptor();
                     lighting.pushConsts.finalOutputImage = finalOutputDescriptor;
                     lighting.pushConsts.uniformBufferIndex = uboDescriptor;
                     lighting.pushConsts.sun_dir = sun_dir;
@@ -395,7 +368,7 @@ namespace Corona::Systems
                     }
 
                     // ================================================================
-                    // 7. Sky pass: atmospheric scattering + floor grid
+                    // 6. Sky pass: atmospheric scattering + floor grid
                     // ================================================================
                     sky.pushConsts.gbufferSize = hardware_->gbufferSize;
                     sky.pushConsts.gbufferDepthImage = depthDescriptor;
@@ -405,14 +378,14 @@ namespace Corona::Systems
                     sky.pushConsts.floor_grid_enabled = floor_grid_enabled;
 
                     // ================================================================
-                    // 8. Tonemap pass: ACES filmic HDR → LDR
+                    // 7. Tonemap pass: ACES filmic HDR → LDR
                     // ================================================================
                     tonemap.pushConsts.gbufferSize = hardware_->gbufferSize;
                     tonemap.pushConsts.inputImage = finalOutputDescriptor;
                     tonemap.pushConsts.outputImage = finalOutputDescriptor;
 
                     // ================================================================
-                    // 9. GPU sync & dispatch
+                    // 8. GPU sync & dispatch
                     // ================================================================
                     if (image_handle_ != 0) {
                         if (auto consumed_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
@@ -422,35 +395,52 @@ namespace Corona::Systems
 
                     const uint32_t dispatchX = hardware_->gbufferSize.x / 8;
                     const uint32_t dispatchY = hardware_->gbufferSize.y / 8;
-                    hardware_->executor << visibility(1920, 1080)
-                        << materialResolve(dispatchX, dispatchY, 1)
-                        << lighting(dispatchX, dispatchY, 1)
-                        << sky(dispatchX, dispatchY, 1)
-                        << tonemap(dispatchX, dispatchY, 1);
 
-                    // ================================================================
-                    // 10. Camera output mode (debug visualization)
-                    // ================================================================
-                    switch (camera->output_mode) {
-                        case CameraOutputMode::BaseColor:
-                            hardware_->executor << hardware_->resolvedBaseColorImage.copyTo(hardware_->finalOutputImage);
-                            break;
-                        case CameraOutputMode::Normal:
-                            hardware_->executor << hardware_->resolvedNormalImage.copyTo(hardware_->finalOutputImage);
-                            break;
-                        case CameraOutputMode::WorldPosition:
-                            hardware_->executor << hardware_->resolvedPositionImage.copyTo(hardware_->finalOutputImage);
-                            break;
-                        case CameraOutputMode::ObjectID:
-                            hardware_->executor << hardware_->resolvedObjectIDImage.copyTo(hardware_->finalOutputImage);
-                            break;
-                        case CameraOutputMode::VisibilityBuffer:
-                            // Pseudo-color visualization of instanceID
-                            hardware_->executor << hardware_->resolvedObjectIDImage.copyTo(hardware_->finalOutputImage);
-                            break;
-                        case CameraOutputMode::FinalColor: [[fallthrough]];
-                        default:
-                            break; // finalOutputImage already contains tonemap result
+                    const bool is_debug_mode = camera->output_mode != CameraOutputMode::FinalColor;
+
+                    if (is_debug_mode)
+                    {
+                        // ============================================================
+                        // Debug path: visibility + debug_resolve only (skip lighting/sky/tonemap)
+                        // ============================================================
+                        auto& debugResolve = *hardware_->debugResolvePipeline;
+
+                        debugResolve.pushConsts.gbufferSize = hardware_->gbufferSize;
+                        debugResolve.pushConsts.visibilityImageIndex =
+                            hardware_->visibilityImage.storeDescriptor();
+                        debugResolve.pushConsts.depthImageIndex = depthDescriptor;
+                        debugResolve.pushConsts.instanceInfoBufferIndex =
+                            hardware_->instanceInfoBuffer.storeDescriptor();
+                        debugResolve.pushConsts.materialTableBufferIndex =
+                            hardware_->materialTableBuffer.storeDescriptor();
+                        debugResolve.pushConsts.vpBufferIndex =
+                            hardware_->vpUniformBuffer.storeDescriptor();
+                        debugResolve.pushConsts.outputImageIndex = finalOutputDescriptor;
+
+                        // Map CameraOutputMode to debugMode uint
+                        uint32_t debugMode = 0;
+                        switch (camera->output_mode) {
+                            case CameraOutputMode::BaseColor:        debugMode = 0; break;
+                            case CameraOutputMode::Normal:           debugMode = 1; break;
+                            case CameraOutputMode::WorldPosition:    debugMode = 2; break;
+                            case CameraOutputMode::ObjectID:         debugMode = 3; break;
+                            case CameraOutputMode::VisibilityBuffer: debugMode = 4; break;
+                            default: debugMode = 0; break;
+                        }
+                        debugResolve.pushConsts.debugMode = debugMode;
+
+                        hardware_->executor << visibility(1920, 1080)
+                            << debugResolve(dispatchX, dispatchY, 1);
+                    }
+                    else
+                    {
+                        // ============================================================
+                        // Normal rendering path: full pipeline
+                        // ============================================================
+                        hardware_->executor << visibility(1920, 1080)
+                            << lighting(dispatchX, dispatchY, 1)
+                            << sky(dispatchX, dispatchY, 1)
+                            << tonemap(dispatchX, dispatchY, 1);
                     }
 
                     hardware_->executor << hardware_->executor.commit();

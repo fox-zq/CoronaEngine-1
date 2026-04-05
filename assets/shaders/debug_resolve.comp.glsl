@@ -17,12 +17,8 @@ layout(push_constant) uniform PushConsts
     uint instanceInfoBufferIndex;
     uint materialTableBufferIndex;
     uint vpBufferIndex;
-    uint finalOutputImage;
-    uint uniformBufferIndex;
-    uint padding0;
-    vec3 lightColor;
-    float padding1;
-    vec3 sun_dir;
+    uint outputImageIndex;
+    uint debugMode;         // 0=BaseColor, 1=Normal, 2=WorldPosition, 3=ObjectID, 4=VisibilityBuffer
 } pushConsts;
 
 // ============================================================================
@@ -163,133 +159,58 @@ vec2 worldToScreen(vec3 worldPos, mat4 viewProjMatrix, vec2 resolution, out floa
 }
 
 // ============================================================================
-// PBR: GGX/Cook-Torrance BRDF
+// Debug visualization helpers
 // ============================================================================
 
-float DistributionGGX(vec3 N, vec3 H, float roughness)
+// Golden-ratio based pseudo-color for integer IDs
+vec3 pseudoColor(uint id)
 {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-
-    float nom   = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = 3.14159265359 * denom * denom;
-
-    return nom / denom;
-}
-
-float GeometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-
-    float nom   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
-
-    return nom / denom;
-}
-
-float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
-    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
-
-    return ggx1 * ggx2;
-}
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-// UBO layout offsets (in uint units):
-//   [0..2]   lightPosition (vec3)
-//   [3]      padding
-//   [4..19]  lightViewMatrix (mat4)
-//   [20..35] lightProjMatrix (mat4)
-//   [36..38] eyePosition (vec3)
-//   [39]     padding
-//   [40..42] eyeDir (vec3)
-//   [43]     padding
-//   [44..59] eyeViewMatrix (mat4)
-//   [60..75] eyeProjMatrix (mat4)
-
-vec3 calculateColor(vec3 WorldPos, vec3 Normal,
-    vec3 lightColor,
-    vec3 albedo,
-    float metallic,
-    float roughness)
-{
-    vec3 N = normalize(Normal);
-    vec3 eyePos = readVec3(pushConsts.uniformBufferIndex, 36u);
-    vec3 V = normalize(eyePos - WorldPos);
-
-    vec3 F0 = vec3(0.04);
-    F0 = mix(F0, albedo, metallic);
-
-    vec3 Lo = vec3(0.0);
-    {
-        vec3 L = normalize(pushConsts.sun_dir);
-        vec3 H = normalize(V + L);
-        float attenuation = 1.0;
-        vec3 radiance = lightColor * attenuation;
-
-        float NDF = DistributionGGX(N, H, roughness);
-        float G   = GeometrySmith(N, V, L, roughness);
-        vec3 F    = fresnelSchlick(clamp(dot(H, V), 0.0, 1.0), F0);
-
-        vec3 numerator    = NDF * G * F;
-        float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
-        vec3 specular = numerator / denominator;
-
-        vec3 kS = F;
-        vec3 kD = vec3(1.0) - kS;
-        kD *= 1.0 - metallic;
-
-        float NdotL = max(dot(N, L), 0.0);
-        Lo += (kD * albedo / 3.14159265359 + specular) * radiance * NdotL;
-    }
-
-    vec3 ambient = vec3(0.03) * albedo;
-    return ambient + Lo;
+    return vec3(
+        fract(float(id) * 0.618033988749),
+        fract(float(id) * 0.381966011251),
+        fract(float(id) * 0.737096774194)
+    );
 }
 
 // ============================================================================
-// Main — VBuffer decode + PBR in a single pass
+// Main
 // ============================================================================
 
 void main()
 {
     if (gl_GlobalInvocationID.x >= pushConsts.gbufferSize.x ||
-        gl_GlobalInvocationID.y >= pushConsts.gbufferSize.y) {
+        gl_GlobalInvocationID.y >= pushConsts.gbufferSize.y)
+    {
         return;
     }
 
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    // --- Read visibility buffer (raw) for VisibilityBuffer debug mode ---
+    uvec4 vis = imageLoad(imagesRGBA32UI[pushConsts.visibilityImageIndex], pixel);
+    uint instanceID_1based = vis.r;
+    uint primitiveID = vis.g;
+
+    // --- VisibilityBuffer mode: raw pseudo-color without full decode ---
+    if (pushConsts.debugMode == 4u)
+    {
+        vec4 result = vec4(0.0);
+        if (instanceID_1based != 0u)
+        {
+            result = vec4(pseudoColor(instanceID_1based ^ (primitiveID * 2654435761u)), 1.0);
+        }
+        imageStore(imagesRGBA16[pushConsts.outputImageIndex], pixel, result);
+        return;
+    }
 
     // --- Read depth: skip background pixels ---
     vec2 screenUV = vec2(float(pixel.x) / float(pushConsts.gbufferSize.x),
                          float(pixel.y) / float(pushConsts.gbufferSize.y));
     float depth = texture(textures[pushConsts.depthImageIndex], screenUV).r;
 
-    if (depth >= (1.0 - 1e-3))
+    if (depth >= (1.0 - 1e-3) || instanceID_1based == 0u)
     {
-        imageStore(imagesRGBA16[pushConsts.finalOutputImage], pixel, vec4(0.0));
-        return;
-    }
-
-    // --- Read visibility buffer ---
-    uvec4 vis = imageLoad(imagesRGBA32UI[pushConsts.visibilityImageIndex], pixel);
-    uint instanceID_1based = vis.r;
-    uint primitiveID = vis.g;
-
-    if (instanceID_1based == 0u)
-    {
-        imageStore(imagesRGBA16[pushConsts.finalOutputImage], pixel, vec4(0.0));
+        imageStore(imagesRGBA16[pushConsts.outputImageIndex], pixel, vec4(0.0));
         return;
     }
 
@@ -299,22 +220,27 @@ void main()
     InstanceInfo inst = loadInstanceInfo(instanceID);
     MaterialInfo matl = loadMaterialInfo(inst.materialID);
 
-    // --- Load triangle indices (uint16 packed in uint32 SSBO) ---
+    // --- ObjectID mode: skip expensive vertex decode ---
+    if (pushConsts.debugMode == 3u)
+    {
+        imageStore(imagesRGBA16[pushConsts.outputImageIndex], pixel,
+                   vec4(pseudoColor(inst.objectID), 1.0));
+        return;
+    }
+
+    // --- Full VBuffer decode for BaseColor / Normal / WorldPosition ---
     uint i0 = readIndex16(inst.indexBufferIndex, primitiveID * 3u + 0u);
     uint i1 = readIndex16(inst.indexBufferIndex, primitiveID * 3u + 1u);
     uint i2 = readIndex16(inst.indexBufferIndex, primitiveID * 3u + 2u);
 
-    // --- Load triangle vertices ---
     Vertex v0 = loadVertex(inst.vertexBufferIndex, i0);
     Vertex v1 = loadVertex(inst.vertexBufferIndex, i1);
     Vertex v2 = loadVertex(inst.vertexBufferIndex, i2);
 
-    // --- Transform to world space ---
     vec3 worldPos0 = (inst.modelMatrix * vec4(v0.position, 1.0)).xyz;
     vec3 worldPos1 = (inst.modelMatrix * vec4(v1.position, 1.0)).xyz;
     vec3 worldPos2 = (inst.modelMatrix * vec4(v2.position, 1.0)).xyz;
 
-    // --- Compute screen-space positions for barycentric ---
     mat4 viewProjMatrix = readMat4(pushConsts.vpBufferIndex, 0u);
     vec2 resolution = vec2(pushConsts.gbufferSize);
 
@@ -328,7 +254,7 @@ void main()
     float area = edgeFunction(s0, s1, s2);
     if (abs(area) < 1e-6)
     {
-        imageStore(imagesRGBA16[pushConsts.finalOutputImage], pixel, vec4(0.0));
+        imageStore(imagesRGBA16[pushConsts.outputImageIndex], pixel, vec4(0.0));
         return;
     }
 
@@ -336,7 +262,6 @@ void main()
     float b1 = edgeFunction(s2, s0, pixelPos) / area;
     float b2 = edgeFunction(s0, s1, pixelPos) / area;
 
-    // Perspective-correct interpolation
     float inv_w0 = 1.0 / w0;
     float inv_w1 = 1.0 / w1;
     float inv_w2 = 1.0 / w2;
@@ -347,7 +272,6 @@ void main()
     bary.y = (b1 * inv_w1) / inv_w_sum;
     bary.z = (b2 * inv_w2) / inv_w_sum;
 
-    // --- Interpolate vertex attributes ---
     vec3 interpPos = bary.x * worldPos0 + bary.y * worldPos1 + bary.z * worldPos2;
 
     mat3 normalMatrix = transpose(inverse(mat3(inst.modelMatrix)));
@@ -356,7 +280,6 @@ void main()
 
     vec2 interpUV = bary.x * v0.texCoord + bary.y * v1.texCoord + bary.z * v2.texCoord;
 
-    // --- Sample material ---
     vec4 baseColor = matl.materialColor;
     if (matl.textureDescriptor != 0u)
     {
@@ -364,11 +287,23 @@ void main()
         baseColor.rgb *= texSample.rgb;
     }
 
-    // --- PBR lighting ---
-    vec3 renderResult = calculateColor(interpPos, interpNormal,
-        pushConsts.lightColor,
-        baseColor.rgb, matl.metallic, matl.roughness);
-    renderResult = max(renderResult, vec3(0.01, 0.01, 0.01));
+    // --- Output based on debug mode ---
+    vec4 result = vec4(0.0);
+    switch (pushConsts.debugMode)
+    {
+        case 0u: // BaseColor
+            result = baseColor;
+            break;
+        case 1u: // Normal (remapped to [0,1])
+            result = vec4(interpNormal * 0.5 + 0.5, 1.0);
+            break;
+        case 2u: // WorldPosition
+            result = vec4(interpPos, 1.0);
+            break;
+        default:
+            result = vec4(0.0);
+            break;
+    }
 
-    imageStore(imagesRGBA16[pushConsts.finalOutputImage], pixel, vec4(renderResult, 1.0));
+    imageStore(imagesRGBA16[pushConsts.outputImageIndex], pixel, result);
 }

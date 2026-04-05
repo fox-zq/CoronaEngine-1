@@ -11,21 +11,15 @@ using uint = uint32_t;
 
 #include GLSL(../../../assets/shaders/visibility.vert.glsl)
 #include GLSL(../../../assets/shaders/visibility.frag.glsl)
-#include GLSL(../../../assets/shaders/material_resolve.comp.glsl)
 #include GLSL(../../../assets/shaders/lighting.comp.glsl)
 #include GLSL(../../../assets/shaders/sky.comp.glsl)
 #include GLSL(../../../assets/shaders/tonemap.comp.glsl)
+#include GLSL(../../../assets/shaders/debug_resolve.comp.glsl)
 
 struct Hardware {
     // === Visibility Buffer (replaces GBuffer rasterization output) ===
     HardwareImage visibilityImage;          // RGBA32_UINT: R=instanceID, G=primitiveID
     HardwareImage depthImage;               // D32_FLOAT: depth (kept from GBuffer)
-
-    // === Resolved attributes (Material Resolve output → Lighting input) ===
-    HardwareImage resolvedPositionImage;    // RGBA16_FLOAT: world-space position
-    HardwareImage resolvedBaseColorImage;   // RGBA16_FLOAT: albedo / base color
-    HardwareImage resolvedNormalImage;      // RGBA16_FLOAT: world-space normal
-    HardwareImage resolvedObjectIDImage;    // RGBA16_FLOAT: object ID for picking
 
     // === Final composited output ===
     HardwareImage finalOutputImage;
@@ -42,10 +36,10 @@ struct Hardware {
     // === Shader pipelines ===
     bool shaderHasInit = false;
     std::optional<RasterizerPipeline<visibility_vert_glsl, visibility_frag_glsl>> visibilityPipeline;
-    std::optional<ComputePipeline<material_resolve_comp_glsl>> materialResolvePipeline;
     std::optional<ComputePipeline<lighting_comp_glsl>> lightingPipeline;
     std::optional<ComputePipeline<sky_comp_glsl>> skyPipeline;
     std::optional<ComputePipeline<tonemap_comp_glsl>> tonemapPipeline;
+    std::optional<ComputePipeline<debug_resolve_comp_glsl>> debugResolvePipeline;
 
     // === CPU-side uniform data ===
     struct UniformBufferObject {
