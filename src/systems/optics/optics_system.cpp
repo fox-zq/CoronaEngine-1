@@ -89,27 +89,36 @@ namespace Corona::Systems
             hardware_->gbufferSize.x = 1920;
             hardware_->gbufferSize.y = 1080;
 
-            hardware_->gbufferPostionImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                           ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->gbufferBaseColorImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                             ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->gbufferNormalImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                          ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
-            hardware_->gbufferMotionVectorImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                                ImageFormat::RG32_FLOAT, ImageUsage::StorageImage);
-            hardware_->gbufferDepthImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                         ImageFormat::D32_FLOAT, ImageUsage::DepthImage);
+            const auto w = hardware_->gbufferSize.x;
+            const auto h = hardware_->gbufferSize.y;
 
-            hardware_->gbufferObjectIDImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                            ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            // --- Visibility Buffer ---
+            hardware_->visibilityImage = HardwareImage(w, h, ImageFormat::RGBA32_UINT, ImageUsage::StorageImage);
+            hardware_->depthImage = HardwareImage(w, h, ImageFormat::D32_FLOAT, ImageUsage::DepthImage);
 
+            // --- Resolved attribute images (Material Resolve → Lighting) ---
+            hardware_->resolvedPositionImage  = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->resolvedBaseColorImage = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->resolvedNormalImage    = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            hardware_->resolvedObjectIDImage  = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+
+            // --- Uniform buffers ---
             hardware_->uniformBuffer =
                 HardwareBuffer(sizeof(Hardware::UniformBufferObject), BufferUsage::StorageBuffer);
-            hardware_->gbufferUniformBuffer = HardwareBuffer(sizeof(Hardware::gbufferUniformBufferObject),
-                                                             BufferUsage::StorageBuffer);
+            hardware_->vpUniformBuffer = HardwareBuffer(sizeof(Hardware::VPUniformBufferObject),
+                                                        BufferUsage::StorageBuffer);
 
-            hardware_->finalOutputImage = HardwareImage(hardware_->gbufferSize.x, hardware_->gbufferSize.y,
-                                                        ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
+            // --- Instance & Material table buffers (pre-allocate reasonable capacity) ---
+            constexpr uint32_t kMaxInstances  = 4096;
+            constexpr uint32_t kMaxMaterials  = 1024;
+            hardware_->instanceInfoBuffer = HardwareBuffer(
+                kMaxInstances * static_cast<uint32_t>(sizeof(Hardware::InstanceInfo)),
+                BufferUsage::StorageBuffer);
+            hardware_->materialTableBuffer = HardwareBuffer(
+                kMaxMaterials * static_cast<uint32_t>(sizeof(Hardware::MaterialInfo)),
+                BufferUsage::StorageBuffer);
+
+            hardware_->finalOutputImage = HardwareImage(w, h, ImageFormat::RGBA16_FLOAT, ImageUsage::StorageImage);
         }
         catch (const std::exception&)
         {
@@ -124,12 +133,14 @@ namespace Corona::Systems
     {
         try
         {
-            hardware_->rasterizerPipeline.emplace();
+            hardware_->visibilityPipeline.emplace();
+            hardware_->materialResolvePipeline.emplace();
             hardware_->lightingPipeline.emplace();
             hardware_->skyPipeline.emplace();
             hardware_->tonemapPipeline.emplace();
             hardware_->shaderHasInit = true;
-            CFW_LOG_INFO("OpticsSystem: Typed shader pipelines created successfully");
+            CFW_LOG_INFO("OpticsSystem: VBuffer pipelines created successfully "
+                         "(visibility + materialResolve + lighting + sky + tonemap)");
         }
         catch (const std::exception& e)
         {
@@ -178,7 +189,8 @@ namespace Corona::Systems
 
     void OpticsSystem::update()
     {
-        if (!hardware_->shaderHasInit || !hardware_->rasterizerPipeline ||
+        if (!hardware_->shaderHasInit || !hardware_->visibilityPipeline ||
+            !hardware_->materialResolvePipeline ||
             !hardware_->lightingPipeline || !hardware_->skyPipeline || !hardware_->tonemapPipeline)
         {
             return;
@@ -196,204 +208,280 @@ namespace Corona::Systems
 
     void OpticsSystem::optics_pipeline(float frame_count, uint64_t frame_index)
     {
-        // CFW_LOG_DEBUG("OpticsSystem: Rendering pipeline temporarily disabled - waiting for new Storage API");
-        auto& rasterizer = *hardware_->rasterizerPipeline;
-        auto& lighting = *hardware_->lightingPipeline;
-        auto& sky = *hardware_->skyPipeline;
-        auto& tonemap = *hardware_->tonemapPipeline;
+        auto& visibility     = *hardware_->visibilityPipeline;
+        auto& materialResolve = *hardware_->materialResolvePipeline;
+        auto& lighting       = *hardware_->lightingPipeline;
+        auto& sky            = *hardware_->skyPipeline;
+        auto& tonemap        = *hardware_->tonemapPipeline;
 
-        // 遍历场景存储并使用 acquire_read 访问相关句柄
         for (const auto& scene : SharedDataHub::instance().scene_storage())
         {
             for (auto cam_handle : scene.camera_handles)
             {
                 if (auto camera = SharedDataHub::instance().camera_storage().acquire_read(cam_handle))
                 {
-                        hardware_->uniformBufferObjects.eyePosition = camera->position;
-                        hardware_->uniformBufferObjects.eyeDir = camera->forward;
-                        hardware_->uniformBufferObjects.eyeViewMatrix = camera->compute_view_matrix();
-                        hardware_->uniformBufferObjects.eyeProjMatrix = camera->compute_projection_matrix();
-                        hardware_->gbufferUniformBufferObjects.viewProjMatrix = camera->compute_view_proj_matrix();
-                        hardware_->gbufferUniformBuffer.copyFromData(&hardware_->gbufferUniformBufferObjects,
-                                                                     sizeof(hardware_->gbufferUniformBufferObjects));
+                    // ================================================================
+                    // 1. Update camera uniform buffers
+                    // ================================================================
+                    hardware_->uniformBufferObjects.eyePosition = camera->position;
+                    hardware_->uniformBufferObjects.eyeDir = camera->forward;
+                    hardware_->uniformBufferObjects.eyeViewMatrix = camera->compute_view_matrix();
+                    hardware_->uniformBufferObjects.eyeProjMatrix = camera->compute_projection_matrix();
+                    hardware_->vpUniformBufferObjects.viewProjMatrix = camera->compute_view_proj_matrix();
+                    hardware_->vpUniformBuffer.copyFromData(&hardware_->vpUniformBufferObjects,
+                                                            sizeof(hardware_->vpUniformBufferObjects));
 
-                        rasterizer.gbufferPostion = hardware_->gbufferPostionImage;
-                        rasterizer.gbufferBaseColor = hardware_->gbufferBaseColorImage;
-                        rasterizer.gbufferNormal = hardware_->gbufferNormalImage;
-                        rasterizer.gbufferMotionVector = hardware_->gbufferMotionVectorImage;
-                        rasterizer.gbufferObjectID = hardware_->gbufferObjectIDImage;
-                        rasterizer.setDepthImage(hardware_->gbufferDepthImage);
+                    // ================================================================
+                    // 2. Build per-frame Instance Table & Material Table
+                    // ================================================================
+                    hardware_->instanceInfoData.clear();
+                    hardware_->materialTableData.clear();
 
-                        // 遍历所有光学设备
-                        uint32_t object_id = 1;
-                        for (const auto& optics : SharedDataHub::instance().optics_storage())
+                    // Configure visibility pipeline render targets
+                    visibility.visibilityData = hardware_->visibilityImage;
+                    visibility.setDepthImage(hardware_->depthImage);
+
+                    uint32_t object_id = 1;
+                    for (const auto& optics : SharedDataHub::instance().optics_storage())
+                    {
+                        if (auto geom = SharedDataHub::instance().geometry_storage().acquire_write(
+                            optics.geometry_handle))
                         {
-                            if (auto geom = SharedDataHub::instance().geometry_storage().acquire_write(
-                                optics.geometry_handle))
+                            ktm::fmat4x4 model_matrix{ktm::fmat4x4::from_eye()};
+                            if (auto transform = SharedDataHub::instance().model_transform_storage().acquire_read(
+                                geom->transform_handle))
                             {
-                                // 获取模型的全局变换矩阵
-                                ktm::fmat4x4 model_matrix{ktm::fmat4x4::from_eye()};
-                                if (auto transform = SharedDataHub::instance().model_transform_storage().acquire_read(
-                                    geom->transform_handle))
-                                {
-                                    model_matrix = transform->compute_matrix();
-                                }
+                                model_matrix = transform->compute_matrix();
+                            }
 
-                                // 每个 submesh 都需要完整设置所有 push constants
-                                // 因为 record() 会在保存后重置 tempPushConstant
-                                // 注意：节点累积变换已在加载时"烘焙"到顶点数据中
-                                for (auto& m : geom->mesh_handles)
+                            for (auto& m : geom->mesh_handles)
+                            {
+                                // --- Collect material info ---
+                                auto materialID = static_cast<uint32_t>(hardware_->materialTableData.size());
                                 {
-                                    rasterizer.pushConsts.modelMatrix = model_matrix;
-                                    rasterizer.pushConsts.uniformBufferIndex = hardware_->gbufferUniformBuffer.
-                                        storeDescriptor();
-                                    // 检查纹理是否有效，避免对未初始化的 HardwareImage 调用 storeDescriptor()
-                                    if (m.textureBuffer)
-                                    {
-                                        rasterizer[test_frag_glsl::pushConsts::textureIndex] = m.textureBuffer.storeDescriptor();
-                                    }
-                                    else
-                                    {
-                                        rasterizer[test_frag_glsl::pushConsts::textureIndex] = static_cast<uint32_t>(0);
-                                    }
-                                    // 传递材质颜色到着色器
-                                    ktm::fvec4 materialColor{
-                                        m.materialColor[0], m.materialColor[1], m.materialColor[2], m.materialColor[3]
+                                    Hardware::MaterialInfo mat_info{};
+                                    mat_info.textureDescriptor = m.textureBuffer
+                                        ? m.textureBuffer.storeDescriptor()
+                                        : 0;
+                                    mat_info.metallic = optics.metallic;
+                                    mat_info.roughness = optics.roughness;
+                                    mat_info.padding0 = 0.0f;
+                                    mat_info.materialColor = ktm::fvec4{
+                                        m.materialColor[0], m.materialColor[1],
+                                        m.materialColor[2], m.materialColor[3]
                                     };
-                                    rasterizer[test_frag_glsl::pushConsts::materialColor] = materialColor;
-                                    rasterizer[test_frag_glsl::pushConsts::objectID] = object_id;
-                                    rasterizer.record(m.indexBuffer, m.vertexBuffer);
+                                    hardware_->materialTableData.push_back(mat_info);
                                 }
-                            }
-                            ++object_id;
-                        }
 
-                        // === Environment parameters ===
-                        ktm::fvec3 sun_dir;
-                        sun_dir.x = 1.0f;
-                        sun_dir.y = 1.0f;
-                        sun_dir.z = 1.0f;
-                        std::uint32_t floor_grid_enabled = 1;
-                        if (scene.environment != 0)
-                        {
-                            if (auto env = SharedDataHub::instance().environment_storage().acquire_read(
-                                scene.environment))
-                            {
-                                sun_dir = env->sun_position;
-                                floor_grid_enabled = env->floor_grid_enabled;
-                            }
-                        }
-                        sun_dir = ktm::normalize(sun_dir);
-
-                        hardware_->uniformBuffer.copyFromData(&hardware_->uniformBufferObjects,
-                                                              sizeof(hardware_->uniformBufferObjects));
-                        const uint32_t uboDescriptor = hardware_->uniformBuffer.storeDescriptor();
-                        const uint32_t depthDescriptor = rasterizer.getDepthImage().storeDescriptor();
-                        const uint32_t finalOutputDescriptor = hardware_->finalOutputImage.storeDescriptor();
-
-                        // === Lighting pass: PBR direct illumination (geometry pixels only) ===
-                        lighting.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        lighting.pushConsts.gbufferPostionImage = hardware_->gbufferPostionImage.storeDescriptor();
-                        lighting.pushConsts.gbufferBaseColorImage = hardware_->gbufferBaseColorImage.storeDescriptor();
-                        lighting.pushConsts.gbufferNormalImage = hardware_->gbufferNormalImage.storeDescriptor();
-                        lighting.pushConsts.gbufferDepthImage = depthDescriptor;
-                        lighting.pushConsts.finalOutputImage = finalOutputDescriptor;
-                        lighting.pushConsts.uniformBufferIndex = uboDescriptor;
-                        lighting.pushConsts.sun_dir = sun_dir;
-                        {
-                            static const ktm::fvec3 lightColor{190.0f, 120.0f, 60.0f};
-                            lighting.pushConsts.lightColor = lightColor;
-                        }
-
-                        // === Sky pass: atmospheric scattering + floor grid (background pixels only) ===
-                        sky.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        sky.pushConsts.gbufferDepthImage = depthDescriptor;
-                        sky.pushConsts.finalOutputImage = finalOutputDescriptor;
-                        sky.pushConsts.uniformBufferIndex = uboDescriptor;
-                        sky.pushConsts.sun_dir = sun_dir;
-                        sky.pushConsts.floor_grid_enabled = floor_grid_enabled;
-
-                        // === Tonemap pass: ACES filmic HDR -> LDR (full screen) ===
-                        tonemap.pushConsts.gbufferSize = hardware_->gbufferSize;
-                        tonemap.pushConsts.inputImage = finalOutputDescriptor;
-                        tonemap.pushConsts.outputImage = finalOutputDescriptor;
-
-                        // GPU sync: wait for Display to finish consuming our image
-                        // before we overwrite it with new rendering output.
-                        if (image_handle_ != 0) {
-                            if (auto consumed_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
-                                hardware_->executor.wait(consumed_device->consumed_executor);
-                            }
-                        }
-
-                        const uint32_t dispatchX = hardware_->gbufferSize.x / 8;
-                        const uint32_t dispatchY = hardware_->gbufferSize.y / 8;
-                        hardware_->executor << rasterizer(1920, 1080)
-                            << lighting(dispatchX, dispatchY, 1)
-                            << sky(dispatchX, dispatchY, 1)
-                            << tonemap(dispatchX, dispatchY, 1);
-
-                        // Output mode: copy selected GBuffer channel into finalOutputImage
-                        // so that the sync-protected finalOutputImage is always the output buffer.
-                        switch (camera->output_mode) {
-                            case CameraOutputMode::BaseColor:
-                                hardware_->executor << hardware_->gbufferBaseColorImage.copyTo(hardware_->finalOutputImage);
-                                break;
-                            case CameraOutputMode::Normal:
-                                hardware_->executor << hardware_->gbufferNormalImage.copyTo(hardware_->finalOutputImage);
-                                break;
-                            case CameraOutputMode::WorldPosition:
-                                hardware_->executor << hardware_->gbufferPostionImage.copyTo(hardware_->finalOutputImage);
-                                break;
-                            case CameraOutputMode::ObjectID:
-                                hardware_->executor << hardware_->gbufferObjectIDImage.copyTo(hardware_->finalOutputImage);
-                                break;
-                            case CameraOutputMode::FinalColor: [[fallthrough]];
-                            default:
-                                break; // finalOutputImage already contains tonemap result
-                        }
-
-                        hardware_->executor << hardware_->executor.commit();
-
-                        if (image_handle_ != 0)
-                        {
-                            if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_))
-                            {
-                                image_device->image = hardware_->finalOutputImage;
-                                image_device->executor = hardware_->executor;
-                            }
-
-                            if (camera->surface != nullptr)
-                            {
-                                process_pending_screenshots(camera->surface);
-
-                                if (auto* event_bus = context()->event_bus())
+                                // --- Collect instance info ---
+                                auto instanceID = static_cast<uint32_t>(hardware_->instanceInfoData.size());
                                 {
-                                    event_bus->publish<Events::OpticsFrameReadyEvent>({
-                                        camera->surface,
-                                        image_handle_,
-                                        frame_index,
-                                        hardware_->gbufferSize.x,
-                                        hardware_->gbufferSize.y
-                                    });
+                                    Hardware::InstanceInfo inst{};
+                                    inst.modelMatrix = model_matrix;
+                                    inst.vertexBufferIndex = m.vertexStorageBuffer
+                                        ? m.vertexStorageBuffer.storeDescriptor()
+                                        : 0;
+                                    inst.indexBufferIndex = m.indexStorageBuffer
+                                        ? m.indexStorageBuffer.storeDescriptor()
+                                        : 0;
+                                    inst.materialID = materialID;
+                                    inst.objectID = object_id;
+                                    hardware_->instanceInfoData.push_back(inst);
                                 }
+
+                                // --- Record visibility draw call ---
+                                visibility.pushConsts.modelMatrix = model_matrix;
+                                visibility.pushConsts.uniformBufferIndex =
+                                    hardware_->vpUniformBuffer.storeDescriptor();
+                                // VBuffer uses 1-based instanceID (0 = background sentinel after clear)
+                                visibility.pushConsts.instanceID = instanceID + 1;
+                                // Alpha-cutout: pass texture descriptor for discard test
+                                if (m.textureBuffer)
+                                {
+                                    visibility[visibility_frag_glsl::pushConsts::textureIndex] =
+                                        m.textureBuffer.storeDescriptor();
+                                }
+                                else
+                                {
+                                    visibility[visibility_frag_glsl::pushConsts::textureIndex] =
+                                        static_cast<uint32_t>(0);
+                                }
+                                visibility.record(m.indexBuffer, m.vertexBuffer);
                             }
                         }
+                        ++object_id;
+                    }
+
+                    // ================================================================
+                    // 3. Upload instance & material tables to GPU
+                    // ================================================================
+                    if (!hardware_->instanceInfoData.empty())
+                    {
+                        hardware_->instanceInfoBuffer.copyFromData(
+                            hardware_->instanceInfoData.data(),
+                            hardware_->instanceInfoData.size() * sizeof(Hardware::InstanceInfo));
+                    }
+                    if (!hardware_->materialTableData.empty())
+                    {
+                        hardware_->materialTableBuffer.copyFromData(
+                            hardware_->materialTableData.data(),
+                            hardware_->materialTableData.size() * sizeof(Hardware::MaterialInfo));
+                    }
+
+                    // ================================================================
+                    // 4. Environment parameters
+                    // ================================================================
+                    ktm::fvec3 sun_dir;
+                    sun_dir.x = 1.0f;
+                    sun_dir.y = 1.0f;
+                    sun_dir.z = 1.0f;
+                    std::uint32_t floor_grid_enabled = 1;
+                    if (scene.environment != 0)
+                    {
+                        if (auto env = SharedDataHub::instance().environment_storage().acquire_read(
+                            scene.environment))
+                        {
+                            sun_dir = env->sun_position;
+                            floor_grid_enabled = env->floor_grid_enabled;
+                        }
+                    }
+                    sun_dir = ktm::normalize(sun_dir);
+
+                    hardware_->uniformBuffer.copyFromData(&hardware_->uniformBufferObjects,
+                                                          sizeof(hardware_->uniformBufferObjects));
+                    const uint32_t uboDescriptor = hardware_->uniformBuffer.storeDescriptor();
+                    const uint32_t depthDescriptor = visibility.getDepthImage().storeDescriptor();
+                    const uint32_t finalOutputDescriptor = hardware_->finalOutputImage.storeDescriptor();
+
+                    // ================================================================
+                    // 5. Material Resolve pass: VBuffer decode → resolved attributes
+                    // ================================================================
+                    materialResolve.pushConsts.gbufferSize = hardware_->gbufferSize;
+                    materialResolve.pushConsts.visibilityImageIndex =
+                        hardware_->visibilityImage.storeDescriptor();
+                    materialResolve.pushConsts.depthImageIndex = depthDescriptor;
+                    materialResolve.pushConsts.instanceInfoBufferIndex =
+                        hardware_->instanceInfoBuffer.storeDescriptor();
+                    materialResolve.pushConsts.materialTableBufferIndex =
+                        hardware_->materialTableBuffer.storeDescriptor();
+                    materialResolve.pushConsts.vpBufferIndex =
+                        hardware_->vpUniformBuffer.storeDescriptor();
+                    materialResolve.pushConsts.resolvedPositionImageIndex =
+                        hardware_->resolvedPositionImage.storeDescriptor();
+                    materialResolve.pushConsts.resolvedBaseColorImageIndex =
+                        hardware_->resolvedBaseColorImage.storeDescriptor();
+                    materialResolve.pushConsts.resolvedNormalImageIndex =
+                        hardware_->resolvedNormalImage.storeDescriptor();
+                    materialResolve.pushConsts.resolvedObjectIDImageIndex =
+                        hardware_->resolvedObjectIDImage.storeDescriptor();
+
+                    // ================================================================
+                    // 6. Lighting pass: PBR direct illumination (geometry pixels only)
+                    // ================================================================
+                    lighting.pushConsts.gbufferSize = hardware_->gbufferSize;
+                    lighting.pushConsts.gbufferPostionImage =
+                        hardware_->resolvedPositionImage.storeDescriptor();
+                    lighting.pushConsts.gbufferBaseColorImage =
+                        hardware_->resolvedBaseColorImage.storeDescriptor();
+                    lighting.pushConsts.gbufferNormalImage =
+                        hardware_->resolvedNormalImage.storeDescriptor();
+                    lighting.pushConsts.gbufferDepthImage = depthDescriptor;
+                    lighting.pushConsts.finalOutputImage = finalOutputDescriptor;
+                    lighting.pushConsts.uniformBufferIndex = uboDescriptor;
+                    lighting.pushConsts.sun_dir = sun_dir;
+                    {
+                        static const ktm::fvec3 lightColor{190.0f, 120.0f, 60.0f};
+                        lighting.pushConsts.lightColor = lightColor;
+                    }
+
+                    // ================================================================
+                    // 7. Sky pass: atmospheric scattering + floor grid
+                    // ================================================================
+                    sky.pushConsts.gbufferSize = hardware_->gbufferSize;
+                    sky.pushConsts.gbufferDepthImage = depthDescriptor;
+                    sky.pushConsts.finalOutputImage = finalOutputDescriptor;
+                    sky.pushConsts.uniformBufferIndex = uboDescriptor;
+                    sky.pushConsts.sun_dir = sun_dir;
+                    sky.pushConsts.floor_grid_enabled = floor_grid_enabled;
+
+                    // ================================================================
+                    // 8. Tonemap pass: ACES filmic HDR → LDR
+                    // ================================================================
+                    tonemap.pushConsts.gbufferSize = hardware_->gbufferSize;
+                    tonemap.pushConsts.inputImage = finalOutputDescriptor;
+                    tonemap.pushConsts.outputImage = finalOutputDescriptor;
+
+                    // ================================================================
+                    // 9. GPU sync & dispatch
+                    // ================================================================
+                    if (image_handle_ != 0) {
+                        if (auto consumed_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_)) {
+                            hardware_->executor.wait(consumed_device->consumed_executor);
+                        }
+                    }
+
+                    const uint32_t dispatchX = hardware_->gbufferSize.x / 8;
+                    const uint32_t dispatchY = hardware_->gbufferSize.y / 8;
+                    hardware_->executor << visibility(1920, 1080)
+                        << materialResolve(dispatchX, dispatchY, 1)
+                        << lighting(dispatchX, dispatchY, 1)
+                        << sky(dispatchX, dispatchY, 1)
+                        << tonemap(dispatchX, dispatchY, 1);
+
+                    // ================================================================
+                    // 10. Camera output mode (debug visualization)
+                    // ================================================================
+                    switch (camera->output_mode) {
+                        case CameraOutputMode::BaseColor:
+                            hardware_->executor << hardware_->resolvedBaseColorImage.copyTo(hardware_->finalOutputImage);
+                            break;
+                        case CameraOutputMode::Normal:
+                            hardware_->executor << hardware_->resolvedNormalImage.copyTo(hardware_->finalOutputImage);
+                            break;
+                        case CameraOutputMode::WorldPosition:
+                            hardware_->executor << hardware_->resolvedPositionImage.copyTo(hardware_->finalOutputImage);
+                            break;
+                        case CameraOutputMode::ObjectID:
+                            hardware_->executor << hardware_->resolvedObjectIDImage.copyTo(hardware_->finalOutputImage);
+                            break;
+                        case CameraOutputMode::VisibilityBuffer:
+                            // Pseudo-color visualization of instanceID
+                            hardware_->executor << hardware_->resolvedObjectIDImage.copyTo(hardware_->finalOutputImage);
+                            break;
+                        case CameraOutputMode::FinalColor: [[fallthrough]];
+                        default:
+                            break; // finalOutputImage already contains tonemap result
+                    }
+
+                    hardware_->executor << hardware_->executor.commit();
+
+                    if (image_handle_ != 0)
+                    {
+                        if (auto image_device = SharedDataHub::instance().image_storage().acquire_write(image_handle_))
+                        {
+                            image_device->image = hardware_->finalOutputImage;
+                            image_device->executor = hardware_->executor;
+                        }
+
+                        if (camera->surface != nullptr)
+                        {
+                            process_pending_screenshots(camera->surface);
+
+                            if (auto* event_bus = context()->event_bus())
+                            {
+                                event_bus->publish<Events::OpticsFrameReadyEvent>({
+                                    camera->surface,
+                                    image_handle_,
+                                    frame_index,
+                                    hardware_->gbufferSize.x,
+                                    hardware_->gbufferSize.y
+                                });
+                            }
+                        }
+                    }
 
 #ifdef CORONA_ENABLE_VISION
-                        // if (hardware_->displayers_.contains(reinterpret_cast<uint64_t>(camera->surface)))
-                        // {
-                        //     renderPipeline->display(1 / 30);
-                        //     importedViewImage.copyFromBuffer(importedViewBuffer);
-                        //     hardware_->displayers_.at(reinterpret_cast<uint64_t>(camera->surface)).wait(
-                        //         hardware_->executor) << importedViewImage;
-                        // }
-#else
-                        // if (hardware_->displayers_.contains(reinterpret_cast<uint64_t>(camera->surface)))
-                        // {
-                        //     hardware_->displayers_.at(reinterpret_cast<uint64_t>(camera->surface)).wait(
-                        //         hardware_->executor) << hardware_->finalOutputImage;
-                        // }
+                    // Vision backend integration placeholder (currently disabled)
 #endif
                 }
             }

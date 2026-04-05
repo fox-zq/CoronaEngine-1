@@ -20,6 +20,11 @@ struct MeshDevice {
     HardwareBuffer indexBuffer;
     HardwareBuffer vertexBuffer;
 
+    // StorageBuffer mirrors for compute shader (VBuffer resolve) access.
+    // CabbageHardware BufferUsage is non-combinable, so we keep separate copies.
+    HardwareBuffer indexStorageBuffer;
+    HardwareBuffer vertexStorageBuffer;
+
     uint32_t materialIndex;
     HardwareImage textureBuffer;
     
@@ -126,6 +131,7 @@ enum class CameraOutputMode : uint8_t {
     Normal,
     WorldPosition,
     ObjectID,
+    VisibilityBuffer,
 };
 
 struct CameraDevice {

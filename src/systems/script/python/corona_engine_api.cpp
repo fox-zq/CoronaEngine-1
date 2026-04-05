@@ -541,6 +541,10 @@ Corona::API::Geometry::Geometry(const std::string& model_path) {
         dev.vertexBuffer = HardwareBuffer(scene->get_mesh_vertices(mesh_idx), BufferUsage::VertexBuffer);
         dev.indexBuffer = HardwareBuffer(scene->get_mesh_indices(mesh_idx), BufferUsage::IndexBuffer);
 
+        // StorageBuffer mirrors for VBuffer material resolve compute shader access
+        dev.vertexStorageBuffer = HardwareBuffer(scene->get_mesh_vertices(mesh_idx), BufferUsage::StorageBuffer);
+        dev.indexStorageBuffer = HardwareBuffer(scene->get_mesh_indices(mesh_idx), BufferUsage::StorageBuffer);
+
         dev.materialIndex = (mesh.material_index != Resource::InvalidIndex)
                                 ? mesh.material_index
                                 : 0;
