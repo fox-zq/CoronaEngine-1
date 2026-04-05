@@ -337,6 +337,10 @@ namespace Corona::Systems
                     sun_dir.y = 1.0f;
                     sun_dir.z = 1.0f;
                     std::uint32_t floor_grid_enabled = 1;
+                    ktm::fvec3 sun_color{1.0f, 0.949f, 0.853f};
+                    float sun_intensity = 10.0f;
+                    float sky_intensity = 20.0f;
+                    float exposure = 1.0f;
                     if (scene.environment != 0)
                     {
                         if (auto env = SharedDataHub::instance().environment_storage().acquire_read(
@@ -344,6 +348,10 @@ namespace Corona::Systems
                         {
                             sun_dir = env->sun_position;
                             floor_grid_enabled = env->floor_grid_enabled;
+                            sun_color = env->sun_color;
+                            sun_intensity = env->sun_intensity;
+                            sky_intensity = env->sky_intensity;
+                            exposure = env->exposure;
                         }
                     }
                     sun_dir = ktm::normalize(sun_dir);
@@ -371,9 +379,13 @@ namespace Corona::Systems
                     lighting.pushConsts.uniformBufferIndex = uboDescriptor;
                     lighting.pushConsts.sun_dir = sun_dir;
                     {
-                        static const ktm::fvec3 lightColor{190.0f, 120.0f, 60.0f};
+                        ktm::fvec3 lightColor;
+                        lightColor.x = sun_color.x * sun_intensity;
+                        lightColor.y = sun_color.y * sun_intensity;
+                        lightColor.z = sun_color.z * sun_intensity;
                         lighting.pushConsts.lightColor = lightColor;
                     }
+                    lighting.pushConsts.ambientIntensity = sun_intensity * 0.02f;
 
                     // ================================================================
                     // 6. Sky pass: atmospheric scattering + floor grid
@@ -384,6 +396,8 @@ namespace Corona::Systems
                     sky.pushConsts.uniformBufferIndex = uboDescriptor;
                     sky.pushConsts.sun_dir = sun_dir;
                     sky.pushConsts.floor_grid_enabled = floor_grid_enabled;
+                    sky.pushConsts.cameraFov = camera->fov;
+                    sky.pushConsts.sky_intensity = sky_intensity;
 
                     // ================================================================
                     // 7. Tonemap pass: ACES filmic HDR → LDR
@@ -391,6 +405,7 @@ namespace Corona::Systems
                     tonemap.pushConsts.gbufferSize = hardware_->gbufferSize;
                     tonemap.pushConsts.inputImage = finalOutputDescriptor;
                     tonemap.pushConsts.outputImage = finalOutputDescriptor;
+                    tonemap.pushConsts.exposure = exposure;
 
                     // ================================================================
                     // 8. GPU sync & dispatch

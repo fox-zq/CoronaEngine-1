@@ -192,6 +192,12 @@ struct EnvironmentDevice {
     ktm::fvec3 sun_position;
     std::uint32_t floor_grid_enabled{1};
 
+    // 统一光照参数（供 OpticsSystem lighting/sky/tonemap 共用）
+    ktm::fvec3 sun_color{1.0f, 0.949f, 0.853f};   // ~5500K 日光色温
+    float sun_intensity{10.0f};                      // 太阳直射辐照度
+    float sky_intensity{20.0f};                      // 大气散射功率
+    float exposure{1.0f};                            // 全局曝光
+
     // 物理场景参数
     ktm::fvec3 gravity{0.0f, -9.8f, 0.0f};
     float floor_y{0.0f};

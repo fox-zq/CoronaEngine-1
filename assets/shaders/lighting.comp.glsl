@@ -21,7 +21,7 @@ layout(push_constant) uniform PushConsts
     uint uniformBufferIndex;
     uint padding0;
     vec3 lightColor;
-    float padding1;
+    float ambientIntensity;
     vec3 sun_dir;
 } pushConsts;
 
@@ -256,7 +256,10 @@ vec3 DisneyBRDF(vec3 WorldPos, vec3 Normal, vec3 Tangent, vec3 Bitangent,
     float ndoth = max(dot(N, H), 0.0);
     float ldoth = max(dot(L, H), 0.0);
 
-    if (ndotl <= 0.0) return vec3(0.03) * albedo;
+    float sky_factor = max(dot(N, vec3(0.0, 1.0, 0.0)), 0.0) * 0.5 + 0.5;
+    vec3 ambient = albedo * sky_factor * pushConsts.ambientIntensity;
+
+    if (ndotl <= 0.0) return ambient;
 
     // --- Derived color values ---
     float Cdlum = luminance(albedo);
@@ -306,7 +309,6 @@ vec3 DisneyBRDF(vec3 WorldPos, vec3 Normal, vec3 Tangent, vec3 Bitangent,
     vec3 specular = Ds * F * G;
     vec3 clearcoat = vec3(0.25 * matl.clearcoat * Gr * Fr * Dr);
 
-    vec3 ambient = vec3(0.03) * albedo;
     return ambient + (diffuse + specular + clearcoat) * lightColor * ndotl;
 }
 

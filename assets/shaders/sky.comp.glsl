@@ -15,6 +15,8 @@ layout(push_constant) uniform PushConsts
 
     vec3 sun_dir;
     uint floor_grid_enabled;
+    float cameraFov;
+    float sky_intensity;
 } pushConsts;
 
 layout(set = 1, binding = 0) buffer UniformBufferObject
@@ -196,7 +198,7 @@ void main()
     }
 
     vec2 aspect_ratio = vec2(float(pushConsts.gbufferSize.x) / float(pushConsts.gbufferSize.y), 1);
-    float fov = tan(radians(45.0));
+    float fov = tan(radians(pushConsts.cameraFov * 0.5));
     vec2 point_ndc = screenUV;
 
     vec3 cam_local_point = vec3((2.0 * point_ndc.x - 1.0) * aspect_ratio.x * fov,
@@ -204,9 +206,8 @@ void main()
                           1.0);
 
     vec3 cam_origin = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyePosition;
-    vec3 cam_look_at = vec3(0, 6371e3 + 1., 0) + uniformBufferObjects[pushConsts.uniformBufferIndex].eyeDir;
 
-    vec3 fwd = normalize(cam_look_at - cam_origin);
+    vec3 fwd = normalize(uniformBufferObjects[pushConsts.uniformBufferIndex].eyeDir);
     vec3 up = vec3(0, 1, 0);
     vec3 right = cross(up, fwd);
     up = cross(fwd, right);
@@ -214,7 +215,7 @@ void main()
     vec3 rayOrigin = cam_origin;
     vec3 rayDir = normalize(fwd + up * cam_local_point.y + right * cam_local_point.x);
 
-    vec3 renderResult = getAtmosphericSky(rayOrigin, rayDir, pushConsts.sun_dir, 20.0f);
+    vec3 renderResult = getAtmosphericSky(rayOrigin, rayDir, pushConsts.sun_dir, pushConsts.sky_intensity);
 
     // Floor grid overlay
     if (pushConsts.floor_grid_enabled != 0u)

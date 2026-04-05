@@ -10,6 +10,7 @@ layout(push_constant) uniform PushConsts
     uvec2 gbufferSize;
     uint inputImage;
     uint outputImage;
+    float exposure;
 } pushConsts;
 
 
@@ -36,7 +37,8 @@ void main()
 
     vec4 hdrColor = imageLoad(inputImageRGBA16[pushConsts.inputImage], pixel);
 
-    vec3 ldrColor = acesFilmicToneMapCurve(hdrColor.rgb);
+    vec3 exposed = hdrColor.rgb * pushConsts.exposure;
+    vec3 ldrColor = acesFilmicToneMapCurve(exposed);
 
     imageStore(inputImageRGBA16[pushConsts.outputImage], pixel, vec4(ldrColor, hdrColor.a));
 }
