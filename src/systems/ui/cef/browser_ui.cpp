@@ -402,6 +402,8 @@ void BrowserRenderer::render_single_tab(int tab_id,
                         window = ImGui::GetCurrentWindow();  // 分离后窗口可能重建
                     }
 
+                    window->Flags &= ~ImGuiWindowFlags_NoMove;  // 允许移动
+
                     // 启动 ImGui 内置窗口移动（支持Multi-Viewport跨窗口拖拽）
                     ImGui::StartMouseMovingWindow(window);
                 } else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
