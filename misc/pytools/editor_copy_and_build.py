@@ -28,30 +28,43 @@ _STALE_EXTENSIONS = {".py", ".vue", ".js", ".ts", ".jsx", ".tsx", ".css", ".scss
 
 
 def _cleanup_stale_files(src_root: Path, dst_root: Path, ignore_fn) -> None:
-    """删除目标目录中存在但源目录中已不存在的源码文件（一对一映射）。"""
+    """删除目标目录中存在但源目录中已不存在的源码文件（一对一映射）。
+    手动递归遍历以跳过 ignore 目录（如 node_modules），避免进入超长路径。"""
     if not dst_root.exists() or not src_root.exists():
         return
-    for dst_file in list(dst_root.rglob("*")):
-        if dst_file.is_dir():
-            continue
-        if dst_file.suffix not in _STALE_EXTENSIONS:
-            continue
-        rel = dst_file.relative_to(dst_root)
-        # 跳过被 ignore 规则排除的路径段
-        if any(ignore_fn("", [part]) for part in rel.parts):
-            continue
-        src_file = src_root / rel
-        if not src_file.exists():
-            echo(f"[editor-copy] Remove stale: {dst_file}")
-            try:
-                dst_file.unlink()
-            except Exception as e:
-                echo(f"[editor-copy] ERROR removing {dst_file}: {e}")
-    # 清理删除后残留的空目录（自底向上）
-    for dirpath in sorted(dst_root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
-        if dirpath.is_dir() and not any(dirpath.iterdir()):
-            echo(f"[editor-copy] Remove empty dir: {dirpath}")
-            dirpath.rmdir()
+
+    dirs_to_check: list[Path] = []
+
+    def _walk(directory: Path) -> None:
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            if ignore_fn("", [entry.name]):
+                continue
+            if entry.is_dir():
+                _walk(entry)
+                dirs_to_check.append(entry)
+            elif entry.is_file() and entry.suffix in _STALE_EXTENSIONS:
+                rel = entry.relative_to(dst_root)
+                if not (src_root / rel).exists():
+                    echo(f"[editor-copy] Remove stale: {entry}")
+                    try:
+                        entry.unlink()
+                    except Exception as e:
+                        echo(f"[editor-copy] ERROR removing {entry}: {e}")
+
+    _walk(dst_root)
+
+    # 清理删除后残留的空目录（自底向上，dirs_to_check 已按深度优先顺序）
+    for dirpath in reversed(dirs_to_check):
+        try:
+            if dirpath.is_dir() and not any(dirpath.iterdir()):
+                echo(f"[editor-copy] Remove empty dir: {dirpath}")
+                dirpath.rmdir()
+        except OSError:
+            pass
 
 
 def copy_tree(src: Path, dst: Path, merge_content: bool = False) -> None:
