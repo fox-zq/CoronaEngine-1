@@ -24,6 +24,36 @@ def echo(msg: str) -> None:
     print(msg)
 
 
+_STALE_EXTENSIONS = {".py", ".vue", ".js", ".ts", ".jsx", ".tsx", ".css", ".scss"}
+
+
+def _cleanup_stale_files(src_root: Path, dst_root: Path, ignore_fn) -> None:
+    """删除目标目录中存在但源目录中已不存在的源码文件（一对一映射）。"""
+    if not dst_root.exists() or not src_root.exists():
+        return
+    for dst_file in list(dst_root.rglob("*")):
+        if dst_file.is_dir():
+            continue
+        if dst_file.suffix not in _STALE_EXTENSIONS:
+            continue
+        rel = dst_file.relative_to(dst_root)
+        # 跳过被 ignore 规则排除的路径段
+        if any(ignore_fn("", [part]) for part in rel.parts):
+            continue
+        src_file = src_root / rel
+        if not src_file.exists():
+            echo(f"[editor-copy] Remove stale: {dst_file}")
+            try:
+                dst_file.unlink()
+            except Exception as e:
+                echo(f"[editor-copy] ERROR removing {dst_file}: {e}")
+    # 清理删除后残留的空目录（自底向上）
+    for dirpath in sorted(dst_root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        if dirpath.is_dir() and not any(dirpath.iterdir()):
+            echo(f"[editor-copy] Remove empty dir: {dirpath}")
+            dirpath.rmdir()
+
+
 def copy_tree(src: Path, dst: Path, merge_content: bool = False) -> None:
     if not src.exists():
         echo(f"[editor-copy] Skip (not exists): {src}")
@@ -87,6 +117,8 @@ def copy_tree(src: Path, dst: Path, merge_content: bool = False) -> None:
             try:
                 if item.is_dir():
                     shutil.copytree(item, target, dirs_exist_ok=True, ignore=_ignore)
+                    # 删除目标中源已不存在的源码文件
+                    _cleanup_stale_files(item, target, _ignore)
                 else:
                     shutil.copy2(item, target)
             except Exception as e:
@@ -97,6 +129,8 @@ def copy_tree(src: Path, dst: Path, merge_content: bool = False) -> None:
         echo(f"[editor-copy] Copying: {src} -> {target}")
         try:
             shutil.copytree(src, target, dirs_exist_ok=True, ignore=_ignore)
+            # 删除目标中源已不存在的源码文件
+            _cleanup_stale_files(src, target, _ignore)
         except Exception as e:
             print(f"[editor-copy] ERROR copying {src} -> {target}: {e}")
 
