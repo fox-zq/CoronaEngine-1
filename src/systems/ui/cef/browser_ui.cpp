@@ -330,7 +330,8 @@ void BrowserRenderer::render_single_tab(int tab_id,
     ImGuiWindowFlags browser_window_flags = ImGuiWindowFlags_NoTitleBar |
                                             ImGuiWindowFlags_NoScrollbar |
                                             ImGuiWindowFlags_NoNavInputs |
-                                            ImGuiWindowFlags_NoNavFocus;
+                                            ImGuiWindowFlags_NoNavFocus |
+                                            ImGuiWindowFlags_NoMove;
 
     bool is_main_tab = (tab->docking_pos == "main");
     if (is_main_tab) {
