@@ -108,8 +108,6 @@ def copy_tree(src: Path, dst: Path, merge_content: bool = False) -> None:
         # Pattern matching
         if name.endswith(('.pyc', '.pyo', '.log', '.bak', '.backup', '.md')) or name.endswith('~'):
             return True
-        if '_test.py' in name or name.startswith('test_'):
-            return True
 
         return False
 
