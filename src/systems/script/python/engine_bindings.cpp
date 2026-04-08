@@ -106,6 +106,10 @@ void BindAll(nanobind::module_& m) {
     nb::class_<Optics>(m, "Optics")
         .def(nb::init<Geometry&>(), nb::arg("geometry"),
              "Create an Optics component attached to a Geometry")
+        .def("set_visible", &Optics::set_visible, nb::arg("visible"),
+             "Set whether this model is rendered")
+        .def("get_visible", &Optics::get_visible,
+             "Get whether this model is rendered")
         .def("set_metallic", &Optics::set_metallic, nb::arg("metallic"))
         .def("get_metallic", &Optics::get_metallic)
         .def("set_roughness", &Optics::set_roughness, nb::arg("roughness"))

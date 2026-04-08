@@ -237,6 +237,7 @@ namespace Corona::Systems
                     uint32_t object_id = 1;
                     for (const auto& optics : SharedDataHub::instance().optics_storage())
                     {
+                        if (!optics.visible) { ++object_id; continue; }
                         if (auto geom = SharedDataHub::instance().geometry_storage().acquire_write(
                             optics.geometry_handle))
                         {

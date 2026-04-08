@@ -114,6 +114,8 @@ class Optics {
     [[nodiscard]] float get_clearcoat() const;
     void set_clearcoat_gloss(float clearcoatGloss);
     [[nodiscard]] float get_clearcoat_gloss() const;
+    void set_visible(bool visible);
+    [[nodiscard]] bool get_visible() const;
     void set_ambient(const std::array<float, 3>& ambient);
     [[nodiscard]] std::array<float, 3> get_ambient() const;
     void set_diffuse(const std::array<float, 3>& diffuse);

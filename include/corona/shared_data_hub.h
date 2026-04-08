@@ -105,6 +105,8 @@ struct AcousticsDevice {
 struct OpticsDevice {
     std::uintptr_t geometry_handle{};
 
+    bool visible{true};  // 控制模型是否参与渲染
+
     // Disney Principled BRDF parameters
     float metallic{0.0f};
     float roughness{0.5f};

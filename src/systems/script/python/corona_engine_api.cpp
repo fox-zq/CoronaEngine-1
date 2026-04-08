@@ -892,6 +892,14 @@ Corona::API::Geometry* Corona::API::Optics::get_geometry() const {
     return geometry_;
 }
 
+void Corona::API::Optics::set_visible(bool visible) {
+    if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->visible = visible;
+}
+bool Corona::API::Optics::get_visible() const {
+    if (auto r = SharedDataHub::instance().optics_storage().try_acquire_read(handle_)) return r->visible;
+    return true;
+}
+
 void Corona::API::Optics::set_metallic(float metallic) {
     if (auto w = SharedDataHub::instance().optics_storage().acquire_write(handle_)) w->metallic = metallic;
 }
